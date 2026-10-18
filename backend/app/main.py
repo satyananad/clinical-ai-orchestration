@@ -104,15 +104,6 @@ def get_dashboard_ui():
                 </button>
             </div>
 
-            <!-- Quick Links -->
-            <div class="flex items-center space-x-2 sm:space-x-3">
-                <a href="/docs" target="_blank" class="text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600 rounded-lg px-3 py-1.5 transition flex items-center">
-                    <i class="fa-solid fa-book-medical mr-1.5 text-blue-400"></i> Swagger API
-                </a>
-                <a href="/api/mcp/tools" target="_blank" class="text-xs bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border border-indigo-700 rounded-lg px-3 py-1.5 transition flex items-center">
-                    <i class="fa-solid fa-network-wired mr-1.5 text-indigo-400"></i> MCP Tools
-                </a>
-            </div>
         </div>
     </header>
 
@@ -124,9 +115,6 @@ def get_dashboard_ui():
             </button>
             <button onclick="switchTab('dictation')" id="tabBtn-dictation" class="px-4 py-3 text-xs sm:text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center transition">
                 <i class="fa-solid fa-microphone-lines mr-2"></i> 2. Clinical Dictation Studio (Feature B)
-            </button>
-            <button onclick="switchTab('mcp')" id="tabBtn-mcp" class="px-4 py-3 text-xs sm:text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center transition">
-                <i class="fa-solid fa-microchip mr-2"></i> 3. Multi-Agent & MCP Inspector
             </button>
         </div>
     </div>
@@ -304,99 +292,6 @@ def get_dashboard_ui():
 
         </div>
 
-        <!-- =================================================================== -->
-        <!-- TAB 3: MULTI-AGENT & MCP INSPECTOR -->
-        <!-- =================================================================== -->
-        <div id="tabContent-mcp" class="hidden flex-col space-y-6">
-            
-            <!-- Agent Architecture Overview -->
-            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
-                <h2 class="font-bold text-white text-base mb-2 flex items-center">
-                    <i class="fa-solid fa-diagram-project mr-2 text-indigo-400"></i> Multi-Agent Architecture & Tool Calling Flow
-                </h2>
-                <p class="text-xs text-slate-400 mb-6">How probabilistic LLM reasoning routes commands into deterministic clinical business logic.</p>
-
-                <!-- Grid of 4 Specialized Agents -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    
-                    <div class="bg-slate-900/80 border border-blue-500/40 rounded-xl p-4 shadow-sm">
-                        <div class="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold mb-2">
-                            <i class="fa-solid fa-compass"></i>
-                        </div>
-                        <h3 class="font-bold text-xs text-white">Triage Agent</h3>
-                        <p class="text-[10px] text-blue-400 font-semibold mb-2">Orchestrator</p>
-                        <p class="text-[11px] text-slate-400">Inspects input and routes requests to the correct sub-agent via standard MCP Tool Calling.</p>
-                    </div>
-
-                    <div class="bg-slate-900/80 border border-emerald-500/40 rounded-xl p-4 shadow-sm">
-                        <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold mb-2">
-                            <i class="fa-solid fa-magnifying-glass"></i>
-                        </div>
-                        <h3 class="font-bold text-xs text-white">Retrieval Agent</h3>
-                        <p class="text-[10px] text-emerald-400 font-semibold mb-2">MCP: search_patient_reports</p>
-                        <p class="text-[11px] text-slate-400">Queries mock database. Halts execution if multiple matching patients exist to prevent misattribution.</p>
-                    </div>
-
-                    <div class="bg-slate-900/80 border border-purple-500/40 rounded-xl p-4 shadow-sm">
-                        <div class="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold mb-2">
-                            <i class="fa-solid fa-pen-fancy"></i>
-                        </div>
-                        <h3 class="font-bold text-xs text-white">Clinical Scribe Agent</h3>
-                        <p class="text-[10px] text-purple-400 font-semibold mb-2">MCP: structure_clinical_dictation</p>
-                        <p class="text-[11px] text-slate-400">Transforms speech transcripts into structured JSON findings with certainty labels and PDF drafts.</p>
-                    </div>
-
-                    <div class="bg-slate-900/80 border border-amber-500/40 rounded-xl p-4 shadow-sm">
-                        <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold mb-2">
-                            <i class="fa-solid fa-comments"></i>
-                        </div>
-                        <h3 class="font-bold text-xs text-white">Consultation Agent</h3>
-                        <p class="text-[10px] text-amber-400 font-semibold mb-2">MCP: summarize_active_report</p>
-                        <p class="text-[11px] text-slate-400">Performs evidence-grounded Q&A over the active report context with verbatim source citations.</p>
-                    </div>
-
-                </div>
-
-                <!-- MCP Tool Endpoints Table -->
-                <div class="mt-8">
-                    <h3 class="font-bold text-xs text-white uppercase tracking-wider mb-3">Model Context Protocol (JSON-RPC 2.0) Active Endpoints:</h3>
-                    <div class="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden text-xs">
-                        <table class="w-full text-left">
-                            <thead class="bg-slate-800 text-slate-400 text-[10px] uppercase font-bold">
-                                <tr>
-                                    <th class="p-3">Tool Name</th>
-                                    <th class="p-3">MCP Method</th>
-                                    <th class="p-3">Input Parameters</th>
-                                    <th class="p-3">Safety Gate Guarantee</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-800 text-slate-300">
-                                <tr>
-                                    <td class="p-3 font-mono font-bold text-blue-400">search_patient_reports</td>
-                                    <td class="p-3 font-mono text-slate-400">tools/call</td>
-                                    <td class="p-3 font-mono text-slate-400">patient_name, modality</td>
-                                    <td class="p-3 text-emerald-400">Pauses on ambiguity; refuses to guess patient identity.</td>
-                                </tr>
-                                <tr>
-                                    <td class="p-3 font-mono font-bold text-emerald-400">structure_clinical_dictation</td>
-                                    <td class="p-3 font-mono text-slate-400">tools/call</td>
-                                    <td class="p-3 font-mono text-slate-400">dictation_text, patient_id</td>
-                                    <td class="p-3 text-emerald-400">Anti-hallucination verification; labels diagnostic certainty.</td>
-                                </tr>
-                                <tr>
-                                    <td class="p-3 font-mono font-bold text-amber-400">summarize_active_report</td>
-                                    <td class="p-3 font-mono text-slate-400">tools/call</td>
-                                    <td class="p-3 font-mono text-slate-400">report_id, query</td>
-                                    <td class="p-3 text-emerald-400">Direct evidence grounding; cites verbatim report text.</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-        </div>
-
     </main>
 
     <!-- UI JAVASCRIPT LOGIC -->
@@ -405,7 +300,7 @@ def get_dashboard_ui():
         let currentSessionId = "viscan_ui_session";
 
         function switchTab(tabId) {
-            ['assistant', 'dictation', 'mcp'].forEach(t => {
+            ['assistant', 'dictation'].forEach(t => {
                 document.getElementById(`tabContent-${t}`).classList.add('hidden');
                 document.getElementById(`tabBtn-${t}`).className = "px-4 py-3 text-xs sm:text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center transition";
             });
