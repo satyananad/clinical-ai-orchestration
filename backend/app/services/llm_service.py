@@ -88,7 +88,8 @@ def query_groq(prompt: str, system_prompt: Optional[str] = None, json_format: bo
     payload = {
         "model": GROQ_MODEL or "openai/gpt-oss-120b",
         "messages": messages,
-        "temperature": 0.1
+        "temperature": 0.1,
+        "max_tokens": 4096
     }
     if json_format:
         payload["response_format"] = {"type": "json_object"}
@@ -343,8 +344,19 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
                 except (json.JSONDecodeError, ValidationError):
                     result = None
 
-    if not result:
-        result = _dynamic_semantic_parse(dictation_text)
+    if not result or not result.get("findings"):
+        fallback = _dynamic_semantic_parse(dictation_text)
+        if not result:
+            result = fallback
+        else:
+            if not result.get("findings"):
+                result["findings"] = fallback.get("findings", [])
+            if not result.get("impressions") and fallback.get("impressions"):
+                result["impressions"] = fallback.get("impressions", [])
+            if not result.get("recommendations") and fallback.get("recommendations"):
+                result["recommendations"] = fallback.get("recommendations", [])
+            if not result.get("anatomical_sites") and fallback.get("anatomical_sites"):
+                result["anatomical_sites"] = fallback.get("anatomical_sites", [])
 
     # Ensure patient_details is populated
     from .claim_verification import extract_patient_demographics, extract_measurements
