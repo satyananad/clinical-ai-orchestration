@@ -48,3 +48,15 @@ def test_run_multi_agent_pipeline_execution_trace():
     assert trace["tool_called"] == "search_patient_reports"
     assert trace["mcp_jsonrpc"]["method"] == "tools/call"
     assert trace["mcp_jsonrpc"]["params"]["name"] == "search_patient_reports"
+
+
+def test_greeting_pipeline_returns_clean_welcome_without_db_stats():
+    """Verify conversational greetings ('hey', 'hello') do not dump database statistics or citations."""
+    for greeting in ["hey", "hello", "hi", "good morning", "help"]:
+        res = run_multi_agent_pipeline(greeting, session_id="test_greeting_session")
+        assert res["status"] == "success"
+        assert res.get("agent_trace", {}).get("active_agent") == "GeneralAssistantAgent"
+        assert "Hello! I am your Dental Clinical Workstation Assistant." in res.get("answer", "")
+        assert "35 radiological reports" not in res.get("answer", "")
+        assert res.get("citations") == []
+

@@ -322,6 +322,16 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             elif is_new_command:
                 session.pending_booking_slots = None
 
+    # Step 0C: Greetings and Conversational Openers
+    is_greeting = any(re.search(r"\b" + re.escape(g) + r"\b", q_lower) for g in ["hey", "hello", "hi", "good morning", "good afternoon", "greetings", "help", "who are you"]) and not any(w in q_lower for w in ["database", "report", "patient", "scan", "how many", "list", "open", "show", "find", "book", "schedule", "take"])
+    if is_greeting and not session.pending_candidates and not session.pending_booking_slots:
+        return {
+            "selected_agent": "GeneralAssistantAgent",
+            "tool_name": "general_query",
+            "arguments": {"question": query},
+            "rationale": "Conversational greeting handled by General Assistant Agent."
+        }
+
     # Step 1: LLM Dynamic Multi-Agent Triage (Groq / Ollama Clinical Orchestrator Agent)
     prompt = (
         f"Clinician request: \"{query}\"\n"
@@ -471,6 +481,16 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "rationale": "Fallback: Input describes clinical pathology findings."
         }
 
+    # 2D.5 Greetings and Conversational Openers
+    is_greeting = any(re.search(r"\b" + re.escape(g) + r"\b", q_lower) for g in ["hey", "hello", "hi", "good morning", "good afternoon", "greetings", "help", "who are you"]) and not any(w in q_lower for w in ["database", "report", "patient", "scan", "how many", "list", "open", "show", "find", "book", "schedule", "take"])
+    if is_greeting:
+        return {
+            "selected_agent": "GeneralAssistantAgent",
+            "tool_name": "general_query",
+            "arguments": {"question": query},
+            "rationale": "Fallback: Clinician greeting or assistance request."
+        }
+
     # 2E. General Clinic Database Queries
     is_database_question = any(q_lower.startswith(w) for w in ["how many", "how much", "which", "who", "list", "what", "show"]) or "database" in q_lower or "?" in q_lower
     has_retrieval_intent = any(verb in q_lower for verb in ["open", "fetch", "load", "retrieve"])
@@ -523,7 +543,7 @@ def verify_response_against_query(query: str, response: Dict[str, Any]) -> Dict[
 
     # Check 2: Grounding and Citation Verification
     if response.get("status") == "success" and "answer" in response:
-        if not response.get("citations"):
+        if not response.get("citations") and response.get("agent_trace", {}).get("active_agent") != "GeneralAssistantAgent":
             response["citations"] = ["Clinic Diagnostic Database"]
 
     return response
@@ -643,9 +663,10 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             "patient_name": arguments.get("patient_name"),
             "modality": arguments.get("modality")
         })
+        is_greeting_msg = not bool(db_res.get("citations"))
         return {
             "status": "success",
-            "message": "Answered by General Assistant Agent via MCP Tool query_clinic_database.",
+            "message": "Assistant ready." if is_greeting_msg else "Answered by General Assistant Agent via MCP Tool query_clinic_database.",
             "answer": db_res.get("answer"),
             "citations": db_res.get("citations", []),
             "agent_trace": {
