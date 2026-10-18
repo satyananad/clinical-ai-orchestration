@@ -3,7 +3,33 @@ import json
 import re
 import urllib.request
 from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field, ValidationError
 from .validation import label_diagnostic_certainty
+
+# Pydantic Schemas for Strict LLM Output Validation
+class AnatomicalSiteModel(BaseModel):
+    site_type: str = "Tooth"
+    anatomical_name: str
+    quadrant: Optional[str] = None
+    fdi_number: Optional[int] = None
+    palmer_notation: Optional[str] = None
+    universal_number: Optional[int] = None
+
+class FindingModel(BaseModel):
+    anatomical_site: str
+    category: str
+    observation: str
+    certainty: str
+
+class DictationDraftReportModel(BaseModel):
+    anatomical_sites: List[AnatomicalSiteModel] = Field(default_factory=list)
+    findings: List[FindingModel] = Field(default_factory=list)
+    impressions: List[str] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+
+class RetrievalIntentModel(BaseModel):
+    patient_name: str
+    report_type: str = "Any"
 
 OLLAMA_ENDPOINT = os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/api/generate")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
@@ -86,19 +112,16 @@ def query_ollama(prompt: str, system_prompt: Optional[str] = None, json_format: 
         return None
 
 def extract_retrieval_intent_with_llm(user_input: str) -> Dict[str, str]:
-    """Uses LLM reasoning to extract patient name and scan modality from voice or text."""
+    """Uses LLM reasoning to extract patient name and scan modality from voice or text, validated with Pydantic."""
     prompt = f'Clinician request: "{user_input}"'
     raw_llm = query_ollama(prompt, system_prompt=RETRIEVAL_SYSTEM_PROMPT, json_format=True)
     if raw_llm:
         try:
             parsed = json.loads(raw_llm)
-            if parsed.get("patient_name"):
-                return {
-                    "patient_name": parsed["patient_name"].strip(),
-                    "report_type": parsed.get("report_type", "Any")
-                }
-        except Exception:
-            pass
+            validated = RetrievalIntentModel.model_validate(parsed)
+            return validated.model_dump()
+        except (json.JSONDecodeError, ValidationError) as e:
+            print(f"⚠️ [Pydantic Validation Notice: {e}] Falling back to semantic extraction.")
 
     # Dynamic semantic fallback (without hardcoded table)
     lower = user_input.lower()
@@ -120,7 +143,7 @@ def extract_retrieval_intent_with_llm(user_input: str) -> Dict[str, str]:
 def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
     """
     Feature B: Uses LLM reasoning to extract anatomical sites, findings, and diagnostic certainty.
-    No hardcoded lookup tables used.
+    Validates output structure strictly with Pydantic schemas.
     """
     prompt = f'Clinical dictation transcript:\n"{dictation_text}"'
     raw_llm = query_ollama(prompt, system_prompt=DICTATION_SYSTEM_PROMPT, json_format=True)
@@ -128,10 +151,10 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
     if raw_llm:
         try:
             parsed = json.loads(raw_llm)
-            if "findings" in parsed and "anatomical_sites" in parsed:
-                return parsed
-        except Exception:
-            pass
+            validated = DictationDraftReportModel.model_validate(parsed)
+            return validated.model_dump()
+        except (json.JSONDecodeError, ValidationError) as e:
+            print(f"⚠️ [Pydantic Validation Notice on dictation: {e}] Falling back to semantic parser.")
 
     # AI Dynamic Semantic Parser (Zero-dependency fallback for test environments)
     # Infers tooth positions and numbering algorithmically rather than using a static table

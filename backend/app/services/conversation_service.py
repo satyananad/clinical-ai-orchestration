@@ -22,6 +22,7 @@ class SessionState:
         self.active_report_id: Optional[str] = None
         self.history: List[Dict[str, str]] = []
         self.pending_candidates: Optional[List[Dict[str, Any]]] = None
+        self.pending_request: Optional[Dict[str, Any]] = None
         self.last_retrieval_query: Optional[str] = None
         self.last_retrieval_modality: Optional[str] = None
 
@@ -30,6 +31,7 @@ class SessionState:
         self.active_patient_id = patient_id
         self.active_report_id = report_id
         self.pending_candidates = None
+        self.pending_request = None
         self.last_retrieval_query = None
         self.last_retrieval_modality = None
 
@@ -39,6 +41,7 @@ class SessionState:
         self.active_report_id = None
         self.history = []
         self.pending_candidates = None
+        self.pending_request = None
         self.last_retrieval_query = None
         self.last_retrieval_modality = None
 

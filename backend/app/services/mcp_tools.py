@@ -119,10 +119,14 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     Separates probabilistic LLM reasoning from deterministic business-rule execution.
     """
     if tool_name == "search_patient_reports":
-        patient_name = arguments.get("patient_name", "")
-        modality = arguments.get("modality", "Any")
-        query_str = f"Open {patient_name}'s latest {modality} report" if modality != "Any" else f"Open {patient_name}'s latest report"
-        return resolve_report_retrieval(query_str)
+        patient_name = arguments.get("patient_name", "").strip()
+        patient_id = arguments.get("patient_id", "").strip()
+        modality = arguments.get("modality", "Any").strip()
+        if modality.upper() in ["PANORAMIC", "ORTHOPANTOMOGRAM"]:
+            modality = "OPG"
+        elif modality.upper() in ["CONE BEAM", "3D", "3D VOLUME"]:
+            modality = "CBCT"
+        return resolve_report_retrieval(query=patient_id or patient_name, patient_name=patient_name, modality=modality)
 
     elif tool_name == "structure_clinical_dictation":
         dictation_text = arguments.get("dictation_text", "")

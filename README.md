@@ -176,13 +176,17 @@ pytest test_viscan_pipeline.py -v
 ## 🔒 Production Considerations & Known Limitations
 
 ### Privacy & Data Sovereignty
-- In clinical radiology, reports contain sensitive Protected Health Information (PHI). This architecture is built for on-premise execution (via local LLMs like Ollama or the deterministic rule engine), ensuring **zero cloud data leakage or HIPAA/GDPR non-compliance**.
+- In clinical radiology, reports contain sensitive Protected Health Information (PHI). This architecture is built for on-premise local execution (via local Ollama Llama-3.1), eliminating third-party cloud data transmission. While session-isolated memory prevents in-memory cross-contamination between workstations, comprehensive HIPAA/GDPR compliance in production requires enterprise data encryption at rest and in transit, access control, and complete audit logging.
+
+### Model Context Protocol (MCP) Standards
+- Implements the official **Anthropic Model Context Protocol (MCP)** specification over **JSON-RPC 2.0** (`tools/list` and `tools/call`).
+- Standardized tool schemas (`search_patient_reports`, `structure_clinical_dictation`, `summarize_active_report`, `verify_clinical_claim`) separate probabilistic LLM reasoning from deterministic clinical execution.
 
 ### What Works
 - Safe disambiguation of patient identities with zero guessing.
-- Reliable mapping between international dental numbering notations.
-- Anti-hallucination guardrail that strictly verifies semantic support in dictation.
-- Interactive Web Dashboard + REST API + CLI interfaces.
+- Multi-turn speech correction and conversation memory across clinical queries.
+- Reliable mapping between international dental numbering notations (FDI, Palmer, Universal).
+- Multi-dimensional clinical claim verification across 8 medical dimensions.
 
 ### Future Improvements with More Time
 1. **Live Microphone Audio Streaming:** Connect a local WebAudio stream directly to `faster-whisper` for instant speech-to-text dictation.
