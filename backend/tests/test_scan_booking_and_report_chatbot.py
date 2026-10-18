@@ -268,4 +268,22 @@ def test_report_retrieval_includes_pdf_url_and_chat_link():
     assert "[View Diagnostic PDF](/patient-pdf/RPT-2026_Vikram_Malhotra_CBCT.pdf)" in res["answer"]
 
 
+def test_doctor_and_hospital_inquiry():
+    """
+    Verifies that when a clinician asks for doctor and hospital name (e.g. 'docoter and hospital name'),
+    the assistant does not output placeholder '[Clinic Name]' or an intro greeting,
+    but instead responds dynamically requesting relevant location/specialty details or giving information.
+    """
+    session_id = "test_doc_hosp_session"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    res = run_multi_agent_pipeline("docoter and hospital name", session_id=session_id)
+    assert res["status"] == "success"
+    assert res["agent_trace"]["active_agent"] == "GeneralAssistantAgent"
+    assert "[Clinic Name]" not in res["answer"]
+    assert any(term in res["answer"].lower() for term in ["location", "specialty", "hospital", "doctor", "details"])
+
+
+
 

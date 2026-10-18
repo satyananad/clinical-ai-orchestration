@@ -68,65 +68,6 @@ def _load_env_var(var_name: str, default: Optional[str] = None) -> Optional[str]
 OLLAMA_ENDPOINT = os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/api/generate")
 OLLAMA_CHAT_ENDPOINT = os.getenv("OLLAMA_CHAT_ENDPOINT", "http://localhost:11434/api/chat")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
-GROQ_API_KEY = _load_env_var("GROQ_API_KEY")
-GROQ_MODEL = _load_env_var("GROQ_MODEL", "llama-3.3-70b-versatile")
-
-
-# =====================================================================
-# GROQ CLOUD FAST INFERENCE ENGINE (Sub-second response)
-# =====================================================================
-def query_groq(prompt: str, system_prompt: Optional[str] = None, json_format: bool = True) -> Optional[str]:
-    """Queries ultra-fast Groq Cloud API (<0.5s latency)."""
-    api_key = GROQ_API_KEY or _load_env_var("GROQ_API_KEY")
-    if not api_key:
-        return None
-
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
-
-    configured_model = GROQ_MODEL or _load_env_var("GROQ_MODEL", "llama-3.3-70b-versatile")
-    if "openai" in configured_model.lower() or "gpt" in configured_model.lower():
-        configured_model = "llama-3.3-70b-versatile"
-
-    models_to_try = [configured_model]
-    if "llama-3.3-70b-versatile" not in models_to_try:
-        models_to_try.append("llama-3.3-70b-versatile")
-    if "llama-3.1-8b-instant" not in models_to_try:
-        models_to_try.append("llama-3.1-8b-instant")
-
-    for model in models_to_try:
-        payload = {
-            "model": model,
-            "messages": messages,
-            "temperature": 0.1,
-            "max_tokens": 4096
-        }
-        if json_format:
-            payload["response_format"] = {"type": "json_object"}
-
-        req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            }
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=6) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                choices = data.get("choices", [])
-                if choices:
-                    content = choices[0].get("message", {}).get("content", "").strip()
-                    if content:
-                        print(f"\n⚡ [GROQ ACCELERATED] Response received from {model}!")
-                        return content
-        except Exception:
-            continue
-    return None
 
 
 # =====================================================================
@@ -228,15 +169,9 @@ def query_ollama(prompt: str, system_prompt: Optional[str] = None, json_format: 
 
 def query_llm(prompt: str, system_prompt: Optional[str] = None, json_format: bool = True) -> Optional[str]:
     """
-    High-Performance LLM Dispatcher:
-    1. Checks ultra-fast Groq Cloud (<0.5s) if GROQ_API_KEY is available.
-    2. Falls back to local Ollama (llama3.1) with 15s timeout.
-    3. Falls back cleanly to deterministic clinical parsing if local daemon is offline.
+    Direct Local Ollama LLM Inference (llama3.1).
+    Private, local execution with deterministic fallback if daemon is offline.
     """
-    groq_res = query_groq(prompt, system_prompt=system_prompt, json_format=json_format)
-    if groq_res:
-        return groq_res
-
     return query_ollama(prompt, system_prompt=system_prompt, json_format=json_format)
 
 

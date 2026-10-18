@@ -552,13 +552,25 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "rationale": "Fallback: Clinical database statistical inquiry."
         }
 
-    # 2F. Default: Patient & Report Retrieval
+    # 2F. Default: Patient & Report Retrieval vs Conversational Fallback
     query_intent = extract_retrieval_intent(query)
     target_modality = query_intent.get("report_type", "Any")
     extracted_name = query_intent.get("patient_name", "").strip()
 
-    # Safety Guard: If extracted name is an instructional word, greeting, or question fragment, redirect to conversation
-    if not extracted_name or any(w in extracted_name.lower().split() for w in ["what", "why", "how", "explain", "tell", "help", "who", "when", "does", "can", "please"]):
+    # Safety Guard: If extracted name is an inquiry, general concept, or non-patient words
+    non_patient_words = [
+        "what", "why", "how", "explain", "tell", "help", "who", "when", "does", "can", "please",
+        "doctor", "doctore", "docoter", "hospital", "physician", "clinic", "machine", "cost", "price",
+        "name", "information", "detail", "details"
+    ]
+    has_non_patient_word = any(w in extracted_name.lower().split() for w in non_patient_words)
+    has_retrieval_command = any(verb in q_lower for verb in ["open", "show", "load", "fetch", "view", "find", "get"])
+    has_patient_id = bool(re.search(r"\b(PAT-\d+|PT-\d+|\d{4})\b", query, re.IGNORECASE))
+
+    from .retrieval import search_patients
+    matched_candidates = search_patients(extracted_name) if extracted_name else []
+
+    if has_non_patient_word or not extracted_name or (not has_retrieval_command and not has_patient_id and not matched_candidates):
         return {
             "selected_agent": "GeneralAssistantAgent",
             "tool_name": "conversation",
@@ -590,13 +602,15 @@ def generate_dynamic_conversational_reply(query: str, session: Any) -> str:
     rather than a static repeated greeting.
     """
     conversation_prompt = (
-        "You are the Viscan AI Clinical Workstation Assistant for a dental radiology clinic. "
-        "You assist clinicians with retrieving patient imaging (OPG, CBCT, bitewings), "
-        "structuring clinical voice dictations into verified radiological reports, "
-        "summarizing findings, answering questions about active reports, and booking scan slots.\n"
-        "Respond naturally, concisely, warmly, and professionally to the clinician's query. "
-        "Do NOT invent fake database counts or statistics. "
-        "Answer specifically and helpfully to what the clinician actually asked."
+        "You are an intelligent, empathetic, and knowledgeable Clinical AI Assistant. "
+        "Answer the clinician or user directly, intelligently, naturally, and helpfully. "
+        "Rules:\n"
+        "1. Directly answer what the user asks in a conversational, helpful, and natural manner.\n"
+        "2. Never output placeholder tokens like '[Clinic Name]', '[Doctor Name]', or 'None'.\n"
+        "3. If the user asks for a doctor or hospital, ask them clarifying details (such as city/location, medical specialty, or preferred hospital) to assist them.\n"
+        "4. If they ask about dental or medical concepts (such as CBCT, OPG, caries, impactions, root canals), explain clearly and concisely.\n"
+        "5. If they want to retrieve a patient's scans, structure dictation, or check appointment slots, guide them naturally.\n"
+        "6. Do not repeat a fixed greeting if they asked a specific question."
     )
     if session.active_patient_id:
         conversation_prompt += f"\nCurrently active patient in session: {session.active_patient_id}"
@@ -665,6 +679,16 @@ def generate_dynamic_conversational_reply(query: str, session: Any) -> str:
             "• **Clinical Scribe**: Convert spoken or typed clinical dictations into verified radiological findings with FDI/Palmer numbering, measurement preservation, and certainty labeling.\n"
             "• **Report Q&A & Consultation**: Answer questions and summarize findings strictly grounded in active reports with verbatim source citations.\n"
             "• **Scan Scheduling**: Check real-time appointment slots and confirm bookings."
+        )
+
+    # 7b. Doctor / Hospital information queries
+    if any(k in q_lower for k in ["doctor", "doctore", "docoter", "hospital", "physician", "clinic name"]):
+        return (
+            "To help provide you with the right doctor or hospital details, could you please specify:\n"
+            "1. Location (city, state, or region)\n"
+            "2. Type of doctor or medical specialty (e.g. oral surgeon, radiologist, cardiologist, general practitioner)\n"
+            "3. Name of the hospital or clinic (if you already know it)\n\n"
+            "Once you provide these details, I will be happy to assist you!"
         )
 
     # 8. Greetings
