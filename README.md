@@ -80,11 +80,8 @@ dental-voice-assistant/
 │   ├── PAT-1001_Priya_Sharma_Dictation_Report.json # Structured JSON findings
 │   ├── PAT-1001_Priya_Sharma_Dictation_Report.pdf  # Generated dictation PDF report
 │   └── ...
-├── step2_open_report_agent.py        # CLI Feature A: Voice/Text retrieval agent
-├── step3_clinical_dictation_agent.py # CLI Feature B: Dictation to structured JSON & PDF
-├── step4_conversational_agent.py     # CLI Feature C: Grounded conversational follow-up agent
-├── run_demo.py                       # Unified CLI demonstration runner
-├── test_viscan_pipeline.py           # Pipeline test suite (5 tests)
+├── cli.py                            # Interactive terminal CLI assistant
+├── run_demo.py                       # Automated end-to-end demonstration script
 ├── ARCHITECTURE.md                   # 1-page detailed architecture & clinical safety specification
 ├── .env.example                      # Environment variables template
 └── README.md                         # Project documentation
@@ -148,28 +145,20 @@ python3 step4_conversational_agent.py
 
 ## 🧪 Automated Testing
 
-The repository contains **15 automated tests** across two comprehensive test suites, all passing with 100% green:
+The repository contains **33 comprehensive automated tests** covering retrieval, ambiguity disambiguation, multi-dimensional clinical claim verification, conversational follow-up, and MCP JSON-RPC 2.0 tool execution:
 
-### Suite 1: FastAPI Backend Tests (10 Tests)
 ```bash
 PYTHONPATH=. ./venv/bin/pytest backend/tests -v
 ```
-Verifies:
-1. `test_health_endpoint` - API readiness
-2. `test_successful_patient_search` - Candidate searching
-3. `test_successful_report_retrieval` - Exact report retrieval
-4. `test_missing_report_handling` - Safe notification when report type does not exist
-5. `test_nonexistent_patient_handling` - Safe notification for unknown patients
-6. `test_ambiguous_patient_identity_triggers_clarification` - Ambiguity stop with 3 Priyas
-7. `test_disambiguation_with_full_name_succeeds` - Full name resolution
-8. `test_dictation_preserves_uncertainty` - Uncertainty preservation ("possible" != "confirmed")
-9. `test_dictation_anatomical_tooth_mapping` - FDI, Palmer, and Universal numbering
-10. `test_conversational_follow_up_and_grounding` - Follow-up Q&A with exact citations
 
-### Suite 2: Standalone Pipeline Tests (5 Tests)
-```bash
-pytest test_viscan_pipeline.py -v
-```
+Verifies:
+1. `test_ambiguity.py` - Partial name ambiguity safety gate and disambiguation.
+2. `test_claim_verification.py` - 8-dimension clinical safety checks (tooth numbers, negation, uncertainty, laterality, measurements).
+3. `test_conversation_qa.py` - Multi-turn conversational follow-up, pronoun resolution, and speech repair.
+4. `test_dictation.py` - Speech transcript structuring, dental numbering, and uncertainty classification.
+5. `test_mcp_tools.py` - MCP JSON-RPC 2.0 discovery (`tools/list`) and invocation (`tools/call`).
+6. `test_orchestrator.py` - Multi-agent triage routing and execution tracing.
+7. `test_retrieval.py` - Exact patient retrieval, modalities, and missing scan handling.
 
 ---
 
