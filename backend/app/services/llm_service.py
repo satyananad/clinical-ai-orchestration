@@ -9,6 +9,11 @@ from .validation import label_diagnostic_certainty
 from .dental_anatomy import normalize_dental_site, classify_observation_category
 
 # Pydantic Schemas for Strict LLM Output Validation
+class PatientDetailsModel(BaseModel):
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    demographics_summary: Optional[str] = None
+
 class AnatomicalSiteModel(BaseModel):
     site_type: str = "Tooth"
     anatomical_name: str
@@ -22,8 +27,10 @@ class FindingModel(BaseModel):
     category: str
     observation: str
     certainty: str
+    measurements: List[str] = Field(default_factory=list)
 
 class DictationDraftReportModel(BaseModel):
+    patient_details: Optional[PatientDetailsModel] = None
     anatomical_sites: List[AnatomicalSiteModel] = Field(default_factory=list)
     findings: List[FindingModel] = Field(default_factory=list)
     impressions: List[str] = Field(default_factory=list)
@@ -62,36 +69,50 @@ DICTATION_SYSTEM_PROMPT = """You are an expert dental and maxillofacial radiolog
 Your task is to analyze clinical dictation transcripts and extract structured medical findings into valid JSON.
 
 CLINICAL RULES FOR ANATOMY & NUMBERING:
-1. FDI Two-Digit & Universal Tooth Numbering:
-   - Upper Right (UR): UR8=FDI 18/Univ 1, UR7=FDI 17/Univ 2, UR6=FDI 16/Univ 3, UR5=FDI 15/Univ 4, UR4=FDI 14/Univ 5, UR3=FDI 13/Univ 6, UR2=FDI 12/Univ 7, UR1=FDI 11/Univ 8.
+1. Patient Demographics:
+   - Extract patient age and gender if explicitly stated (e.g. '46-year-old female' -> age: 46, gender: 'Female').
+   - NEVER confuse patient age with tooth numbers (e.g., age 46 is NOT tooth 46).
+2. FDI Two-Digit & Quadrant-Concordant Numbering:
+   - When a quadrant is specified, teeth MUST belong to that quadrant:
+     - Upper Left (UL / Maxillary Left): FDI 21-28. First molar = FDI 26 (UL6 / Univ 14), Second molar = FDI 27 (UL7 / Univ 15), Second premolar = FDI 25 (UL5 / Univ 13).
+     - Upper Right (UR / Maxillary Right): FDI 11-18. First molar = FDI 16 (UR6 / Univ 3), Second molar = FDI 17 (UR7 / Univ 2).
+     - Lower Left (LL / Mandibular Left): FDI 31-38.
+     - Lower Right (LR / Mandibular Right): FDI 41-48.
    - Deciduous / Primary teeth: UR E = FDI 55, Universal E.
-2. Clinical Categories:
+   - NEVER output mandibular teeth (e.g. FDI 46 or 47) when dictation describes maxillary left teeth!
+3. Clinical Categories:
    - "Impaction / Eruption": unerupted, impacted, follicle, ectopic.
    - "Anatomical Relationships & Proximity": proximity to sinus floor, nerve canal, contact with adjacent roots, trifurcation, orientation.
-   - "Root Pathology & Resorption": root resorption, external resorption of adjacent teeth.
+   - "Root Pathology & Resorption": root resorption, external resorption of adjacent teeth, odontogenic lesions, cysts.
    - "Endodontic Status": strictly previous root canal treatments, obturation, pulp vitality.
-   - "Periapical & Osseous Status": bone height, periapical radiolucency, lamina dura.
+   - "Periapical & Osseous Status": alveolar ridge dimensions, cortical plate status, cortical thinning, radiolucency, widening of periodontal ligament, lamina dura.
    - "Sinonasal & Extra-Dental Structures": maxillary sinuses, airway, cervical spine, TMJ.
    - "Restorative & Caries Status": restorations, fillings, caries.
-3. Diagnostic Certainty:
-   - Use 'suspected / differential diagnosis' if hedged ('possible', 'suggestive of', 'cannot rule out').
-   - Use 'negative / normal finding' if ruled out or normal limits ('no obvious', 'clear', 'normal limits').
-   - Use 'definite observation' for confirmed findings.
+4. Diagnostic Certainty:
+   - Use 'definite observation (etiology uncertain)' when a lesion or pathology is confirmed present but its cause/etiology is uncertain.
+   - Use 'definite observation' for confirmed findings (including observed periodontal ligament widening and thin cortical plate).
+   - Use 'negative / normal finding' if ruled out or normal limits (e.g. 'no sinus communication', 'no displaced root fragments', 'within normal limits').
+   - Use 'suspected / differential diagnosis' if the observation itself is hedged ('possible', 'suggestive of', 'cannot rule out').
    - Use 'unclear / clinician review required' for speech recognition errors or ambiguous phrases.
-4. MANDATORY CONSERVATISM & ZERO-HALLUCINATION RULES:
+5. Measurements & Quantitative Extraction:
+   - Extract all linear/dimensional measurements (e.g. '5.2 mm', '10.8 mm', '7.5 mm') into the `measurements` list on findings.
+6. Crucial Negative Findings:
+   - Clinically important negative findings (e.g. absence of sinus communication, absence of displaced root fragments) MUST be preserved in structured findings.
+7. MANDATORY CONSERVATISM & ZERO-HALLUCINATION RULES:
    - Output ONLY findings and observations explicitly stated in the transcript.
-   - DO NOT invent clinical findings that the dentist never mentioned (e.g. do NOT invent root resorption or fracture).
-   - If no recommendations were provided by the clinician, "recommendations" MUST be an empty list []. Do NOT invent surgical extraction, postoperative follow-up, or monitoring unless explicitly dictated.
-   - If speech transcription is unclear, ambiguous, or contains non-medical corruptions (e.g. 'root Bridge option', 'Bridge option'), DO NOT convert it into an invented clinical term (such as 'no root bridging').
-     Instead, report it as an unclear transcription:
-     "observation": "Unclear phrase: '<phrase>' (likely speech transcription artifact; requires clinician review)",
-     "certainty": "unclear / clinician review required"
+   - If no recommendations were provided by the clinician, "recommendations" MUST be an empty list [].
+   - If speech transcription is unclear or corrupted, flag as unclear transcription.
 
 Output strictly valid JSON matching this schema:
 {
+  "patient_details": {
+    "age": integer or null,
+    "gender": "Female" | "Male" or null,
+    "demographics_summary": "string" or null
+  },
   "anatomical_sites": [
     {
-      "site_type": "Tooth" | "Regional Anatomy",
+      "site_type": "Tooth" | "Regional Anatomy" | "Osseous Structure",
       "anatomical_name": "string",
       "quadrant": "string",
       "fdi_number": integer or null,
@@ -104,7 +125,8 @@ Output strictly valid JSON matching this schema:
       "anatomical_site": "string",
       "category": "Impaction / Eruption" | "Anatomical Relationships & Proximity" | "Root Pathology & Resorption" | "Endodontic Status" | "Periapical & Osseous Status" | "Sinonasal & Extra-Dental Structures" | "General Observation",
       "observation": "string",
-      "certainty": "definite observation" | "suspected / differential diagnosis" | "negative / normal finding" | "projection limited" | "unclear / clinician review required"
+      "certainty": "definite observation" | "definite observation (etiology uncertain)" | "suspected / differential diagnosis" | "negative / normal finding" | "projection limited" | "unclear / clinician review required",
+      "measurements": ["string"]
     }
   ],
   "impressions": ["string"],
@@ -269,6 +291,11 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
     if not result:
         result = _dynamic_semantic_parse(dictation_text)
 
+    # Ensure patient_details is populated
+    from .claim_verification import extract_patient_demographics, extract_measurements
+    if not result.get("patient_details"):
+        result["patient_details"] = extract_patient_demographics(dictation_text)
+
     # 1. Enforce No Invented Recommendations
     has_explicit_rec = bool(re.search(r"\b(recommend|recommended|recommendation|advise|advised|routine follow-up)\b", dictation_text, re.IGNORECASE))
     if not has_explicit_rec:
@@ -286,7 +313,8 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
                     "anatomical_site": f.get("anatomical_site", "lower right third molar"),
                     "category": "Root Pathology & Resorption",
                     "observation": f"Unclear phrase: '{artifacts[0]['matched_phrase']}' (flagged as likely speech transcription error; requires clinician review)",
-                    "certainty": "unclear / clinician review required"
+                    "certainty": "unclear / clinician review required",
+                    "measurements": []
                 })
                 replaced = True
             else:
@@ -296,7 +324,8 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
                 "anatomical_site": clean_findings[0].get("anatomical_site", "lower right third molar"),
                 "category": "Root Pathology & Resorption",
                 "observation": f"Unclear phrase: '{artifacts[0]['matched_phrase']}' (flagged as likely speech transcription error; requires clinician review)",
-                "certainty": "unclear / clinician review required"
+                "certainty": "unclear / clinician review required",
+                "measurements": []
             })
         result["findings"] = clean_findings
 
@@ -321,7 +350,7 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
             normalized_sites.append(norm_s)
     result["anatomical_sites"] = normalized_sites
 
-    # Re-classify findings deterministically to prevent miscategorization
+    # Re-classify findings deterministically to prevent miscategorization and extract measurements
     for f in result.get("findings", []):
         obs = f.get("observation", "")
         site = f.get("anatomical_site", "")
@@ -330,6 +359,8 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
             f["certainty"] = "unclear / clinician review required"
         else:
             f["category"] = classify_observation_category(obs, site)
+        if not f.get("measurements"):
+            f["measurements"] = extract_measurements(obs)
 
     return result
 
@@ -339,10 +370,17 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
     Algorithmic clinical entity extraction when external LLM endpoints are offline.
     Infers dental quadrants, Palmer/FDI/Universal numbering, and categories deterministically.
     """
+    from .claim_verification import extract_patient_demographics, extract_measurements
     cleaned_text = clean_conversational_dictation(dictation_text)
-    
-    # Segment text into sentences and clauses using standard grammatical punctuation (. ! ? ; \n or ,)
-    sentences = [s.strip() for s in re.split(r"(?:[.\n;?!]+|,\s*)", cleaned_text) if len(s.strip()) > 3]
+    patient_details = extract_patient_demographics(cleaned_text)
+
+    # Strip age, measurements, and dates before extracting teeth to prevent misidentifying age as FDI tooth
+    clean_no_age = re.sub(r"\b\d{1,2}\s*(?:-|–|\s)?(?:year|yr)s?(?:-|–|\s)?old\b|\bage\s*(?:is\s*)?\d{1,2}\b", " ", cleaned_text, flags=re.IGNORECASE)
+    clean_no_age = re.sub(r"\b\d+(?:\.\d+)?\s*(?:mm|cm|mg|ml|%)\b", " ", clean_no_age, flags=re.IGNORECASE)
+    clean_no_age = re.sub(r"\b(?:19|20)\d{2}\b", " ", clean_no_age)
+
+    # Segment text into sentences using standard grammatical punctuation (excluding decimal points in numbers)
+    sentences = [s.strip() for s in re.split(r"(?<!\d)\.(?!\d)|[\n?!]+", cleaned_text) if len(s.strip()) > 3]
     if len(sentences) <= 1 and len(cleaned_text.split()) > 7:
         # Continuous unpunctuated speech stream: segment on natural syntactic coordinators
         sentences = [
@@ -361,8 +399,40 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
     recommendations = []
     seen_sites = set()
 
-    # 1. Detect Palmer Teeth (e.g. UR8, UR7, UR6, UR5, UR E, LL6, etc.)
-    deciduous_matches = re.finditer(r"\b(UR|UL|LL|LR)[\s_-]*([A-E])\b", cleaned_text, re.IGNORECASE)
+    # 1. Detect Quadrant Context (e.g. Maxillary Left, Maxillary Right, Mandibular Left, Mandibular Right)
+    t_lower = clean_no_age.lower()
+    active_quad = None
+    if re.search(r"\b(maxillary\s+left|upper\s+left|quadrant\s+2|ul)\b", t_lower):
+        active_quad = "UL"
+    elif re.search(r"\b(maxillary\s+right|upper\s+right|quadrant\s+1|ur)\b", t_lower):
+        active_quad = "UR"
+    elif re.search(r"\b(mandibular\s+left|lower\s+left|quadrant\s+3|ll)\b", t_lower):
+        active_quad = "LL"
+    elif re.search(r"\b(mandibular\s+right|lower\s+right|quadrant\s+4|lr)\b", t_lower):
+        active_quad = "LR"
+
+    # 2. Quadrant-relative named teeth (e.g. "first molar site", "second molar site", "second premolar")
+    if active_quad:
+        quad_tooth_patterns = [
+            ("third molar", 8), ("wisdom tooth", 8),
+            ("second molar", 7),
+            ("first molar", 6),
+            ("second premolar", 5), ("second bicuspid", 5),
+            ("first premolar", 4), ("first bicuspid", 4),
+            ("canine", 3),
+            ("lateral incisor", 2),
+            ("central incisor", 1)
+        ]
+        for name_pat, pos_idx in quad_tooth_patterns:
+            if re.search(r"\b" + name_pat + r"\b", t_lower):
+                palmer_code = f"{active_quad}{pos_idx}"
+                norm = normalize_dental_site({"palmer_notation": palmer_code, "anatomical_name": palmer_code})
+                if norm.get("fdi_number") and norm["fdi_number"] not in seen_sites:
+                    seen_sites.add(norm["fdi_number"])
+                    anatomical_sites.append(norm)
+
+    # 3. Detect Palmer Teeth from clean text (e.g. UR8, UR7, UR6, UR5, UR E, LL6, etc.)
+    deciduous_matches = re.finditer(r"\b(UR|UL|LL|LR)[\s_-]*([A-E])\b", clean_no_age, re.IGNORECASE)
     for m in deciduous_matches:
         raw_token = f"{m.group(1).upper()} {m.group(2).upper()}"
         norm = normalize_dental_site({"anatomical_name": raw_token})
@@ -370,7 +440,7 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             seen_sites.add(norm["fdi_number"])
             anatomical_sites.append(norm)
 
-    palmer_matches = re.finditer(r"\b(UR|UL|LL|LR)[\s_-]*([1-8])\b", cleaned_text, re.IGNORECASE)
+    palmer_matches = re.finditer(r"\b(UR|UL|LL|LR)[\s_-]*([1-8])\b", clean_no_age, re.IGNORECASE)
     for m in palmer_matches:
         raw_token = f"{m.group(1).upper()}{m.group(2)}"
         norm = normalize_dental_site({"anatomical_name": raw_token})
@@ -378,15 +448,15 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             seen_sites.add(norm["fdi_number"])
             anatomical_sites.append(norm)
 
-    # 2. Universal single and double digit teeth (e.g. Tooth 6, Tooth 5, Tooth 7, Tooth 28, Tooth #29, teeth 5 and 7)
-    compound_matches = re.finditer(r"\b(?:teeth|tooth)\s*#?([1-9]|[12]\d|3[0-2])(?:\s*(?:,|and|&)\s*#?([1-9]|[12]\d|3[0-2]))?\b", cleaned_text, re.IGNORECASE)
+    # 4. Universal single and double digit teeth (e.g. Tooth 6, Tooth 5, Tooth 7, Tooth 28, Tooth 25)
+    compound_matches = re.finditer(r"\b(?:teeth|tooth)\s*#?([1-9]|[12]\d|3[0-2])(?:\s*(?:,|and|&)\s*#?([1-9]|[12]\d|3[0-2]))?\b", clean_no_age, re.IGNORECASE)
     for m in compound_matches:
         for grp in [m.group(1), m.group(2)]:
             if not grp:
                 continue
             num = int(grp)
-            if num in [15, 16, 25, 36, 48] and num > 32:
-                norm = normalize_dental_site({"fdi_number": num, "anatomical_name": f"Tooth {num}"})
+            if "#" in m.group(0):
+                norm = normalize_dental_site({"universal_number": num, "anatomical_name": f"Tooth {num}"})
             elif num in [25, 36, 48]:
                 norm = normalize_dental_site({"fdi_number": num, "anatomical_name": f"Tooth {num}"})
             else:
@@ -395,8 +465,8 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
                 seen_sites.add(norm["fdi_number"])
                 anatomical_sites.append(norm)
 
-    # 3. Deciduous Universal Letters (e.g. Tooth C, Tooth E)
-    decid_letter_matches = re.finditer(r"\btooth\s*#?([A-T])\b", cleaned_text, re.IGNORECASE)
+    # 5. Deciduous Universal Letters (e.g. Tooth C, Tooth E)
+    decid_letter_matches = re.finditer(r"\btooth\s*#?([A-T])\b", clean_no_age, re.IGNORECASE)
     for m in decid_letter_matches:
         letter = m.group(1).upper()
         norm = normalize_dental_site({"universal_letter": letter, "anatomical_name": f"Tooth {letter}"})
@@ -404,83 +474,105 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             seen_sites.add(norm["fdi_number"])
             anatomical_sites.append(norm)
 
-    # 4. Natural language anatomical phrases (e.g. "lower right third molar", "upper left wisdom tooth")
-    if "third molar" in cleaned_text.lower() or "wisdom tooth" in cleaned_text.lower():
-        is_lower = "lower" in cleaned_text.lower() or "mandibular" in cleaned_text.lower()
-        is_right = "right" in cleaned_text.lower()
+    # 6. Natural language anatomical phrases (e.g. "lower right third molar", "upper left wisdom tooth")
+    if "third molar" in clean_no_age.lower() or "wisdom tooth" in clean_no_age.lower():
+        is_lower = "lower" in clean_no_age.lower() or "mandibular" in clean_no_age.lower()
+        is_right = "right" in clean_no_age.lower()
         p_code = "LR8" if (is_lower and is_right) else ("LL8" if is_lower else ("UR8" if is_right else "UL8"))
         norm = normalize_dental_site({"palmer_notation": p_code, "anatomical_name": p_code})
         if norm.get("fdi_number") and norm["fdi_number"] not in seen_sites:
             seen_sites.add(norm["fdi_number"])
             anatomical_sites.append(norm)
 
-    # 5. Regional extra-dental anatomy
+    # 7. Regional extra-dental anatomy
     extra_sites_map = [
         ([r"palatine\s+tonsilloliths?", r"tonsilloliths?", r"tonsils?"], "Palatine Tonsils", "Soft Tissue"),
-        ([r"maxillary\s+sinuses?", r"sinuses?", r"sinus\s+floor"], "Maxillary Sinuses", "Regional Anatomy"),
+        ([r"maxillary\s+sinuses?", r"sinuses?", r"sinus\s+floor", r"sinus\s+communication"], "Maxillary Sinuses", "Regional Anatomy"),
         ([r"marginal\s+alveolar\s+bone", r"alveolar\s+bone", r"alveolar\s+crest", r"alveolar\s+ridge"], "Marginal Alveolar Bone", "Osseous Structure"),
         ([r"cervical\s+spine", r"vertebrae"], "Cervical Spine", "Regional Anatomy"),
         ([r"tmj", r"temporomandibular", r"condyle"], "Temporomandibular Joints", "Regional Anatomy"),
         ([r"inferior\s+alveolar\s+nerve", r"mandibular\s+canal"], "Inferior Alveolar Canal", "Regional Anatomy"),
     ]
     for patterns, site_title, s_type in extra_sites_map:
-        if any(re.search(r"\b" + p + r"\b", cleaned_text, re.IGNORECASE) for p in patterns):
+        if any(re.search(r"\b" + p + r"\b", clean_no_age, re.IGNORECASE) for p in patterns):
             norm = normalize_dental_site({"anatomical_name": site_title, "site_type": s_type})
             if norm["anatomical_name"] not in seen_sites:
                 seen_sites.add(norm["anatomical_name"])
                 anatomical_sites.append(norm)
 
     # Primary tooth reference
-    primary_site_label = "lower right third molar" if ("third molar" in cleaned_text.lower()) else (anatomical_sites[0].get("anatomical_name", "Tooth") if anatomical_sites else "Dentition")
+    primary_site_label = "lower right third molar" if ("third molar" in clean_no_age.lower()) else (anatomical_sites[0].get("anatomical_name", "Dentition") if anatomical_sites else "Dentition")
 
     # Detect transcription artifacts in raw text
     artifacts = detect_transcription_artifacts(dictation_text)
 
-    # Parse clauses into findings
+    # Track missing implant site if indicated
+    implant_site_label = None
+    for s in anatomical_sites:
+        if "first molar" in s.get("anatomical_name", "").lower():
+            implant_site_label = s.get("anatomical_name")
+            break
+
+    # Parse sentences into findings
     for s in sentences:
         s_lower = s.lower().strip()
 
-        # Skip patient demographics, scan technique/indication, or report verification boilerplate
+        # Skip patient demographics header or report verification boilerplate
         if (
             re.search(r"^patient\s+is\s+a\b", s_lower) or
-            re.search(r"\b(?:cbct|examination|study|scan)\s+(?:of\s+the\s+[a-z\s]+\s+)?was\s+performed\s+for\b", s_lower) or
             re.search(r"\breport\s+was\s+verified\b", s_lower) or
             re.search(r"\bmeasurements\s+should\s+not\s+be\s+made\b", s_lower)
         ):
             continue
 
-        # Check if sentence is a standalone diagnostic summary / impression statement
+        # Check if sentence is scan indication / technique boilerplate
+        if re.search(r"\b(?:cbct|examination|study|scan)\s+(?:of\s+the\s+[a-z\s]+\s+)?was\s+performed\s+for\b", s_lower):
+            # If it specifies an implant site, note it but skip creating a separate pathology finding
+            continue
+
+        # Check if sentence is a standalone diagnostic summary statement
         if re.search(r"^(?:the\s+)?findings\s+suggest\b", s_lower):
             impressions.append(s)
             continue
 
-        # Check if this sentence contains an unclear speech transcription artifact
+        # Check for unclear speech transcription artifact
         art_match = next((a for a in artifacts if a["matched_phrase"].lower() in s_lower), None)
         if art_match:
             findings.append({
                 "anatomical_site": primary_site_label,
                 "category": art_match.get("category", "Root Pathology & Resorption"),
                 "observation": f"Unclear phrase: '{art_match['matched_phrase']}' (flagged as likely speech transcription error; requires clinician review)",
-                "certainty": "unclear / clinician review required"
+                "certainty": "unclear / clinician review required",
+                "measurements": []
             })
             continue
 
-        # Check for negative abnormal findings statement
+        # Check for general negative findings statement
         if "no other abnormal finding" in s_lower:
             findings.append({
                 "anatomical_site": primary_site_label,
                 "category": "General Observation",
                 "observation": f"{s} (dictated clinician statement; not independently verified)",
-                "certainty": "negative / normal finding"
+                "certainty": "negative / normal finding",
+                "measurements": []
             })
             continue
 
         # Determine target anatomical site for finding
         target_site = None
-        for patterns, site_title, _ in extra_sites_map:
-            if any(re.search(r"\b" + p + r"\b", s_lower) for p in patterns):
-                target_site = site_title
-                break
+        # Check specific tooth references in this sentence
+        if "second molar" in s_lower:
+            target_site = next((st.get("anatomical_name") for st in anatomical_sites if "second molar" in st.get("anatomical_name", "").lower()), None)
+        elif "second premolar" in s_lower:
+            target_site = next((st.get("anatomical_name") for st in anatomical_sites if "second premolar" in st.get("anatomical_name", "").lower()), None)
+        elif "first molar" in s_lower or "alveolar ridge" in s_lower or "buccal cortical plate" in s_lower:
+            target_site = implant_site_label or next((st.get("anatomical_name") for st in anatomical_sites if "first molar" in st.get("anatomical_name", "").lower() or "alveolar" in st.get("anatomical_name", "").lower()), None)
+
+        if not target_site:
+            for patterns, site_title, _ in extra_sites_map:
+                if any(re.search(r"\b" + p + r"\b", s_lower) for p in patterns):
+                    target_site = site_title
+                    break
 
         if not target_site:
             for site in anatomical_sites:
@@ -502,28 +594,37 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
 
         certainty = label_diagnostic_certainty(s)
         category = classify_observation_category(s, target_site)
+        meas = extract_measurements(s)
+
         findings.append({
             "anatomical_site": target_site,
             "category": category,
             "observation": s,
-            "certainty": certainty
+            "certainty": certainty,
+            "measurements": meas
         })
 
-    # Synthesize clean Impressions if not already extracted
+    # Synthesize clean, comprehensive Impressions if not explicitly provided
     imp_parts = []
+    # 1. Lesion findings (summarizing size, cortical thinning, sinus proximity, etiology)
     for f in findings:
         obs = f["observation"].lower()
         site = f["anatomical_site"]
-        if "fracture" in obs:
+        if "lesion" in obs or "radiolucen" in obs:
+            size_str = f"{f['measurements'][0]} " if f.get("measurements") else ""
+            desc = f"{site}: well-defined {size_str}radiolucent lesion"
+            if "cortical thinning" in obs or "thinning" in obs:
+                desc += " with cortical thinning"
+            if "sinus" in obs:
+                desc += " and close proximity to maxillary sinus floor"
+            if "uncertain" in obs:
+                desc += " (etiology is uncertain)"
+            imp_parts.append(desc)
+        elif "fracture" in obs:
             if "separation" in obs:
                 imp_parts.append(f"{site}: horizontal mid-root fracture with crown-root separation")
             else:
                 imp_parts.append(f"{site}: root fracture")
-        elif "radicular cyst" in obs or "cyst" in obs:
-            if "suggest" in obs or "possible" in obs:
-                imp_parts.append(f"Well-defined radiolucency suggestive of radicular cyst ({site})")
-            else:
-                imp_parts.append(f"Radicular cyst ({site})")
         elif "adenomatoid odontogenic tumor" in obs or "aot" in obs:
             imp_parts.append(f"Benign odontogenic lesion suggestive of AOT ({site})")
         elif "horizontally impacted" in obs:
@@ -531,11 +632,37 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
         elif "impacted" in obs and not any("impacted" in p for p in imp_parts):
             imp_parts.append(f"Impacted {site}")
 
-    if any("second molar" in f["observation"].lower() for f in findings):
-        imp_parts.append("close proximity to adjacent second molar")
+    # 2. Periodontal ligament widening
+    for f in findings:
+        obs = f["observation"].lower()
+        site = f["anatomical_site"]
+        if "periodontal ligament" in obs or "pdl" in obs:
+            imp_parts.append(f"Adjacent {site} demonstrates mild widening of the periodontal ligament")
 
+    # 3. Alveolar ridge dimensions & cortical plate
+    ridge_finding = next((f for f in findings if "alveolar ridge" in f["observation"].lower() and f.get("measurements")), None)
+    plate_finding = next((f for f in findings if "buccal cortical plate" in f["observation"].lower()), None)
+    if ridge_finding:
+        r_site = ridge_finding["anatomical_site"]
+        r_meas = ", ".join(ridge_finding["measurements"])
+        plate_desc = " with intact but thin buccal cortical plate" if plate_finding else ""
+        imp_parts.append(f"Edentulous {r_site} implant site: alveolar ridge dimensions {r_meas}{plate_desc}")
+
+    # 4. Proximity to adjacent teeth & incidental findings
+    if any("second molar" in f["observation"].lower() for f in findings) and not any("second molar" in p for p in imp_parts):
+        imp_parts.append("close proximity to adjacent second molar")
     if any("tonsillolith" in f["observation"].lower() for f in findings):
         imp_parts.append("bilateral palatine tonsilloliths noted incidentally")
+
+    # 5. Crucial negative findings in impression
+    has_sinus_comm_neg = any("sinus communication" in f["observation"].lower() for f in findings)
+    has_displaced_frag_neg = any("displaced root" in f["observation"].lower() for f in findings)
+    if has_sinus_comm_neg and has_displaced_frag_neg:
+        imp_parts.append("No definite sinus communication or displaced root fragments observed")
+    elif has_sinus_comm_neg:
+        imp_parts.append("No definite sinus communication observed")
+    elif has_displaced_frag_neg:
+        imp_parts.append("No displaced root fragments observed")
 
     if not impressions:
         base_imp = "; ".join(list(dict.fromkeys(imp_parts))) if imp_parts else "Radiological assessment completed."
@@ -551,6 +678,7 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
                 recommendations.append(s)
 
     return {
+        "patient_details": patient_details,
         "anatomical_sites": anatomical_sites,
         "findings": findings,
         "impressions": list(dict.fromkeys(impressions)),

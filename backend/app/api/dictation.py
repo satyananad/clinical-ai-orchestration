@@ -242,6 +242,10 @@ def structure_dictation_endpoint(payload: DictationRequest):
     impressions = tool_res.get("impressions", [])
     recommendations = tool_res.get("recommendations", [])
     guardrails = tool_res.get("safety_guardrails", {})
+    patient_details = tool_res.get("patient_details") or {}
+    age = patient_details.get("age")
+    gender = patient_details.get("gender")
+    demographics_summary = patient_details.get("demographics_summary")
 
     # 2. Compose narrative draft
     narrative = compose_narrative(display_name, findings, impressions, recommendations)
@@ -266,7 +270,10 @@ def structure_dictation_endpoint(payload: DictationRequest):
         "patient_context": {
             "patient_name": display_name,
             "patient_id": display_id,
-            "patient_assigned": bool(patient_name or patient_id)
+            "patient_assigned": bool(patient_name or patient_id),
+            "age": age,
+            "gender": gender,
+            "demographics_summary": demographics_summary
         },
         "raw_dictation": dictation_text,
         "anatomical_sites": sites,

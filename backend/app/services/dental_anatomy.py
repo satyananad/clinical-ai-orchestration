@@ -219,8 +219,47 @@ def normalize_dental_site(site_raw: Dict[str, Any]) -> Dict[str, Any]:
             "universal_number": detected_num
         }
 
-    # 5. Fallback for Regional Anatomy (e.g., Sinus, TMJ, Nerve Canal)
-    is_regional = any(reg in raw_name.lower() for reg in ["sinus", "canal", "nerve", "tmj", "airway", "joint", "condyle", "spine", "bone"])
+    # 5. Detect by Natural Language Tooth Name + Quadrant
+    # e.g., "Maxillary left second molar", "Upper left first molar", "second premolar" with quadrant "Upper left (Maxillary)"
+    quad_str = (str(site_raw.get("quadrant", "")) + " " + raw_name).lower()
+    quad_code = None
+    if "maxillary left" in quad_str or "upper left" in quad_str:
+        quad_code = "UL"
+    elif "maxillary right" in quad_str or "upper right" in quad_str:
+        quad_code = "UR"
+    elif "mandibular left" in quad_str or "lower left" in quad_str:
+        quad_code = "LL"
+    elif "mandibular right" in quad_str or "lower right" in quad_str:
+        quad_code = "LR"
+
+    if quad_code:
+        pos_map = [
+            ("third molar", 8), ("wisdom tooth", 8),
+            ("second molar", 7),
+            ("first molar", 6),
+            ("second premolar", 5), ("second bicuspid", 5),
+            ("first premolar", 4), ("first bicuspid", 4),
+            ("canine", 3), ("cuspid", 3),
+            ("lateral incisor", 2),
+            ("central incisor", 1)
+        ]
+        for p_name, p_idx in pos_map:
+            if p_name in raw_name.lower():
+                key = f"{quad_code}{p_idx}"
+                if key in PERMANENT_TEETH:
+                    fdi, univ, quad_name, anat_name = PERMANENT_TEETH[key]
+                    palmer_std = get_standard_palmer_symbol(key)
+                    return {
+                        "site_type": "Tooth",
+                        "anatomical_name": f"{anat_name} ({palmer_std})",
+                        "quadrant": quad_name,
+                        "fdi_number": fdi,
+                        "palmer_notation": palmer_std,
+                        "universal_number": univ
+                    }
+
+    # 6. Fallback for Regional Anatomy (e.g., Sinus, TMJ, Nerve Canal, Bone)
+    is_regional = any(reg in raw_name.lower() for reg in ["sinus", "canal", "nerve", "tmj", "airway", "joint", "condyle", "spine", "bone", "ridge", "cortex", "plate"])
     return {
         "site_type": "Regional Anatomy" if is_regional else site_raw.get("site_type", "Tooth"),
         "anatomical_name": raw_name,
@@ -238,7 +277,7 @@ def classify_observation_category(observation: str, site_name: str = "") -> str:
     - Anatomical Relationships & Proximity: sinus floor proximity, nerve canal relation, root contact, orientation
     - Root Pathology & Resorption: external root resorption, internal resorption
     - Endodontic Status: root canal treatment, pulp stones, obturation
-    - Periapical & Osseous Status: radiolucency, periapical abscess, alveolar bone height, cortical border
+    - Periapical & Osseous Status: radiolucency, periapical abscess, alveolar bone height, cortical border, periodontal ligament
     - Restorative & Caries Status: restored, filling, coronal caries, crown
     - Sinonasal & Extra-Dental Structures: maxillary sinus, airway, cervical spine, TMJ
     """
@@ -261,7 +300,7 @@ def classify_observation_category(observation: str, site_name: str = "") -> str:
         return "Root Pathology & Resorption"
 
     # 5. Sinonasal & Extra-Dental Structures
-    if any(term in obs_lower for term in ["maxillary sinus", "sinuses", "sinus floor", "airway", "cervical spine", "calcification", "tonsillolith", "tonsils", "tmj", "temporomandibular", "ostia"]):
+    if any(term in obs_lower for term in ["maxillary sinus", "sinuses", "sinus floor", "sinus communication", "airway", "cervical spine", "calcification", "tonsillolith", "tonsils", "tmj", "temporomandibular", "ostia"]):
         if any(term in obs_lower for term in ["apices touch", "elevation of", "contacting the sinus", "touch the sinus"]):
             return "Anatomical Relationships & Proximity"
         return "Sinonasal & Extra-Dental Structures"
@@ -279,7 +318,7 @@ def classify_observation_category(observation: str, site_name: str = "") -> str:
         return "Restorative & Caries Status"
 
     # 9. Periapical & Osseous Status
-    if any(term in obs_lower for term in ["periapical", "radiolucency", "bone height", "alveolar", "periodontal attachment", "osteitis"]):
+    if any(term in obs_lower for term in ["periapical", "radiolucency", "bone height", "alveolar", "periodontal attachment", "osteitis", "periodontal ligament", "pdl", "cortical plate", "cortical thinning", "alveolar ridge", "ridge measures"]):
         return "Periapical & Osseous Status"
 
     return "General Observation"

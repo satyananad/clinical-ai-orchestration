@@ -294,6 +294,7 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             guardrails = verify_anti_hallucination(dictation_text, parsed.get("findings", []), impressions=parsed.get("impressions", []))
             return {
                 "status": "success",
+                "patient_details": parsed.get("patient_details"),
                 "raw_dictation": dictation_text,
                 "anatomical_sites": parsed.get("anatomical_sites", []),
                 "findings": parsed.get("findings", []),

@@ -42,7 +42,7 @@ LIMITATION_WORDS = ["limited", "obscured", "partially obscured", "superimpositio
 def classify_clinical_finding_status(text: str) -> Dict[str, str]:
     """
     Revised Rule 3: Separates clinical meaning into 3 independent dimensions:
-    - Certainty: confirmed, suspected, indeterminate
+    - Certainty: confirmed, suspected, indeterminate, confirmed_with_uncertain_etiology
     - Finding Status: positive, negative, not_documented
     - Image Limitation: none, limited, obscured, superimposition
     """
@@ -59,8 +59,15 @@ def classify_clinical_finding_status(text: str) -> Dict[str, str]:
 
     # 2. Finding Status Dimension (Positive vs Negative vs Normal)
     is_negated = any(re.search(r"\b" + re.escape(nw) + r"\b", t_lower) for nw in NEGATION_WORDS)
-    is_normal = any(term in t_lower for term in ["within normal limits", "normal physiological", "normal limits", "intact"])
-    
+    is_normal = any(term in t_lower for term in ["within normal limits", "normal physiological", "normal limits"])
+    if "intact" in t_lower and not any(term in t_lower for term in ["thin", "thinned", "defect", "resorption", "erosion", "loss"]):
+        is_normal = True
+
+    # Important: widening of the periodontal ligament, cortical thinning, or thin bone is positive clinical finding
+    has_positive_finding = any(re.search(r"\b" + re.escape(term) + r"\b", t_lower) for term in ["widening", "periodontal ligament", "pdl widening", "thin", "thinned", "lesion", "defect"])
+    if has_positive_finding and not is_negated:
+        is_normal = False
+
     if is_negated or is_normal:
         status = "negative"
     elif len(text.strip()) > 0:
@@ -70,7 +77,15 @@ def classify_clinical_finding_status(text: str) -> Dict[str, str]:
 
     # 3. Certainty Dimension (Confirmed vs Suspected vs Indeterminate)
     is_hedged = any(re.search(r"\b" + re.escape(hw) + r"\b", t_lower) for hw in HEDGING_WORDS)
-    if "no definite" in t_lower or "indeterminate" in t_lower or "equivocal" in t_lower:
+
+    # Check for confirmed lesion presence with uncertain etiology:
+    has_confirmed_lesion = bool(re.search(r"\b(lesion|radiolucency|defect|mass|cyst)\b", t_lower) and re.search(r"\b(present|observed|noted|identified|measures?)\b", t_lower))
+    has_uncertain_cause = bool(re.search(r"\b(etiology|cause|nature)\s+(?:is\s+)?(?:uncertain|unknown|indeterminate|unconfirmed)\b", t_lower) or "etiology is uncertain" in t_lower)
+
+    if has_confirmed_lesion and has_uncertain_cause:
+        certainty = "confirmed_with_uncertain_etiology"
+        status = "positive"
+    elif "no definite" in t_lower or "indeterminate" in t_lower or "equivocal" in t_lower:
         certainty = "indeterminate"
     elif is_hedged:
         certainty = "suspected"
@@ -78,7 +93,9 @@ def classify_clinical_finding_status(text: str) -> Dict[str, str]:
         certainty = "confirmed"
 
     # Backward-compatible label string
-    if status == "negative" and certainty == "indeterminate":
+    if certainty == "confirmed_with_uncertain_etiology":
+        legacy_label = "definite observation (etiology uncertain)"
+    elif status == "negative" and certainty == "indeterminate":
         legacy_label = "negative / normal finding"
     elif certainty == "suspected" or certainty == "indeterminate":
         legacy_label = "suspected / differential diagnosis"
@@ -98,26 +115,139 @@ def classify_clinical_finding_status(text: str) -> Dict[str, str]:
 
 
 # =============================================================================
+# PATIENT DEMOGRAPHICS EXTRACTION
+# =============================================================================
+def extract_patient_demographics(text: str) -> Dict[str, Any]:
+    """
+    Extracts age and gender from dictation text.
+    Handles '46-year-old female', 'age 46, female', '57-year-old male', etc.
+    """
+    age = None
+    gender = None
+    age_match = re.search(r"\b(\d{1,2})\s*(?:-|–|\s)?(?:year|yr)s?(?:-|–|\s)?old\b|\bage\s*(?:is\s*)?(\d{1,2})\b", text, re.IGNORECASE)
+    if age_match:
+        age_str = age_match.group(1) or age_match.group(2)
+        if age_str:
+            try:
+                age = int(age_str)
+            except ValueError:
+                pass
+
+    if re.search(r"\b(female|woman|girl)\b", text, re.IGNORECASE):
+        gender = "Female"
+    elif re.search(r"\b(male|man|boy)\b", text, re.IGNORECASE):
+        gender = "Male"
+
+    summary = None
+    if age and gender:
+        summary = f"{age}-year-old {gender.lower()}"
+    elif age:
+        summary = f"Age {age}"
+    elif gender:
+        summary = gender
+
+    return {"age": age, "gender": gender, "demographics_summary": summary}
+
+
+# =============================================================================
 # REVISED RULE 2: MULTI-DIMENSIONAL CLAIM VERIFICATION (LAYER 1)
 # =============================================================================
+def extract_quadrant_info(text: str) -> Optional[str]:
+    """Identifies the clinical quadrant referenced in text using strict word boundaries."""
+    t_lower = text.lower()
+    if re.search(r"\b(maxillary\s+left|upper\s+left|quadrant\s+2|ul)\b", t_lower):
+        return "maxillary_left"
+    if re.search(r"\b(maxillary\s+right|upper\s+right|quadrant\s+1|ur)\b", t_lower):
+        return "maxillary_right"
+    if re.search(r"\b(mandibular\s+left|lower\s+left|quadrant\s+3|ll)\b", t_lower):
+        return "mandibular_left"
+    if re.search(r"\b(mandibular\s+right|lower\s+right|quadrant\s+4|lr)\b", t_lower):
+        return "mandibular_right"
+    return None
+
+QUADRANT_ALLOWED_FDI = {
+    "maxillary_right": set(range(11, 19)).union(set(range(51, 56))),
+    "maxillary_left": set(range(21, 29)).union(set(range(61, 66))),
+    "mandibular_left": set(range(31, 39)).union(set(range(71, 76))),
+    "mandibular_right": set(range(41, 49)).union(set(range(81, 86)))
+}
+
 def extract_tooth_numbers(text: str) -> List[int]:
-    """Extracts all FDI, Universal, and Palmer tooth numbers from text."""
-    teeth = []
-    # FDI 2-digit (11-48)
-    fdi_matches = re.findall(r"\b(1[1-8]|2[1-8]|3[1-8]|4[1-8])\b", text)
-    teeth.extend([int(x) for x in fdi_matches])
-    
-    # Universal notation with # (e.g., #29, #16)
-    univ_matches = re.findall(r"#(\d{1,2})\b", text)
-    for u in univ_matches:
-        num = int(u)
-        if 1 <= num <= 32 and num not in teeth:
-            teeth.append(num)
-    return sorted(list(set(teeth)))
+    """
+    Extracts all teeth referenced in text, supporting:
+    - Explicit FDI notation (11-48, deciduous 51-85)
+    - Universal notation (#1-#32, Tooth 1-32, Tooth A-T)
+    - Palmer notation (UR1-8, UL1-8, LL1-8, LR1-8, UR A-E, etc.)
+    - Quadrant-relative named teeth (e.g. 'maxillary left first molar' -> 26)
+    Safely ignores patient age, measurements, and dates.
+    """
+    # 1. Strip age, measurements, years
+    clean_text = re.sub(r"\b\d{1,2}\s*(?:-|–|\s)?(?:year|yr)s?(?:-|–|\s)?old\b|\bage\s*(?:is\s*)?\d{1,2}\b", " ", text, flags=re.IGNORECASE)
+    clean_text = re.sub(r"\b\d+(?:\.\d+)?\s*(?:mm|cm|mg|ml|%)\b", " ", clean_text, flags=re.IGNORECASE)
+    clean_text = re.sub(r"\b(?:19|20)\d{2}\b", " ", clean_text)
+    t_lower = clean_text.lower()
+
+    teeth = set()
+
+    # 2. Quadrant context for relative tooth names
+    quad = None
+    if re.search(r"\b(maxillary\s+left|upper\s+left|quadrant\s+2|ul)\b", t_lower):
+        quad = "UL"
+    elif re.search(r"\b(maxillary\s+right|upper\s+right|quadrant\s+1|ur)\b", t_lower):
+        quad = "UR"
+    elif re.search(r"\b(mandibular\s+left|lower\s+left|quadrant\s+3|ll)\b", t_lower):
+        quad = "LL"
+    elif re.search(r"\b(mandibular\s+right|lower\s+right|quadrant\s+4|lr)\b", t_lower):
+        quad = "LR"
+
+    QUAD_MAP = {
+        "UR": {1: 11, 2: 12, 3: 13, 4: 14, 5: 15, 6: 16, 7: 17, 8: 18},
+        "UL": {1: 21, 2: 22, 3: 23, 4: 24, 5: 25, 6: 26, 7: 27, 8: 28},
+        "LL": {1: 31, 2: 32, 3: 33, 4: 34, 5: 35, 6: 36, 7: 37, 8: 38},
+        "LR": {1: 41, 2: 42, 3: 43, 4: 44, 5: 45, 6: 46, 7: 47, 8: 48},
+    }
+
+    TOOTH_POSITIONS = [
+        (8, [r"third\s+molar", r"wisdom\s+tooth"]),
+        (7, [r"second\s+molar"]),
+        (6, [r"first\s+molar"]),
+        (5, [r"second\s+premolar", r"second\s+bicuspid"]),
+        (4, [r"first\s+premolar", r"first\s+bicuspid"]),
+        (3, [r"canine", r"cuspid"]),
+        (2, [r"lateral\s+incisor"]),
+        (1, [r"central\s+incisor"])
+    ]
+
+    # Explicit palmer codes (e.g. UR6, UL7, LL5, LR8)
+    for m in re.finditer(r"\b(UR|UL|LL|LR)[\s_-]*([1-8])\b", clean_text, re.IGNORECASE):
+        q_code = m.group(1).upper()
+        pos = int(m.group(2))
+        teeth.add(QUAD_MAP[q_code][pos])
+
+    # If quadrant is established, resolve relative tooth descriptions
+    if quad:
+        for pos, patterns in TOOTH_POSITIONS:
+            if any(re.search(r"\b" + p + r"\b", t_lower) for p in patterns):
+                teeth.add(QUAD_MAP[quad][pos])
+
+    # Direct FDI numbers (e.g. 11-48)
+    for m in re.finditer(r"\b(1[1-8]|2[1-8]|3[1-8]|4[1-8])\b", clean_text):
+        teeth.add(int(m.group(1)))
+
+    # Universal numbers with prefix (e.g. #29, #14, Tooth 6, Tooth 14)
+    for m in re.finditer(r"(?:#|tooth\s*#?)([1-9]|[12]\d|3[0-2])\b", clean_text, re.IGNORECASE):
+        u_num = int(m.group(1))
+        # Map universal to FDI using permanent table
+        from .dental_anatomy import UNIVERSAL_TO_PERMANENT
+        if u_num in UNIVERSAL_TO_PERMANENT:
+            _, fdi_val, _, _ = UNIVERSAL_TO_PERMANENT[u_num]
+            teeth.add(fdi_val)
+
+    return sorted(list(teeth))
 
 def extract_measurements(text: str) -> List[str]:
-    """Extracts measurements and units (e.g. '8 mm', '1.5 mm', '8 x 7 mm')."""
-    return re.findall(r"\b\d+(?:\.\d+)?\s*(?:mm|cm|x\s*\d+(?:\.\d+)?\s*mm)?\b", text.lower())
+    """Extracts measurements and units (e.g. '8 mm', '1.5 mm', '8 x 7 mm', '5.2 mm', '10.8 mm')."""
+    return re.findall(r"\b\d+(?:\.\d+)?\s*(?:mm|cm|x\s*\d+(?:\.\d+)?\s*mm)\b", text.lower())
 
 def extract_laterality(text: str) -> Optional[str]:
     """Extracts laterality (left vs right) using strict word boundaries."""
@@ -140,7 +270,18 @@ def verify_single_claim_deterministic(source_text: str, claim_text: str) -> Dict
     src_lower = source_text.lower()
     claim_lower = claim_text.lower()
 
-    # Check 1: Tooth Number Mismatch (e.g. changing tooth 16 to tooth 46)
+    # Check 1: Laterality Mismatch (e.g. left vs right)
+    src_lat = extract_laterality(source_text)
+    claim_lat = extract_laterality(claim_text)
+    if src_lat and claim_lat and src_lat != "bilateral" and claim_lat != "bilateral" and src_lat != claim_lat:
+        return {
+            "status": ClaimStatus.CONTRADICTED,
+            "dimension": "laterality",
+            "details": f"Laterality contradiction: Source specifies {src_lat} side, but claim states {claim_lat} side.",
+            "claim": claim_text
+        }
+
+    # Check 2: Tooth Number Mismatch (e.g. changing tooth 16 to tooth 46)
     src_teeth = extract_tooth_numbers(source_text)
     claim_teeth = extract_tooth_numbers(claim_text)
     if claim_teeth and src_teeth:
@@ -152,17 +293,6 @@ def verify_single_claim_deterministic(source_text: str, claim_text: str) -> Dict
                 "details": f"Tooth number mismatch: Claim mentions tooth {mismatched_teeth}, but source references tooth {src_teeth}.",
                 "claim": claim_text
             }
-
-    # Check 2: Laterality Mismatch (e.g. left vs right)
-    src_lat = extract_laterality(source_text)
-    claim_lat = extract_laterality(claim_text)
-    if src_lat and claim_lat and src_lat != "bilateral" and claim_lat != "bilateral" and src_lat != claim_lat:
-        return {
-            "status": ClaimStatus.CONTRADICTED,
-            "dimension": "laterality",
-            "details": f"Laterality contradiction: Source specifies {src_lat} side, but claim states {claim_lat} side.",
-            "claim": claim_text
-        }
 
     # Check 3: Measurement Mismatch (e.g. 4 mm vs 8 mm)
     src_meas = extract_measurements(source_text)
@@ -297,6 +427,63 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
             unsupported_claims.append(res)
         else:
             verified_count += 1
+
+    # Check Quadrant Concordance across all findings (e.g. maxillary left vs mandibular right)
+    src_quad = extract_quadrant_info(raw_dictation)
+    if src_quad and src_quad in QUADRANT_ALLOWED_FDI:
+        allowed_teeth = QUADRANT_ALLOWED_FDI[src_quad]
+        for f in findings:
+            f_text = f"{f.get('anatomical_site', '')} {f.get('observation', '')}"
+            finding_teeth = extract_tooth_numbers(f_text)
+            violating_teeth = [t for t in finding_teeth if t not in allowed_teeth]
+            if violating_teeth:
+                contradicted_claims.append({
+                    "status": ClaimStatus.CONTRADICTED,
+                    "dimension": "quadrant_concordance",
+                    "details": f"Quadrant contradiction: Dictation is scoped to {src_quad.replace('_', ' ')}, but finding specifies tooth {violating_teeth} from a conflicting quadrant.",
+                    "claim": f.get("observation", "")
+                })
+
+    # Check Key Measurement Preservation (e.g. 5.2 mm, 10.8 mm, 7.5 mm)
+    raw_measurements = extract_measurements(raw_dictation)
+    all_findings_text = " ".join([f.get("observation", "") for f in findings]).lower()
+    all_findings_measurements = []
+    for f in findings:
+        for m in f.get("measurements", []):
+            all_findings_measurements.append(str(m).lower())
+    for rm in raw_measurements:
+        if rm not in all_findings_text and not any(rm in fm for fm in all_findings_measurements):
+            unsupported_claims.append({
+                "status": ClaimStatus.INSUFFICIENT_EVIDENCE,
+                "dimension": "omitted_measurement",
+                "details": f"Clinical measurement '{rm}' was dictated but omitted from structured findings.",
+                "claim": f"Omitted measurement: {rm}"
+            })
+
+    # Check Crucial Negative Findings Preservation (e.g. sinus communication, displaced root fragments)
+    critical_negative_clauses = [
+        ("sinus communication", ["sinus communication"]),
+        ("displaced root fragments", ["displaced root", "root fragments", "displaced fragments"]),
+        ("root resorption", ["root resorption"]),
+        ("periapical pathology", ["periapical pathology", "periapical radiolucency"])
+    ]
+    for term_label, term_patterns in critical_negative_clauses:
+        for pat in term_patterns:
+            neg_pattern = r"\b(?:no|without|denies|negative for)\s+(?:definite\s+|evidence of\s+)?" + re.escape(pat) + r"\b"
+            if re.search(neg_pattern, raw_dictation, re.IGNORECASE):
+                found_neg = any(
+                    re.search(neg_pattern, f.get("observation", ""), re.IGNORECASE) or
+                    (pat in f.get("observation", "").lower() and any(nw in f.get("observation", "").lower() for nw in NEGATION_WORDS))
+                    for f in findings
+                )
+                if not found_neg:
+                    unsupported_claims.append({
+                        "status": ClaimStatus.INSUFFICIENT_EVIDENCE,
+                        "dimension": "omitted_negative_finding",
+                        "details": f"Dictated negative finding ('no {pat}') was omitted from structured findings.",
+                        "claim": f"Omitted negative finding: no {pat}"
+                    })
+                break
 
     # Cross-Check: Findings vs Impressions for Clinical Contradictions
     if impressions:

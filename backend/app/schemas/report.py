@@ -52,6 +52,7 @@ class ClinicalFindingItem(BaseModel):
     category: str
     observation: str
     certainty: str
+    measurements: Optional[List[str]] = []
 
 class SafetyGuardrails(BaseModel):
     status: str
