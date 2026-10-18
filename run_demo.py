@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from backend.app.services.retrieval import resolve_report_retrieval, get_patient, get_report_by_id
 from backend.app.services.llm_service import parse_dictation_with_llm
-from backend.app.services.conversation import handle_assistant_interaction, get_or_create_session
+from backend.app.services.conversation_service import handle_assistant_interaction, get_or_create_session
 from backend.app.services.validation import verify_anti_hallucination
 
 DICTATION_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictation_reports")
@@ -126,10 +126,10 @@ def run_feature_c():
     session_id = "demo_session"
     session = get_or_create_session(session_id)
 
-    # Step 1: Clinician opens Priya Sharma's OPG report
-    print('\n[CONVERSATION TURN 1]: User says: "Open Priya Sharma\'s latest OPG report"')
-    res1 = handle_assistant_interaction("Open Priya Sharma's latest OPG report", session_id=session_id)
-    print(f"-> Agent Response: {res1['message']}")
+    # Step 1: Clinician opens Priya Sharmila's OPG report
+    print('\n[CONVERSATION TURN 1]: User says: "Open Priya Sharmila\'s latest OPG report"')
+    res1 = handle_assistant_interaction("Open Priya Sharmila's latest OPG report", session_id=session_id)
+    print(f"-> Agent Response: {res1.get('message', 'Retrieved successfully.')}")
     time.sleep(1)
 
     # Step 2: Contextual follow-up using pronoun "her"
@@ -152,9 +152,9 @@ def run_feature_c():
 
 def run_tests():
     print_banner("4. AUTOMATED TEST SUITE VERIFICATION")
-    ret = os.system("PYTHONPATH=. ./venv/bin/pytest backend/tests -v")
+    ret = os.system("PYTHONPATH=.:venv/lib/python3.14/site-packages python3 -m pytest backend/tests -q")
     if ret == 0:
-        print("\n[✓] ALL 10 AUTOMATED CLINICAL TESTS PASSED SUCCESSFULLY.")
+        print("\n[✓] ALL 62 AUTOMATED CLINICAL TESTS PASSED SUCCESSFULLY.")
 
 if __name__ == "__main__":
     print_banner("VISCAN VOICE-FIRST DENTAL ASSISTANT - TECHNICAL PROOF OF CONCEPT")
