@@ -144,4 +144,100 @@ def test_identical_full_names_safety_gate():
     assert "PAT-1001" in candidate_ids
     assert "PAT-1012" in candidate_ids
 
+def test_disambiguation_via_birth_year_and_asr_slip():
+    """
+    Multi-Turn Disambiguation:
+    1. Query matches two identical namesakes (Priya Sharma DOB 1998 vs DOB 1985).
+    2. Clinician clarifies with speech slip 'dob 9098' (for 1998) or year '1998'.
+    3. System resolves candidate PAT-1001 and opens the report.
+    """
+    # Turn 1: Clarification needed
+    session_id = "session_dob_test_1"
+    res1 = client.post("/assistant/chat", json={
+        "query": "Open Priya Sharma's latest OPG report",
+        "session_id": session_id
+    })
+    assert res1.status_code == 200
+    assert res1.json()["status"] == "clarification_required"
+    assert len(res1.json()["candidates"]) == 2
+
+    # Turn 2: Speech slip 'dob 9098' (nineteen ninety-eight transcribed as 9098)
+    res2 = client.post("/assistant/chat", json={
+        "query": "dob 9098",
+        "session_id": session_id
+    })
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["status"] == "success"
+    assert data2["patient"]["patient_id"] == "PAT-1001"
+    assert data2["patient"]["date_of_birth"] == "1998-04-12"
+    assert data2["report"]["report_id"] == "RPT-2001"
+
+    # Turn 3 (another session): Pure birth year '1985'
+    session_id_2 = "session_dob_test_2"
+    client.post("/assistant/chat", json={
+        "query": "Open Priya Sharma's latest OPG report",
+        "session_id": session_id_2
+    })
+    res3 = client.post("/assistant/chat", json={
+        "query": "1985",
+        "session_id": session_id_2
+    })
+    assert res3.status_code == 200
+    data3 = res3.json()
+    assert data3["status"] == "success"
+    assert data3["patient"]["patient_id"] == "PAT-1012"
+    assert data3["patient"]["date_of_birth"] == "1985-02-14"
+
+def test_compound_query_with_id_slip_resolves_directly():
+    """
+    Single-Turn Resolution:
+    When clinician supplies identifying details (like 'PT 10001' or birth year '1998')
+    along with full name, the system resolves directly without unnecessary clarification.
+    """
+    # Query with ID slip PT 10001
+    res1 = client.post("/assistant/chat", json={
+        "query": "Priya Sharma PT 10001",
+        "session_id": "session_compound_1"
+    })
+    assert res1.status_code == 200
+    data1 = res1.json()
+    assert data1["status"] == "success"
+    assert data1["patient"]["patient_id"] == "PAT-1001"
+
+    # Query with birth year
+    res2 = client.post("/assistant/chat", json={
+        "query": "Priya Sharma 1998",
+        "session_id": "session_compound_2"
+    })
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["status"] == "success"
+    assert data2["patient"]["patient_id"] == "PAT-1001"
+
+def test_topic_switch_during_pending_clarification():
+    """
+    Topic Switch:
+    Clinician asks for Priya Sharma (triggers clarification), then switches topic
+    to ask 'how many report you have'. The system must answer the database query
+    rather than failing or getting stuck in clarification.
+    """
+    session_id = "session_topic_switch"
+    res1 = client.post("/assistant/chat", json={
+        "query": "can you open the Priya Sharma report",
+        "session_id": session_id
+    })
+    assert res1.status_code == 200
+    assert res1.json()["status"] == "clarification_required"
+
+    res2 = client.post("/assistant/chat", json={
+        "query": "how many report you have",
+        "session_id": session_id
+    })
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["status"] == "success"
+    assert "radiological reports across" in data2["answer"]
+
+
 

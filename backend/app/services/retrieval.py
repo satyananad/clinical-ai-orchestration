@@ -32,10 +32,17 @@ def search_patients(query: str) -> List[Dict[str, Any]]:
     if not clean_q:
         return PATIENTS_DATA
 
-    # 1. Exact Patient ID match (e.g. PAT-1001)
+    # 1. Exact or prefixed Patient ID match (e.g. PAT-1001, PT 10001, PAT 1001, PT-1001)
     for p in PATIENTS_DATA:
         p_id = p["patient_id"].lower()
-        if clean_q == p_id or re.search(r"\b" + re.escape(p_id) + r"\b", clean_q):
+        p_num = "".join(filter(str.isdigit, p_id))
+        id_pattern = r"\b(?:pat|pt)[- ]?0*" + re.escape(p_num[:1]) + r"0*" + re.escape(p_num[1:]) + r"\b"
+        if (
+            clean_q == p_id
+            or re.search(r"\b" + re.escape(p_id) + r"\b", clean_q)
+            or re.search(id_pattern, clean_q)
+            or clean_q == p_num
+        ):
             p_copy = dict(p)
             p_copy["reports"] = [dict(r, patient_id=p["patient_id"]) for r in p.get("reports", [])]
             return [p_copy]
@@ -51,8 +58,47 @@ def search_patients(query: str) -> List[Dict[str, Any]]:
             p_copy["reports"] = [dict(r, patient_id=p["patient_id"]) for r in p.get("reports", [])]
             full_matches.append(p_copy)
 
-    # If full name matches are found, return them directly
+    # If full name matches are found:
     if full_matches:
+        if len(full_matches) == 1:
+            return full_matches
+
+        # If multiple candidates share the exact same name (e.g. two Priya Sharmas),
+        # check if query contains differentiating details (DOB, birth year, ID digits, sex).
+        differentiated = []
+        for cand in full_matches:
+            c_id = cand["patient_id"].lower()
+            c_num = "".join(filter(str.isdigit, c_id))
+            c_dob = cand.get("date_of_birth", "")
+            c_year = c_dob.split("-")[0] if c_dob else ""
+            c_sex = cand.get("sex", "").lower()
+
+            # ID / digit match
+            id_match = (
+                c_id in clean_q
+                or bool(c_num and (
+                    re.search(r"\b(?:pat|pt)?[- ]?0*" + re.escape(c_num) + r"\b", clean_q)
+                    or re.search(r"\b" + re.escape(c_num[:1]) + r"0*" + re.escape(c_num[1:]) + r"\b", clean_q)
+                ))
+            )
+
+            # DOB / year match (including STT slips like 9098 for 1998)
+            dob_match = False
+            if c_dob and c_dob in clean_q:
+                dob_match = True
+            elif c_year and re.search(r"\b" + re.escape(c_year) + r"\b", clean_q):
+                dob_match = True
+            elif c_year and len(c_year) >= 2 and re.search(r"\b(?:dob|born|birth)?\D*(?:90" + re.escape(c_year[-2:]) + r"|" + re.escape(c_year[-2:]) + r")\b", clean_q):
+                dob_match = True
+
+            # Sex match (if candidates differ)
+            sex_match = bool(c_sex and re.search(r"\b" + re.escape(c_sex) + r"\b", clean_q))
+
+            if id_match or dob_match or sex_match:
+                differentiated.append(cand)
+
+        if len(differentiated) == 1:
+            return differentiated
         return full_matches
 
     # 3. Partial / Ambiguous First Name Match (e.g. 'Priya' matching Sharma, Sharmila, Nair)
@@ -73,7 +119,26 @@ def search_patients(query: str) -> List[Dict[str, Any]]:
             p_copy["reports"] = [dict(r, patient_id=p["patient_id"]) for r in p.get("reports", [])]
             partial_matches.append(p_copy)
 
-    return partial_matches
+    if partial_matches:
+        return partial_matches
+
+    # 4. Search by Date of Birth / Birth Year alone (e.g. '1998', 'dob 1998', 'dob 9098')
+    dob_matches = []
+    for p in PATIENTS_DATA:
+        p_dob = p.get("date_of_birth", "")
+        if not p_dob:
+            continue
+        p_year = p_dob.split("-")[0]
+        if p_dob in clean_q or re.search(r"\b" + re.escape(p_year) + r"\b", clean_q):
+            p_copy = dict(p)
+            p_copy["reports"] = [dict(r, patient_id=p["patient_id"]) for r in p.get("reports", [])]
+            dob_matches.append(p_copy)
+        elif re.search(r"\b(?:dob|born|birth)\D*(?:90" + re.escape(p_year[-2:]) + r"|" + re.escape(p_year[-2:]) + r")\b", clean_q):
+            p_copy = dict(p)
+            p_copy["reports"] = [dict(r, patient_id=p["patient_id"]) for r in p.get("reports", [])]
+            dob_matches.append(p_copy)
+
+    return dob_matches
 
 def get_patient(patient_id: str) -> Optional[Dict[str, Any]]:
     clean_id = patient_id.strip().upper()

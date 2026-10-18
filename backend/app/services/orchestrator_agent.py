@@ -49,14 +49,176 @@ Output strictly a JSON object with this format:
 }
 """
 
+def resolve_pending_candidates_from_query(
+    query: str,
+    candidates: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Evaluates clinician query against pending clarification candidates using generic model fields:
+    - patient_id (exact ID or numeric digits)
+    - date_of_birth (exact ISO date, 4-digit birth year, 2-digit suffix, or ASR phoneme slip e.g. 9098 for 1998)
+    - patient_name (exact full name or distinctive name token)
+    - sex (if candidates differ by sex)
+    - ordinal selection (first, 1st, second, 2nd, option 1, option 2, etc.)
+    """
+    q_lower = query.lower().strip()
+    if not candidates:
+        return {"status": "unmatched"}
+
+    # 1. Ordinal matching (e.g. "the first patient", "second one", "option 2", "1st")
+    ordinal_map = {
+        "first": 0, "1st": 0, "one": 0, "1": 0,
+        "second": 1, "2nd": 1, "two": 1, "2": 1,
+        "third": 2, "3rd": 2, "three": 2, "3": 2,
+        "fourth": 3, "4th": 3, "four": 3, "4": 3,
+        "fifth": 4, "5th": 4, "five": 4, "5": 4
+    }
+    select_verb = any(v in q_lower for v in ["select", "choose", "pick", "open", "the", "patient", "candidate", "option", "number"])
+    matched_idx = None
+    for word, idx in ordinal_map.items():
+        pattern = r"\b(?:the\s+)?(?:" + re.escape(word) + r")\s*(?:patient|candidate|one|record|option)?\b"
+        if re.search(pattern, q_lower) and select_verb:
+            matched_idx = idx
+            break
+        if re.search(r"\b(?:option|candidate|patient|number|#)\s*" + re.escape(word) + r"\b", q_lower):
+            matched_idx = idx
+            break
+
+    if matched_idx is not None:
+        if 0 <= matched_idx < len(candidates):
+            return {
+                "status": "resolved",
+                "matched_candidate": candidates[matched_idx]
+            }
+        else:
+            return {
+                "status": "invalid_selection",
+                "requested_index": matched_idx + 1
+            }
+
+    # 2. Check each candidate against generic model attributes
+    matches = []
+    for cand in candidates:
+        c_id = cand.get("patient_id", "").lower()
+        c_num = "".join(filter(str.isdigit, c_id))
+        c_name = cand.get("patient_name", "").lower()
+        c_dob = cand.get("date_of_birth", "")
+        c_year = c_dob.split("-")[0] if c_dob else ""
+        c_sex = cand.get("sex", "").lower()
+
+        # A. Patient ID matching (e.g. PAT-1001, PT 10001, 1001)
+        id_matched = False
+        if c_id and c_id in q_lower:
+            id_matched = True
+        elif c_num and (
+            re.search(r"\b(?:pat|pt)?[- ]?0*" + re.escape(c_num) + r"\b", q_lower)
+            or re.search(r"\b" + re.escape(c_num) + r"\b", q_lower)
+            or (len(c_num) >= 4 and re.search(r"\b" + re.escape(c_num[:1]) + r"0*" + re.escape(c_num[1:]) + r"\b", q_lower))
+        ):
+            id_matched = True
+
+        # B. DOB / Birth Year matching (e.g. 1998, 1998-04-12, dob 1998, dob 9098, 998)
+        dob_matched = False
+        if c_dob and c_dob in q_lower:
+            dob_matched = True
+        elif c_year:
+            if re.search(r"\b" + re.escape(c_year) + r"\b", q_lower):
+                dob_matched = True
+            elif len(c_year) >= 2:
+                year_suffix = c_year[-2:]
+                if re.search(r"\b(?:dob|born|birth)?\D*(?:90" + re.escape(year_suffix) + r"|9" + re.escape(year_suffix) + r"|" + re.escape(year_suffix) + r")\b", q_lower):
+                    dob_matched = True
+
+        # C. Name matching (distinguishing surname or distinctive first/middle name)
+        name_matched = False
+        cand_tokens = set(re.findall(r"\b[a-zA-Z0-9_-]+\b", c_name))
+        other_tokens = set()
+        for other in candidates:
+            if other.get("patient_id") != cand.get("patient_id"):
+                other_tokens.update(re.findall(r"\b[a-zA-Z0-9_-]+\b", other.get("patient_name", "").lower()))
+        distinctive_tokens = cand_tokens - other_tokens
+        if distinctive_tokens and any(token in q_lower for token in distinctive_tokens):
+            name_matched = True
+        elif c_name in q_lower and all(c_name not in other.get("patient_name", "").lower() for other in candidates if other.get("patient_id") != cand.get("patient_id")):
+            name_matched = True
+
+        # D. Sex matching (if candidates differ by sex)
+        sex_matched = False
+        other_sexes = {other.get("sex", "").lower() for other in candidates if other.get("patient_id") != cand.get("patient_id")}
+        if c_sex and c_sex not in other_sexes and re.search(r"\b" + re.escape(c_sex) + r"\b", q_lower):
+            sex_matched = True
+
+        if id_matched or dob_matched or name_matched or sex_matched:
+            matches.append(cand)
+
+    if len(matches) == 1:
+        return {
+            "status": "resolved",
+            "matched_candidate": matches[0]
+        }
+    elif len(matches) > 1:
+        return {
+            "status": "narrowed",
+            "remaining_candidates": matches
+        }
+
+    # 3. Explicit selection of unlisted candidate
+    if any(v in q_lower for v in ["select", "choose", "pick"]):
+        return {
+            "status": "invalid_selection",
+            "raw_query": query
+        }
+
+    return {"status": "unmatched"}
+
 def triage_clinician_request(query: str, session_id: str = "default_session") -> Dict[str, Any]:
     """
     Decides which specialized agent and MCP tool to invoke.
-    Primary: LLM Dynamic Multi-Agent Triage using full conversational context.
-    Secondary: Safety fallback if LLM service is offline.
+    Step 0: Disambiguation candidate resolution if clarification is pending.
+    Step 1: LLM Dynamic Multi-Agent Triage using full conversational context.
+    Step 2: Safety fallback if LLM service is offline or unhandled.
     """
     session = get_or_create_session(session_id)
     q_lower = query.lower().strip()
+
+    # Step 0: Disambiguation candidate selection from pending clarification
+    if session.pending_candidates:
+        clarification_res = resolve_pending_candidates_from_query(query, session.pending_candidates)
+        query_intent = extract_retrieval_intent(query)
+        detected_mod = query_intent.get("report_type", "Any")
+        effective_mod = detected_mod if detected_mod != "Any" else (session.last_retrieval_modality or "Any")
+
+        if clarification_res["status"] == "resolved":
+            cand = clarification_res["matched_candidate"]
+            session.pending_candidates = None
+            return {
+                "selected_agent": "RetrievalAgent",
+                "tool_name": "search_patient_reports",
+                "arguments": {
+                    "patient_name": cand["patient_name"],
+                    "patient_id": cand["patient_id"],
+                    "modality": effective_mod
+                },
+                "rationale": f"Clarification Resolution: Matched unique candidate {cand['patient_name']} ({cand['patient_id']})."
+            }
+        elif clarification_res["status"] == "narrowed":
+            session.pending_candidates = clarification_res["remaining_candidates"]
+        elif clarification_res["status"] == "invalid_selection":
+            return {
+                "selected_agent": "RetrievalAgent",
+                "tool_name": "invalid_candidate_selection",
+                "arguments": {
+                    "requested_index": clarification_res.get("requested_index"),
+                    "total_candidates": len(session.pending_candidates)
+                },
+                "rationale": f"Safety Gate: Rejected out-of-range candidate selection #{clarification_res.get('requested_index')}."
+            }
+        else:
+            # Query did not address the clarification; check if user is asking a database question or changing topic
+            is_database_q = any(q_lower.startswith(w) for w in ["how many", "how much", "which", "who", "list", "what", "show"]) or "database" in q_lower or "?" in q_lower
+            has_retrieval_cmd = any(verb in q_lower for verb in ["open", "find", "load", "retrieve", "book", "schedule", "cancel", "stop"])
+            if is_database_q or has_retrieval_cmd:
+                session.pending_candidates = None
 
     # Step 1: Native LLM Function / Tool Calling (Direct Ollama / OpenAI Tool Calling Interface)
     messages = [
@@ -113,102 +275,6 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     },
                     "rationale": "Fallback: Speech repair targeting previous retrieval."
                 }
-
-    # 2B. Disambiguation candidate selection from pending clarification
-    if session.pending_candidates:
-        query_intent = extract_retrieval_intent(query)
-        detected_mod = query_intent.get("report_type", "Any")
-        effective_mod = detected_mod if detected_mod != "Any" else (session.last_retrieval_modality or "Any")
-
-        # 2B.1 Patient ID direct match in pending candidates (Unambiguous)
-        id_matches = [cand for cand in session.pending_candidates if cand["patient_id"].lower() in q_lower]
-        if len(id_matches) == 1:
-            cand = id_matches[0]
-            session.pending_candidates = None
-            return {
-                "selected_agent": "RetrievalAgent",
-                "tool_name": "search_patient_reports",
-                "arguments": {
-                    "patient_name": cand["patient_name"],
-                    "patient_id": cand["patient_id"],
-                    "modality": effective_mod
-                },
-                "rationale": f"Clarification Resolution: Matched unique candidate ID {cand['patient_id']}."
-            }
-
-        # 2B.2 Unique Name match in pending candidates
-        # Must only resolve if EXACTLY ONE candidate matches that name (avoids identical namesakes)
-        name_matches = [
-            cand for cand in session.pending_candidates
-            if cand["patient_name"].lower() in q_lower
-        ]
-        if len(name_matches) == 1:
-            cand = name_matches[0]
-            session.pending_candidates = None
-            return {
-                "selected_agent": "RetrievalAgent",
-                "tool_name": "search_patient_reports",
-                "arguments": {
-                    "patient_name": cand["patient_name"],
-                    "patient_id": cand["patient_id"],
-                    "modality": effective_mod
-                },
-                "rationale": f"Clarification Resolution: Matched unique candidate name {cand['patient_name']} ({cand['patient_id']})."
-            }
-        elif len(name_matches) > 1:
-            # Both candidates share this name (e.g. two Priya Sharmas).
-            # Clarification must continue with only the matching subset.
-            session.pending_candidates = name_matches
-            # Fall through to general retrieval or clarification below
-
-        # 2B.2 Ordinal selection (e.g. "Select the second patient", "the 1st one", "option 2")
-        ordinal_map = {
-            "first": 0, "1st": 0,
-            "second": 1, "2nd": 1,
-            "third": 2, "3rd": 2,
-            "fourth": 3, "4th": 3,
-            "fifth": 4, "5th": 4
-        }
-        select_verb = any(v in q_lower for v in ["select", "choose", "pick", "open", "the", "patient"])
-        matched_idx = None
-        for word, idx in ordinal_map.items():
-            pattern = r"\b(?:the\s+)?(?:" + re.escape(word) + r")\s*(?:patient|candidate|one|record)?\b"
-            if re.search(pattern, q_lower) and select_verb:
-                matched_idx = idx
-                break
-
-        if matched_idx is not None:
-            if 0 <= matched_idx < len(session.pending_candidates):
-                chosen = session.pending_candidates[matched_idx]
-                return {
-                    "selected_agent": "RetrievalAgent",
-                    "tool_name": "search_patient_reports",
-                    "arguments": {
-                        "patient_name": chosen["patient_name"],
-                        "patient_id": chosen["patient_id"],
-                        "modality": effective_mod
-                    },
-                    "rationale": f"Clarification Resolution: Selected candidate #{matched_idx + 1} ({chosen['patient_name']})."
-                }
-            else:
-                return {
-                    "selected_agent": "RetrievalAgent",
-                    "tool_name": "invalid_candidate_selection",
-                    "arguments": {
-                        "requested_index": matched_idx + 1,
-                        "total_candidates": len(session.pending_candidates)
-                    },
-                    "rationale": f"Safety Gate: Rejected out-of-range candidate selection #{matched_idx + 1}."
-                }
-
-        # 2B.3 User attempted to select an unlisted candidate
-        if any(v in q_lower for v in ["select", "choose", "pick"]):
-            return {
-                "selected_agent": "RetrievalAgent",
-                "tool_name": "invalid_candidate_selection",
-                "arguments": {"raw_query": query},
-                "rationale": "Safety Gate: Rejected unlisted candidate selection."
-            }
 
     # 2B.4 Scan Booking Confirmation from pending slots
     if session.pending_booking_slots:
