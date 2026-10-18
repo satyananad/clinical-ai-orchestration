@@ -143,7 +143,7 @@ def answer_report_question(report_id: str, query: str) -> Dict[str, Any]:
 
     user_message = f"Clinician Question: {query}\n\nProvide a factual, grounded answer with citations to the report sections."
 
-    # Query the configured LLM (Tiered Groq Cloud LPU + Local Ollama)
+    # Query the configured LLM (Local Ollama)
     llm_response = query_llm(user_message, system_prompt=prompt, json_format=False)
 
     if llm_response and len(llm_response.strip()) > 10:
@@ -171,22 +171,29 @@ def answer_report_question(report_id: str, query: str) -> Dict[str, Any]:
     }
     q_tokens = {w for w in re.findall(r"\b[a-zA-Z0-9_-]+\b", q_lower) if w not in stop_words and len(w) > 2}
 
+    # Generalized semantic finding matcher
+    # Checks exact tokens, morphological stems (len >= 4), tooth number references, and dental aliases
     for f in findings:
-        combined = (f.get("region", "") + " " + f.get("observation", "")).lower()
+        combined = (str(f.get("region", "")) + " " + str(f.get("observation", ""))).lower()
         f_tokens = set(re.findall(r"\b[a-zA-Z0-9_-]+\b", combined))
-        # Check token intersection or common dental patterns
+
+        # 1. Direct token overlap
         if q_tokens & f_tokens:
             matched_findings.append(f)
-        elif any(term in combined for term in ["third molar", "48", "38", "wisdom", "impaction"]) and any(term in q_lower for term in ["third molar", "48", "38", "wisdom", "impaction"]):
+            continue
+
+        # 2. Morphological stem / substring overlap for substantive clinical words
+        if any((len(qt) >= 4 and len(ft) >= 4 and (qt in ft or ft in qt)) for qt in q_tokens for ft in f_tokens):
             matched_findings.append(f)
-        elif any(term in combined for term in ["caries", "decay", "cavity"]) and any(term in q_lower for term in ["caries", "decay", "cavity"]):
+            continue
+
+        # 3. Dental clinical synonyms / tooth aliases (e.g. wisdom tooth <-> third molar)
+        if ("wisdom" in q_lower and any(w in combined for w in ["third molar", "38", "48", "18", "28", "wisdom"])) or \
+           ("third molar" in q_lower and any(w in combined for w in ["wisdom", "38", "48", "18", "28"])) or \
+           ("bicuspid" in q_lower and "premolar" in combined) or \
+           ("premolar" in q_lower and "bicuspid" in combined):
             matched_findings.append(f)
-        elif any(term in combined for term in ["sinus", "maxillary"]) and any(term in q_lower for term in ["sinus", "maxillary"]):
-            matched_findings.append(f)
-        elif any(term in combined for term in ["bone", "resorption", "ridge"]) and any(term in q_lower for term in ["bone", "resorption", "ridge"]):
-            matched_findings.append(f)
-        elif any(term in combined for term in ["implant", "osteotomy"]) and any(term in q_lower for term in ["implant", "osteotomy"]):
-            matched_findings.append(f)
+            continue
 
     if matched_findings:
         bullets = [f"Regarding {mf.get('region')}: {mf.get('observation')} (Certainty: {mf.get('certainty', 'documented')})." for mf in matched_findings]

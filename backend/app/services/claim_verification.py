@@ -412,6 +412,21 @@ def verify_single_claim_deterministic(source_text: str, claim_text: str) -> Dict
 
 
 # =============================================================================
+def extract_dictated_negative_findings(text: str) -> List[str]:
+    """
+    Extracts clinical findings explicitly negated in dictation text.
+    E.g. 'no sinus communication', 'no root resorption', 'without fracture',
+    'negative for caries', 'no cortical erosion', 'no displaced root fragments'.
+    """
+    neg_findings = []
+    pattern = r"\b(?:no|not|without|absence\s+of|negative\s+for|denies)\s+(?:evidence\s+of\s+|definite\s+|frank\s+|apparent\s+)?([a-z0-9_-]+(?:\s+[a-z0-9_-]+){0,3})\b"
+    for match in re.finditer(pattern, text.lower()):
+        phrase = match.group(1).strip()
+        if phrase and phrase not in ["other", "further", "change", "abnormality", "prior", "known", "such", "reported"]:
+            neg_findings.append(phrase)
+    return neg_findings
+
+# =============================================================================
 # MULTI-CLAIM VERIFICATION GATE & DICTATION VERIFICATION
 # =============================================================================
 def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str, Any]], impressions: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -539,31 +554,29 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
                 "details": f"Clinical measurement '{rm}' was dictated but omitted from structured findings.",
                 "claim": f"Omitted measurement: {rm}"
             })
+    # Check Crucial Negative Findings Preservation (Dynamically extracted + clinical safety clauses)
+    dictated_negatives = extract_dictated_negative_findings(raw_dictation)
+    standard_clauses = ["sinus communication", "displaced root fragments", "root resorption", "periapical pathology"]
+    for sc in standard_clauses:
+        if sc not in dictated_negatives:
+            neg_pat = r"\b(?:no|without|denies|negative for)\s+(?:definite\s+|evidence of\s+)?" + re.escape(sc) + r"\b"
+            if re.search(neg_pat, raw_dictation, re.IGNORECASE):
+                dictated_negatives.append(sc)
 
-    # Check Crucial Negative Findings Preservation (e.g. sinus communication, displaced root fragments)
-    critical_negative_clauses = [
-        ("sinus communication", ["sinus communication"]),
-        ("displaced root fragments", ["displaced root", "root fragments", "displaced fragments"]),
-        ("root resorption", ["root resorption"]),
-        ("periapical pathology", ["periapical pathology", "periapical radiolucency"])
-    ]
-    for term_label, term_patterns in critical_negative_clauses:
-        for pat in term_patterns:
-            neg_pattern = r"\b(?:no|without|denies|negative for)\s+(?:definite\s+|evidence of\s+)?" + re.escape(pat) + r"\b"
-            if re.search(neg_pattern, raw_dictation, re.IGNORECASE):
-                found_neg = any(
-                    re.search(neg_pattern, f.get("observation", ""), re.IGNORECASE) or
-                    (pat in f.get("observation", "").lower() and any(nw in f.get("observation", "").lower() for nw in NEGATION_WORDS))
-                    for f in findings
-                )
-                if not found_neg:
-                    unsupported_claims.append({
-                        "status": ClaimStatus.INSUFFICIENT_EVIDENCE,
-                        "dimension": "omitted_negative_finding",
-                        "details": f"Dictated negative finding ('no {pat}') was omitted from structured findings.",
-                        "claim": f"Omitted negative finding: no {pat}"
-                    })
-                break
+    for pat in set(dictated_negatives):
+        neg_pattern = r"\b(?:no|without|denies|negative for)\s+(?:definite\s+|evidence of\s+)?" + re.escape(pat) + r"\b"
+        found_neg = any(
+            re.search(neg_pattern, f.get("observation", ""), re.IGNORECASE) or
+            (pat in f.get("observation", "").lower() and any(nw in f.get("observation", "").lower() for nw in NEGATION_WORDS))
+            for f in findings
+        )
+        if not found_neg:
+            unsupported_claims.append({
+                "status": ClaimStatus.INSUFFICIENT_EVIDENCE,
+                "dimension": "omitted_negative_finding",
+                "details": f"Dictated negative finding ('no {pat}') was omitted from structured findings.",
+                "claim": f"Omitted negative finding: no {pat}"
+            })
 
     # Cross-Check: Findings vs Impressions for Clinical Contradictions
     if impressions:

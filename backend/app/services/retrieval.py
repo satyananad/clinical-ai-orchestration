@@ -175,7 +175,18 @@ def get_report_by_id(report_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 def extract_retrieval_intent(user_input: str) -> Dict[str, str]:
-    """Extracts candidate patient name and scan modality with synonym support."""
+    """
+    Extracts candidate patient name and scan modality with synonym support.
+    Uses LLM instruction interpretation when available, falling back to deterministic extraction.
+    """
+    try:
+        from .llm_service import extract_retrieval_intent_with_llm
+        llm_intent = extract_retrieval_intent_with_llm(user_input)
+        if llm_intent and llm_intent.get("patient_name"):
+            return llm_intent
+    except Exception:
+        pass
+
     lower_input = user_input.lower()
     
     # Identify requested modality with clinical synonyms
@@ -195,10 +206,12 @@ def extract_retrieval_intent(user_input: str) -> Dict[str, str]:
 
     clean = lower_input
     stop_tokens = [
-        "can", "you", "open", "show", "get", "fetch", "view", "latest", "recent",
+        "can", "you", "could", "would", "please", "i", "want", "to", "need", "see",
+        "open", "show", "get", "fetch", "view", "load", "find", "latest", "recent",
         "report", "reports", "scan", "scans", "opg", "cbct", "bitewing", "periapical",
         "cephalogram", "iopa", "radiograph", "radiographs", "examination", "the",
-        "please", "panoramic", "orthopantomogram", "not", "saying"
+        "a", "an", "for", "of", "with", "patient", "mrn", "id",
+        "panoramic", "orthopantomogram", "not", "saying"
     ]
     for token in stop_tokens:
         clean = re.sub(r"\b" + re.escape(token) + r"\b", " ", clean)

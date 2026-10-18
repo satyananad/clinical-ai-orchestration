@@ -16,8 +16,11 @@
     "datetime_str": "Tomorrow, Oct 19 at 02:30 PM",
     "modality": "CBCT",
     "room": "Radiology Suite 1 (3D Scanner)",
-    "status": "available",
-    "patient_name": null
+    "status": "booked",
+    "patient_name": "Walk-in Patient",
+    "patient_id": "UNREGISTERED",
+    "booked_at": "2026-10-19 00:38:51",
+    "booking_reference": "BKG-102-3851"
   },
   {
     "slot_id": "SLOT-103",

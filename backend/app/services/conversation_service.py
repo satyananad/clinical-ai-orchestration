@@ -59,19 +59,19 @@ def get_or_create_session(session_id: str) -> SessionState:
     return SESSIONS[session_id]
 
 # Linguistic trigger patterns for context-dependent follow-up
-PRONOUN_TRIGGERS = [
+PATIENT_PRONOUN_TRIGGERS = [
     "her", "his", "their", "the patient", "she", "he",
-    "this report", "the report", "it", "latest one", "the latest",
+    "this report", "the report", "latest one", "the latest",
     "that scan", "her scan", "his scan", "the scan"
 ]
 
 def is_contextual_query(query: str, has_active_report: bool = False) -> bool:
     """Detects whether a user query refers to an active session context rather than a new patient."""
     q_lower = query.lower()
-    if any(re.search(r"\b" + re.escape(p) + r"\b", q_lower) for p in PRONOUN_TRIGGERS):
+    if any(re.search(r"\b" + re.escape(p) + r"\b", q_lower) for p in PATIENT_PRONOUN_TRIGGERS):
         return True
     if has_active_report:
-        if any(term in q_lower for term in ["pdf", "download", "link to report", "explain", "why", "tell me about"]):
+        if re.search(r"\bit\b", q_lower) or any(term in q_lower for term in ["pdf", "download", "link to report", "explain", "why", "tell me about"]):
             return True
         followup_triggers = [
             "summarize", "summary", "overview", "what did", "what does", "what are", "what is",
@@ -98,7 +98,7 @@ def handle_assistant_interaction(query: str, session_id: str = "default_session"
     # =========================================================================
     # CASE 1: CONTEXTUAL FOLLOW-UP ON AN ACTIVE REPORT
     # =========================================================================
-    if is_contextual_query(q_lower):
+    if is_contextual_query(q_lower, has_active_report=bool(session.active_report_id)):
         # Rule: If no active report is selected, prompt user to specify which report
         if not session.active_patient_id or not session.active_report_id:
             return {

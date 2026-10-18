@@ -624,23 +624,27 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
     ]
     has_non_patient_word = any(w in extracted_name.lower().split() for w in non_patient_words)
     has_retrieval_command = any(verb in q_lower for verb in ["open", "show", "load", "fetch", "view", "find", "get"])
-    has_patient_id = bool(re.search(r"\b(PAT-\d+|PT-\d+|\d{4})\b", query, re.IGNORECASE))
+    pat_id_match = re.search(r"\b(PAT-\d+)\b", query, re.IGNORECASE)
+    has_patient_id = bool(pat_id_match) or bool(re.search(r"\b(PT-\d+|\d{4})\b", query, re.IGNORECASE))
+    patient_id_found = pat_id_match.group(1).upper() if pat_id_match else None
 
     from .retrieval import search_patients
     matched_candidates = search_patients(extracted_name) if extracted_name else []
 
-    if has_non_patient_word or not extracted_name or (not has_retrieval_command and not has_patient_id and not matched_candidates):
-        return {
-            "selected_agent": "GeneralAssistantAgent",
-            "tool_name": "conversation",
-            "arguments": {"query": query},
-            "rationale": "Safety Guard: Query was an inquiry or question, not a patient name."
-        }
+    # If the user explicitly provided a patient ID or a matched patient candidate with a retrieval command,
+    # route to RetrievalAgent
+    is_explicit_retrieval = has_patient_id or (has_retrieval_command and (matched_candidates or bool(extracted_name)))
+
+    if not is_explicit_retrieval:
+        if has_non_patient_word or not extracted_name or (not has_retrieval_command and not matched_candidates):
+            return {
+                "selected_agent": "GeneralAssistantAgent",
+                "tool_name": "conversation",
+                "arguments": {"query": query},
+                "rationale": "Safety Guard: Query was an inquiry or question, not a patient name."
+            }
 
     name_guess = extracted_name.title() if extracted_name else query.title()
-
-    pat_id_match = re.search(r"\b(PAT-\d+)\b", query, re.IGNORECASE)
-    patient_id_found = pat_id_match.group(1).upper() if pat_id_match else None
 
     return {
         "selected_agent": "RetrievalAgent",

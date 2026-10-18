@@ -10,9 +10,6 @@ from typing import List, Dict, Any, Optional
 from .claim_verification import (
     classify_clinical_finding_status,
     verify_dictation_against_source,
-    verify_single_claim_deterministic,
-    verify_report_answer_claim,
-    ClaimStatus
 )
 
 def label_diagnostic_certainty(sentence: str) -> str:

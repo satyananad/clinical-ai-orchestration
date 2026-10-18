@@ -232,7 +232,14 @@ def extract_retrieval_intent_with_llm(user_input: str) -> Dict[str, str]:
             break
 
     clean = lower
-    for token in ["open", "show", "get", "fetch", "view", "latest", "recent", "report", "reports", "scan", "scans", "opg", "cbct", "bitewing", "periapical", "cephalogram", "iopa", "radiograph", "radiographs", "examination", "the", "please"]:
+    stop_tokens = [
+        "can", "you", "could", "would", "please", "i", "want", "to", "need", "see",
+        "open", "show", "get", "fetch", "view", "load", "find", "latest", "recent",
+        "report", "reports", "scan", "scans", "opg", "cbct", "bitewing", "periapical",
+        "cephalogram", "iopa", "radiograph", "radiographs", "examination", "the",
+        "a", "an", "for", "of", "with", "patient", "mrn", "id"
+    ]
+    for token in stop_tokens:
         clean = re.sub(r"\b" + re.escape(token) + r"\b", " ", clean)
     clean = clean.replace("'s", " ").replace("’s", " ")
     clean = " ".join(clean.split()).strip()
@@ -251,16 +258,26 @@ def clean_conversational_dictation(text: str) -> str:
     return cleaned.strip()
 
 def detect_transcription_artifacts(text: str) -> List[Dict[str, str]]:
-    """Identifies speech-to-text corruptions and unclear non-medical phrases."""
+    """Identifies speech-to-text corruptions, phonetic slips, and unclear non-medical phrases."""
     artifacts = []
-    # Pattern 1: 'root Bridge option' / 'bridge option' / 'root bridging' (phoneme error for root resorption)
-    m = re.search(r"\b(root\s+bridge\s+option|bridge\s+option|root\s+bridging)\b", text, re.IGNORECASE)
-    if m:
+    # Pattern 1: Acoustic / phonetic speech-to-text slips (e.g. 'root Bridge option' / 'bridge option' / 'root bridging' for resorption)
+    m_slip = re.search(r"\b(root\s+bridge\s+option|bridge\s+option|root\s+bridging)\b", text, re.IGNORECASE)
+    if m_slip:
         artifacts.append({
-            "matched_phrase": m.group(0),
-            "flag": f"Unclear phrase: '{m.group(0)}' (flagged as likely speech transcription error; requires clinician review)",
+            "matched_phrase": m_slip.group(0),
+            "flag": f"Unclear phrase: '{m_slip.group(0)}' (flagged as likely speech transcription error; requires clinician review)",
             "category": "Root Pathology & Resorption"
         })
+
+    # Pattern 2: Explicit audio / transcription quality markers
+    m_unclear = re.search(r"\b(inaudible|unintelligible|unclear\s+speech|muffled\s+audio|audio\s+gap|garbled|phoneme\s+slip)\b", text, re.IGNORECASE)
+    if m_unclear:
+        artifacts.append({
+            "matched_phrase": m_unclear.group(0),
+            "flag": f"Acoustic quality marker: '{m_unclear.group(0)}' (requires clinician review)",
+            "category": "Speech Recognition Clarification"
+        })
+
     return artifacts
 
 def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
@@ -292,8 +309,10 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
                 except (json.JSONDecodeError, ValidationError):
                     result = None
 
+    is_fallback = False
     if not result or not result.get("findings"):
         fallback = _dynamic_semantic_parse(dictation_text)
+        is_fallback = True
         if not result:
             result = fallback
         else:
@@ -308,6 +327,8 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
 
     if not result.get("findings"):
         result["extraction_status"] = "INCOMPLETE_REQUIRES_REVIEW"
+    elif is_fallback:
+        result["extraction_status"] = "FALLBACK_PARSED_REQUIRES_REVIEW"
     else:
         result["extraction_status"] = "COMPLETE"
     result["findings_count"] = len(result.get("findings", []))
@@ -499,37 +520,45 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
     recommendations = []
     seen_sites = set()
 
-    # 1. Detect Quadrant Context (e.g. Maxillary Left, Maxillary Right, Mandibular Left, Mandibular Right)
-    t_lower = clean_no_age.lower()
-    active_quad = None
-    if re.search(r"\b(maxillary\s+left|upper\s+left|quadrant\s+2|ul)\b", t_lower):
-        active_quad = "UL"
-    elif re.search(r"\b(maxillary\s+right|upper\s+right|quadrant\s+1|ur)\b", t_lower):
-        active_quad = "UR"
-    elif re.search(r"\b(mandibular\s+left|lower\s+left|quadrant\s+3|ll)\b", t_lower):
-        active_quad = "LL"
-    elif re.search(r"\b(mandibular\s+right|lower\s+right|quadrant\s+4|lr)\b", t_lower):
-        active_quad = "LR"
+    # 1. Helper to detect quadrant context from text
+    def detect_quad_from_text(txt: str) -> Optional[str]:
+        tl = txt.lower()
+        if re.search(r"\b(maxillary\s+left|upper\s+left|quadrant\s+2|ul\b)", tl):
+            return "UL"
+        if re.search(r"\b(maxillary\s+right|upper\s+right|quadrant\s+1|ur\b)", tl):
+            return "UR"
+        if re.search(r"\b(mandibular\s+left|lower\s+left|quadrant\s+3|ll\b)", tl):
+            return "LL"
+        if re.search(r"\b(mandibular\s+right|lower\s+right|quadrant\s+4|lr\b)", tl):
+            return "LR"
+        return None
+
+    doc_quad = detect_quad_from_text(clean_no_age)
+    active_quad = doc_quad
 
     # 2. Quadrant-relative named teeth (e.g. "first molar site", "second molar site", "second premolar")
-    if active_quad:
-        quad_tooth_patterns = [
-            ("third molar", 8), ("wisdom tooth", 8),
-            ("second molar", 7),
-            ("first molar", 6),
-            ("second premolar", 5), ("second bicuspid", 5),
-            ("first premolar", 4), ("first bicuspid", 4),
-            ("canine", 3),
-            ("lateral incisor", 2),
-            ("central incisor", 1)
-        ]
-        for name_pat, pos_idx in quad_tooth_patterns:
-            if re.search(r"\b" + name_pat + r"\b", t_lower):
-                palmer_code = f"{active_quad}{pos_idx}"
-                norm = normalize_dental_site({"palmer_notation": palmer_code, "anatomical_name": palmer_code})
-                if norm.get("fdi_number") and norm["fdi_number"] not in seen_sites:
-                    seen_sites.add(norm["fdi_number"])
-                    anatomical_sites.append(norm)
+    quad_tooth_patterns = [
+        ("third molar", 8), ("wisdom tooth", 8),
+        ("second molar", 7),
+        ("first molar", 6),
+        ("second premolar", 5), ("second bicuspid", 5),
+        ("first premolar", 4), ("first bicuspid", 4),
+        ("canine", 3),
+        ("lateral incisor", 2),
+        ("central incisor", 1)
+    ]
+    # Check each sentence individually for sentence-level quadrant context
+    for s in sentences:
+        s_quad = detect_quad_from_text(s) or doc_quad
+        if s_quad:
+            s_lower = s.lower()
+            for name_pat, pos_idx in quad_tooth_patterns:
+                if re.search(r"\b" + name_pat + r"\b", s_lower):
+                    palmer_code = f"{s_quad}{pos_idx}"
+                    norm = normalize_dental_site({"palmer_notation": palmer_code, "anatomical_name": palmer_code})
+                    if norm.get("fdi_number") and norm["fdi_number"] not in seen_sites:
+                        seen_sites.add(norm["fdi_number"])
+                        anatomical_sites.append(norm)
 
     # 3. Detect Palmer Teeth from clean text (e.g. UR8, UR7, UR6, UR5, UR E, LL6, etc.)
     deciduous_matches = re.finditer(r"\b(UR|UL|LL|LR)[\s_-]*([A-E])\b", clean_no_age, re.IGNORECASE)
