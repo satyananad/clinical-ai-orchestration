@@ -94,6 +94,7 @@ DECIDUOUS_TEETH: Dict[str, Tuple[int, str, str, str]] = {
 FDI_TO_PERMANENT = {val[0]: (k, val[1], val[2], val[3]) for k, val in PERMANENT_TEETH.items()}
 UNIVERSAL_TO_PERMANENT = {val[1]: (k, val[0], val[2], val[3]) for k, val in PERMANENT_TEETH.items()}
 FDI_TO_DECIDUOUS = {val[0]: (k, val[1], val[2], val[3]) for k, val in DECIDUOUS_TEETH.items()}
+UNIVERSAL_LETTER_TO_DECIDUOUS = {val[1]: (k, val[0], val[2], val[3]) for k, val in DECIDUOUS_TEETH.items()}
 
 
 def normalize_dental_site(site_raw: Dict[str, Any]) -> Dict[str, Any]:
@@ -105,8 +106,9 @@ def normalize_dental_site(site_raw: Dict[str, Any]) -> Dict[str, Any]:
     raw_palmer = str(site_raw.get("palmer_notation", "")).strip().upper()
     raw_fdi = site_raw.get("fdi_number")
     raw_univ = site_raw.get("universal_number")
+    raw_letter = str(site_raw.get("universal_letter", "")).strip().upper()
 
-    # 1. Detect Deciduous (Primary) Tooth: e.g. "UR E", "UR-E", "URE", "primary second molar"
+    # 1. Detect Deciduous (Primary) Tooth: e.g. "UR E", "UR-E", "URE", "Tooth C", "Tooth E"
     deciduous_match = re.search(r"\b(UR|UL|LL|LR)[\s_-]*([A-E])\b", raw_name.upper() + " " + raw_palmer)
     if deciduous_match:
         quad = deciduous_match.group(1)
@@ -123,6 +125,20 @@ def normalize_dental_site(site_raw: Dict[str, Any]) -> Dict[str, Any]:
                 "universal_number": univ_letter
             }
 
+    # Deciduous by Universal Letter (e.g. Tooth C, Tooth E, tooth #C)
+    letter_match = re.search(r"\btooth\s*#?([A-T])\b", raw_name.lower())
+    detected_letter = letter_match.group(1).upper() if letter_match else (raw_letter if raw_letter in UNIVERSAL_LETTER_TO_DECIDUOUS else None)
+    if detected_letter and detected_letter in UNIVERSAL_LETTER_TO_DECIDUOUS:
+        palmer, fdi, quad_name, anat_name = UNIVERSAL_LETTER_TO_DECIDUOUS[detected_letter]
+        return {
+            "site_type": "Tooth",
+            "anatomical_name": f"Tooth {detected_letter} ({palmer} - {anat_name})",
+            "quadrant": quad_name,
+            "fdi_number": fdi,
+            "palmer_notation": palmer,
+            "universal_number": detected_letter
+        }
+
     # 2. Detect Palmer Permanent notation: e.g. "UR8", "UR5", "UL6", "LL3", "LR7"
     palmer_match = re.search(r"\b(UR|UL|LL|LR)[\s_-]*([1-8])\b", raw_name.upper() + " " + raw_palmer)
     if palmer_match:
@@ -138,7 +154,7 @@ def normalize_dental_site(site_raw: Dict[str, Any]) -> Dict[str, Any]:
                 "universal_number": univ
             }
 
-    # 3. Detect by FDI Number: 11-48
+    # 3. Detect by explicit FDI Number: 11-48
     if isinstance(raw_fdi, int) and raw_fdi in FDI_TO_PERMANENT:
         palmer, univ, quad_name, anat_name = FDI_TO_PERMANENT[raw_fdi]
         return {
@@ -157,20 +173,21 @@ def normalize_dental_site(site_raw: Dict[str, Any]) -> Dict[str, Any]:
             "quadrant": quad_name,
             "fdi_number": raw_fdi,
             "palmer_notation": palmer,
-            "universal_number": None,
-            "universal_letter": univ_letter
+            "universal_number": univ_letter
         }
 
-    # 4. Detect by Universal Number: 1-32
-    if isinstance(raw_univ, int) and raw_univ in UNIVERSAL_TO_PERMANENT:
-        palmer, fdi, quad_name, anat_name = UNIVERSAL_TO_PERMANENT[raw_univ]
+    # 4. Detect by Universal Number: 1-32 or "tooth <num>"
+    num_match = re.search(r"\btooth\s*#?(\d{1,2})\b", raw_name.lower())
+    detected_num = int(num_match.group(1)) if num_match else (raw_univ if isinstance(raw_univ, int) else None)
+    if detected_num and detected_num in UNIVERSAL_TO_PERMANENT:
+        palmer, fdi, quad_name, anat_name = UNIVERSAL_TO_PERMANENT[detected_num]
         return {
             "site_type": "Tooth",
-            "anatomical_name": f"{palmer} ({anat_name})",
+            "anatomical_name": f"Tooth {detected_num} ({palmer} - {anat_name})",
             "quadrant": quad_name,
             "fdi_number": fdi,
             "palmer_notation": palmer,
-            "universal_number": raw_univ
+            "universal_number": detected_num
         }
 
     # 5. Fallback for Regional Anatomy (e.g., Sinus, TMJ, Nerve Canal)

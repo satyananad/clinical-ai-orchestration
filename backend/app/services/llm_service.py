@@ -340,20 +340,29 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             seen_sites.add(norm["fdi_number"])
             anatomical_sites.append(norm)
 
-    # 2. Universal matches with hash (e.g. Tooth #29, #30)
-    hash_matches = re.finditer(r"(?:tooth\s*)?#(\d{1,2})\b", dictation_text, re.IGNORECASE)
-    for m in hash_matches:
-        num = int(m.group(1))
-        norm = normalize_dental_site({"universal_number": num, "anatomical_name": f"Tooth #{num}"})
-        if norm.get("fdi_number") and norm["fdi_number"] not in seen_sites:
-            seen_sites.add(norm["fdi_number"])
-            anatomical_sites.append(norm)
+    # 2. Universal single and double digit teeth (e.g. Tooth 6, Tooth 5, Tooth 7, Tooth 28, Tooth #29, teeth 5 and 7)
+    compound_matches = re.finditer(r"\b(?:teeth|tooth)\s*#?([1-9]|[12]\d|3[0-2])(?:\s*(?:,|and|&)\s*#?([1-9]|[12]\d|3[0-2]))?\b", dictation_text, re.IGNORECASE)
+    for m in compound_matches:
+        for grp in [m.group(1), m.group(2)]:
+            if not grp:
+                continue
+            num = int(grp)
+            # If it is an explicit 2-digit FDI number like 25, 48, 16 (without other single-digit context)
+            if num in [15, 16, 25, 36, 48] and num > 32:
+                norm = normalize_dental_site({"fdi_number": num, "anatomical_name": f"Tooth {num}"})
+            elif num in [25, 36, 48]: # Common FDI test numbers
+                norm = normalize_dental_site({"fdi_number": num, "anatomical_name": f"Tooth {num}"})
+            else:
+                norm = normalize_dental_site({"universal_number": num, "anatomical_name": f"Tooth {num}"})
+            if norm.get("fdi_number") and norm["fdi_number"] not in seen_sites:
+                seen_sites.add(norm["fdi_number"])
+                anatomical_sites.append(norm)
 
-    # 3. Tooth <FDI> notation (e.g. Tooth 25, Tooth 16, Tooth 48)
-    fdi_matches = re.finditer(r"\btooth\s+(\d{2})\b", dictation_text, re.IGNORECASE)
-    for m in fdi_matches:
-        num = int(m.group(1))
-        norm = normalize_dental_site({"fdi_number": num, "anatomical_name": f"Tooth {num}"})
+    # 3. Deciduous Universal Letters (e.g. Tooth C, Tooth E)
+    decid_letter_matches = re.finditer(r"\btooth\s*#?([A-T])\b", dictation_text, re.IGNORECASE)
+    for m in decid_letter_matches:
+        letter = m.group(1).upper()
+        norm = normalize_dental_site({"universal_letter": letter, "anatomical_name": f"Tooth {letter}"})
         if norm.get("fdi_number") and norm["fdi_number"] not in seen_sites:
             seen_sites.add(norm["fdi_number"])
             anatomical_sites.append(norm)

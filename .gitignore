@@ -18,3 +18,7 @@ Thumbs.db
 node_modules/
 dist/
 build/
+
+# Generated runtime PDFs
+dictation_reports/
+*.pdf

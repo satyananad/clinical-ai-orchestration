@@ -25,6 +25,8 @@ class SessionState:
         self.pending_request: Optional[Dict[str, Any]] = None
         self.last_retrieval_query: Optional[str] = None
         self.last_retrieval_modality: Optional[str] = None
+        self.pending_booking_slots: Optional[List[Dict[str, Any]]] = None
+        self.pending_booking_modality: Optional[str] = None
 
     def set_active(self, patient_id: str, report_id: str):
         """Updates active patient & report ONLY upon verified successful retrieval."""
@@ -44,6 +46,8 @@ class SessionState:
         self.pending_request = None
         self.last_retrieval_query = None
         self.last_retrieval_modality = None
+        self.pending_booking_slots = None
+        self.pending_booking_modality = None
 
 # Thread-safe session dictionary keyed by unique session_id
 SESSIONS: Dict[str, SessionState] = {}
@@ -68,12 +72,13 @@ def is_contextual_query(query: str, has_active_report: bool = False) -> bool:
         return True
     if has_active_report:
         followup_triggers = [
-            "summarize", "summary", "overview", "what did", "what does",
+            "summarize", "summary", "overview", "what did", "what does", "what are", "what is",
             "are there", "is there", "any caries", "caries", "decay", "cavities",
             "tooth", "teeth", "molar", "impaction", "nerve", "canal",
-            "bone loss", "radiolucency", "recommendation", "findings", "impression"
+            "bone loss", "radiolucency", "recommendation", "findings", "finding", "impression"
         ]
-        if any(term in q_lower for term in followup_triggers) and not any(verb in q_lower for verb in ["open", "find", "retrieve", "search", "show"]):
+        has_retrieval_command = any(re.search(r"\b" + re.escape(v) + r"\b", q_lower) for v in ["open", "retrieve", "search", "fetch"])
+        if any(term in q_lower for term in followup_triggers) and not has_retrieval_command:
             return True
     return False
 

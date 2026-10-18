@@ -1,0 +1,81 @@
+[
+  {
+    "slot_id": "SLOT-101",
+    "date": "2026-10-19",
+    "time": "10:00 AM",
+    "datetime_str": "Tomorrow, Oct 19 at 10:00 AM",
+    "modality": "CBCT",
+    "room": "Radiology Suite 1 (3D Scanner)",
+    "status": "booked",
+    "patient_name": "Walk-in Patient",
+    "patient_id": "PAT-1001",
+    "booked_at": "2026-10-18 19:19:43",
+    "booking_reference": "BKG-101-1943"
+  },
+  {
+    "slot_id": "SLOT-102",
+    "date": "2026-10-19",
+    "time": "02:30 PM",
+    "datetime_str": "Tomorrow, Oct 19 at 02:30 PM",
+    "modality": "CBCT",
+    "room": "Radiology Suite 1 (3D Scanner)",
+    "status": "booked",
+    "patient_name": "Walk-in Patient",
+    "patient_id": "PAT-1001",
+    "booked_at": "2026-10-18 19:20:48",
+    "booking_reference": "BKG-102-2048"
+  },
+  {
+    "slot_id": "SLOT-103",
+    "date": "2026-10-19",
+    "time": "11:15 AM",
+    "datetime_str": "Tomorrow, Oct 19 at 11:15 AM",
+    "modality": "OPG",
+    "room": "Panoramic Suite 2",
+    "status": "available",
+    "patient_name": null
+  },
+  {
+    "slot_id": "SLOT-104",
+    "date": "2026-10-19",
+    "time": "04:00 PM",
+    "datetime_str": "Tomorrow, Oct 19 at 04:00 PM",
+    "modality": "OPG",
+    "room": "Panoramic Suite 2",
+    "status": "available",
+    "patient_name": null
+  },
+  {
+    "slot_id": "SLOT-105",
+    "date": "2026-10-20",
+    "time": "09:00 AM",
+    "datetime_str": "Oct 20 at 09:00 AM",
+    "modality": "Bitewing",
+    "room": "Intraoral X-Ray Bay 3",
+    "status": "available",
+    "patient_name": null
+  },
+  {
+    "slot_id": "SLOT-106",
+    "date": "2026-10-20",
+    "time": "10:30 AM",
+    "datetime_str": "Oct 20 at 10:30 AM",
+    "modality": "Periapical",
+    "room": "Intraoral X-Ray Bay 3",
+    "status": "available",
+    "patient_name": null
+  },
+  {
+    "slot_id": "SLOT-107",
+    "date": "2026-10-20",
+    "time": "03:15 PM",
+    "datetime_str": "Oct 20 at 03:15 PM",
+    "modality": "CBCT",
+    "room": "Radiology Suite 1 (3D Scanner)",
+    "status": "booked",
+    "patient_name": "Walk-in Patient",
+    "patient_id": "PAT-1001",
+    "booked_at": "2026-10-18 19:20:51",
+    "booking_reference": "BKG-107-2051"
+  }
+]

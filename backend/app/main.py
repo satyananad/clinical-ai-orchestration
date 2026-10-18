@@ -149,7 +149,21 @@ def get_dashboard_ui():
                             <p class="font-bold text-sky-400 text-xs mb-1 flex items-center">
                                 <i class="fa-solid fa-user-doctor mr-1.5"></i> Clinical Assistant Ready
                             </p>
-                            Welcome Doctor. You can search patient records by name (e.g. <em>'Open Vikram Malhotra's CBCT'</em>), ask clinical questions about the loaded report (<em>'What are the findings for tooth 48?'</em>), or summarize the active study (<em>'Summarize her report'</em>).
+                            <p class="mb-2">Welcome Doctor. You can search patient records, ask clinical questions about active reports, or schedule scan appointments:</p>
+                            <div class="flex flex-wrap gap-1.5 pt-1">
+                                <button onclick="sendChat('Open Vikram Malhotra\'s CBCT')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-600 px-2 py-1 rounded-lg transition">
+                                    <i class="fa-solid fa-folder-open mr-1"></i> Open Vikram's CBCT
+                                </button>
+                                <button onclick="sendChat('What are the findings for tooth 48?')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-600 px-2 py-1 rounded-lg transition">
+                                    <i class="fa-solid fa-tooth mr-1"></i> Tooth 48 Findings
+                                </button>
+                                <button onclick="sendChat('Summarize her report')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-600 px-2 py-1 rounded-lg transition">
+                                    <i class="fa-solid fa-file-lines mr-1"></i> Summarize Report
+                                </button>
+                                <button onclick="sendChat('Book a CBCT scan appointment')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-600 px-2 py-1 rounded-lg transition">
+                                    <i class="fa-solid fa-calendar-plus mr-1"></i> Book Scan Appointment
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -328,7 +342,9 @@ def get_dashboard_ui():
                         "structure_clinical_dictation": "Clinical Dictation Processing",
                         "summarize_active_report": "Report Consultation & Summary",
                         "general_query": "Clinical Database Query",
-                        "query_clinic_database": "Clinical Database Query"
+                        "query_clinic_database": "Clinical Database Query",
+                        "check_appointment_slots": "Scan Appointment Scheduling",
+                        "confirm_scan_booking": "Appointment Booking Confirmed"
                     };
                     const actionName = actionMap[data.agent_trace.tool_called] || "Clinical Task Executed";
                     agentBadgeHtml = `
@@ -362,7 +378,55 @@ def get_dashboard_ui():
                     return;
                 }
 
-                // CASE 2: Report Successfully Retrieved
+                // CASE 2: Scan Booking Confirmation Required (Synthetic Appointment Slots)
+                if (data.status === "confirmation_required" && data.available_slots) {
+                    let html = `${agentBadgeHtml}<p class="font-semibold text-sky-300 text-xs mb-2"><i class="fa-solid fa-calendar-check mr-1.5"></i> Available Appointment Slots (${data.modality || 'Scan'}):</p>`;
+                    html += `<div class="space-y-2 mt-2">`;
+                    data.available_slots.forEach(s => {
+                        html += `
+                            <div class="flex items-center justify-between p-2.5 bg-slate-800 hover:bg-slate-700/80 border border-slate-700 rounded-xl transition">
+                                <div>
+                                    <div class="flex items-center space-x-2">
+                                        <span class="font-bold text-white text-xs">${s.datetime_str}</span>
+                                        <span class="text-[10px] bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded border border-sky-500/30">${s.modality}</span>
+                                    </div>
+                                    <span class="text-slate-400 text-[11px]">${s.room} • [${s.slot_id}]</span>
+                                </div>
+                                <button onclick="sendChat('Confirm slot ${s.slot_id}')" 
+                                        class="text-[11px] bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1.5 rounded-lg transition shadow-sm flex items-center">
+                                    <i class="fa-solid fa-check mr-1"></i> Confirm & Book
+                                </button>
+                            </div>
+                        `;
+                    });
+                    html += `</div>`;
+                    html += `<p class="text-[11px] text-amber-300/90 mt-2.5 flex items-center"><i class="fa-solid fa-circle-exclamation mr-1.5"></i> Explicit clinician/patient confirmation required before booking.</p>`;
+                    appendCustomMessage("assistant", html, "bg-slate-700/60 border border-sky-500/40");
+                    return;
+                }
+
+                // CASE 3: Scan Booking Confirmed
+                if (data.status === "success" && data.booking_reference) {
+                    let html = `${agentBadgeHtml}`;
+                    html += `
+                        <div class="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-slate-200">
+                            <p class="font-bold text-emerald-400 text-xs flex items-center mb-1">
+                                <i class="fa-solid fa-calendar-check mr-1.5 text-sm"></i> Appointment Successfully Confirmed
+                            </p>
+                            <p class="text-xs mb-2">${data.message}</p>
+                            <div class="text-[11px] bg-slate-800 p-2.5 rounded-lg border border-slate-700 font-mono text-emerald-300 space-y-0.5">
+                                <div><strong>Booking Reference:</strong> ${data.booking_reference}</div>
+                                <div><strong>Modality:</strong> ${data.slot ? data.slot.modality : 'Scan'}</div>
+                                <div><strong>Scheduled Time:</strong> ${data.slot ? data.slot.datetime_str : 'Confirmed'}</div>
+                                <div><strong>Location:</strong> ${data.slot ? data.slot.room : 'Suite'}</div>
+                            </div>
+                        </div>
+                    `;
+                    appendCustomMessage("assistant", html, "bg-slate-700/60 border border-emerald-500/40");
+                    return;
+                }
+
+                // CASE 4: Report Successfully Retrieved
                 if (data.status === "success" && data.report) {
                     renderReport(data.report, data.patient);
                     updateContextBanner(data.patient, data.report);
@@ -371,7 +435,7 @@ def get_dashboard_ui():
                     return;
                 }
 
-                // CASE 3: Conversational Answer (Evidence-Grounded Q&A)
+                // CASE 5: Conversational Answer (Evidence-Grounded Q&A)
                 if (data.answer) {
                     let html = `${agentBadgeHtml}<p class="whitespace-pre-line text-xs text-slate-200">${data.answer}</p>`;
                     if (data.citations && data.citations.length > 0) {
@@ -488,6 +552,10 @@ def get_dashboard_ui():
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ text: text })
                 });
+                if (!resp.ok) {
+                    const errPayload = await resp.json().catch(() => ({}));
+                    throw new Error(errPayload.detail || `Server returned status ${resp.status}`);
+                }
                 const data = await resp.json();
 
                 document.getElementById("dictationOutputContainer").classList.remove("hidden");
@@ -524,7 +592,8 @@ def get_dashboard_ui():
                     `;
                 }
             } catch (err) {
-                alert("Error structuring dictation.");
+                console.error("Clinical structuring error:", err);
+                alert("Clinical Dictation Notice: " + (err.message || "Unable to structure dictation. Please check server logs."));
             } finally {
                 btn.innerHTML = `<i class="fa-solid fa-file-circle-check mr-2 text-sm"></i> Generate Verified Clinical Report & PDF`;
             }

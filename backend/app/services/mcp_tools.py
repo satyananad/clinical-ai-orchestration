@@ -114,6 +114,50 @@ DENTAL_ASSISTANT_TOOLS = [
             },
             "required": ["question"]
         }
+    },
+    {
+        "name": "check_appointment_slots",
+        "description": "Checks available synthetic radiological appointment slots (CBCT, OPG, Bitewing, Periapical) and presents options for clinician/patient confirmation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "modality": {
+                    "type": "string",
+                    "description": "The requested imaging modality (e.g. 'CBCT', 'OPG', 'Bitewing')."
+                },
+                "patient_name": {
+                    "type": "string",
+                    "description": "The patient's name to book for."
+                },
+                "preferred_date": {
+                    "type": "string",
+                    "description": "Optional preferred date or day (e.g. 'tomorrow', '2026-10-19')."
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "confirm_scan_booking",
+        "description": "Confirms and books a specific radiological appointment slot after explicit clinician or patient confirmation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "slot_id": {
+                    "type": "string",
+                    "description": "The selected slot ID to confirm (e.g. 'SLOT-101')."
+                },
+                "patient_name": {
+                    "type": "string",
+                    "description": "The patient name for the confirmed appointment."
+                },
+                "patient_id": {
+                    "type": "string",
+                    "description": "Optional patient ID."
+                }
+            },
+            "required": ["patient_name"]
+        }
     }
 ]
 
@@ -301,6 +345,26 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             p_name = arguments.get("patient_name")
             mod = arguments.get("modality")
             return execute_clinic_database_query(question=question, patient_name=p_name, modality=mod)
+
+        elif tool_name == "check_appointment_slots":
+            from .booking_service import check_available_slots
+            modality = arguments.get("modality", "Any")
+            preferred_date = arguments.get("preferred_date")
+            slots = check_available_slots(modality=modality, preferred_date=preferred_date)
+            return {
+                "status": "success",
+                "modality": modality,
+                "available_slots": slots,
+                "count": len(slots),
+                "message": f"Found {len(slots)} available appointment slot(s) for {modality} scan. Please confirm which slot you would like to book."
+            }
+
+        elif tool_name == "confirm_scan_booking":
+            from .booking_service import confirm_booking
+            slot_id = arguments.get("slot_id", "")
+            patient_name = arguments.get("patient_name", "")
+            patient_id = arguments.get("patient_id")
+            return confirm_booking(slot_id=slot_id, patient_name=patient_name, patient_id=patient_id)
 
         else:
             return {

@@ -9,7 +9,7 @@ Guarantees zero clinical hallucination by answering solely from verified report 
 import json
 from typing import Dict, Any, List, Optional
 from .retrieval import get_report_by_id, get_patient
-from .llm_service import query_ollama
+from .llm_service import query_llm
 
 REPORT_GROUNDED_QA_PROMPT = """You are a clinical dental radiology assistant.
 Your task is to answer the clinician's question STRICTLY based on the provided diagnostic imaging report.
@@ -118,8 +118,8 @@ def answer_report_question(report_id: str, query: str) -> Dict[str, Any]:
 
     user_message = f"Clinician Question: {query}\n\nProvide a factual, grounded answer with citations to the report sections."
 
-    # Query the configured LLM (via Ollama)
-    llm_response = query_ollama(user_message, system_prompt=prompt, json_format=False)
+    # Query the configured LLM (Tiered Groq Cloud LPU + Local Ollama)
+    llm_response = query_llm(user_message, system_prompt=prompt, json_format=False)
 
     if llm_response and len(llm_response.strip()) > 10:
         citations = [

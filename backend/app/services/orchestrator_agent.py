@@ -31,13 +31,19 @@ AVAILABLE TOOLS & SPECIALIZED AGENTS:
 3. "summarize_active_report": Use when the clinician asks a follow-up question or summary about the currently open report (e.g. "Summarize her report", "What did the radiologist say about tooth 48?", "Are there any caries?").
    Arguments: {"report_id": "active", "query": "string"}
 
-4. "general_query": Use when the clinician asks general questions about the system (e.g. "how many reports have", "what scans exist", "how many patients", "who are you", "help", greetings).
+4. "check_appointment_slots": Use when checking or booking available appointment slots for a scan (e.g. "Book a CBCT scan", "Schedule an OPG appointment", "What slots are available for CBCT?").
+   Arguments: {"modality": "CBCT"|"OPG"|"Bitewing"|"Periapical"|"Any", "preferred_date": "optional date string"}
+
+5. "confirm_scan_booking": Use when confirming a slot booking (e.g. "Confirm slot SLOT-101", "Yes, book slot 1", "Book it for Priya").
+   Arguments: {"slot_id": "string", "patient_name": "string", "patient_id": "optional string"}
+
+6. "general_query": Use when the clinician asks general questions about the system (e.g. "how many reports have", "what scans exist", "how many patients", "who are you", "help", greetings).
    Arguments: {"query": "string"}
 
 Output strictly a JSON object with this format:
 {
-  "selected_agent": "RetrievalAgent" | "ClinicalScribeAgent" | "ConsultationAgent" | "GeneralAssistantAgent",
-  "tool_name": "search_patient_reports" | "structure_clinical_dictation" | "summarize_active_report" | "general_query",
+  "selected_agent": "RetrievalAgent" | "ClinicalScribeAgent" | "ConsultationAgent" | "GeneralAssistantAgent" | "ScanBookingAgent",
+  "tool_name": "search_patient_reports" | "structure_clinical_dictation" | "summarize_active_report" | "check_appointment_slots" | "confirm_scan_booking" | "general_query",
   "arguments": { ... },
   "rationale": "Brief reason for agent selection"
 }
@@ -80,7 +86,9 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "summarize_active_report": "ConsultationAgent",
             "query_clinic_database": "GeneralAssistantAgent",
             "general_query": "GeneralAssistantAgent",
-            "verify_clinical_claim": "ConsultationAgent"
+            "verify_clinical_claim": "ConsultationAgent",
+            "check_appointment_slots": "ScanBookingAgent",
+            "confirm_scan_booking": "ScanBookingAgent"
         }
         if tool_name in agent_map:
             return {
@@ -201,6 +209,69 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "arguments": {"raw_query": query},
                 "rationale": "Safety Gate: Rejected unlisted candidate selection."
             }
+
+    # 2B.4 Scan Booking Confirmation from pending slots
+    if session.pending_booking_slots:
+        is_confirm = any(w in q_lower for w in ["yes", "confirm", "book", "proceed", "slot", "ok", "sure", "please", "take", "first", "second"])
+        if is_confirm:
+            slot_id = None
+            slot_match = re.search(r"SLOT-(\d+)", query, re.IGNORECASE)
+            if slot_match:
+                slot_id = f"SLOT-{slot_match.group(1)}"
+            else:
+                num_match = re.search(r"\b(10[1-9])\b", query)
+                if num_match:
+                    slot_id = f"SLOT-{num_match.group(1)}"
+                elif any(w in q_lower for w in ["first", "1st", "slot 1"]):
+                    slot_id = session.pending_booking_slots[0]["slot_id"]
+                elif any(w in q_lower for w in ["second", "2nd", "slot 2"]) and len(session.pending_booking_slots) > 1:
+                    slot_id = session.pending_booking_slots[1]["slot_id"]
+                else:
+                    slot_id = session.pending_booking_slots[0]["slot_id"]
+
+            pat_name = None
+            pat_id = session.active_patient_id
+            if pat_id:
+                from .retrieval import get_patient
+                p = get_patient(pat_id)
+                if p:
+                    pat_name = p.get("patient_name")
+            if not pat_name:
+                pat_name = "Walk-in Patient"
+
+            return {
+                "selected_agent": "ScanBookingAgent",
+                "tool_name": "confirm_scan_booking",
+                "arguments": {
+                    "slot_id": slot_id,
+                    "patient_name": pat_name,
+                    "patient_id": pat_id
+                },
+                "rationale": "Clarification Resolution: Clinician confirmed appointment booking."
+            }
+
+    # 2B.5 Scan Booking Request (Check Available Slots)
+    is_booking_request = any(w in q_lower for w in ["book", "booking", "schedule", "reschedule", "appointment", "reserve", "slots", "slot"])
+    is_retrieval_override = any(w in q_lower for w in ["open", "show", "view", "find report", "retrieve"])
+    if is_booking_request and not is_retrieval_override:
+        detected_mod = "Any"
+        if any(w in q_lower for w in ["cbct", "cone beam", "3d"]):
+            detected_mod = "CBCT"
+        elif any(w in q_lower for w in ["opg", "panoramic"]):
+            detected_mod = "OPG"
+        elif "bitewing" in q_lower:
+            detected_mod = "Bitewing"
+        elif any(w in q_lower for w in ["periapical", "iopa"]):
+            detected_mod = "Periapical"
+
+        return {
+            "selected_agent": "ScanBookingAgent",
+            "tool_name": "check_appointment_slots",
+            "arguments": {
+                "modality": detected_mod
+            },
+            "rationale": f"Fallback: Clinician requested scan booking for {detected_mod}."
+        }
 
     # 2C. Contextual Follow-up on Active Report
     if is_contextual_query(q_lower, has_active_report=bool(session.active_report_id)):
@@ -419,7 +490,81 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
         }
 
     # =========================================================================
-    # AGENT 4: CONSULTATION & REPORT-AWARE AGENT
+    # AGENT 4: SCAN-BOOKING AGENT (Voice & Typed Appointment Scheduling)
+    # =========================================================================
+    elif selected_agent == "ScanBookingAgent" or tool_name in ["check_appointment_slots", "confirm_scan_booking"]:
+        if tool_name == "confirm_scan_booking":
+            slot_id = arguments.get("slot_id")
+            if not slot_id and session.pending_booking_slots:
+                slot_id = session.pending_booking_slots[0]["slot_id"]
+
+            patient_name = arguments.get("patient_name")
+            patient_id = arguments.get("patient_id")
+            if not patient_name and session.active_patient_id:
+                from .retrieval import get_patient
+                p = get_patient(session.active_patient_id)
+                if p:
+                    patient_name = p.get("patient_name")
+                    patient_id = p.get("patient_id")
+            if not patient_name:
+                patient_name = "Patient"
+
+            confirm_res = execute_tool("confirm_scan_booking", {
+                "slot_id": slot_id,
+                "patient_name": patient_name,
+                "patient_id": patient_id
+            })
+            session.pending_booking_slots = None
+            session.pending_booking_modality = None
+
+            return {
+                "status": "success",
+                "message": confirm_res.get("message"),
+                "booking_reference": confirm_res.get("booking_reference"),
+                "slot": confirm_res.get("slot"),
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+        else:
+            slots_res = execute_tool("check_appointment_slots", arguments)
+            slots = slots_res.get("available_slots", [])
+            session.pending_booking_slots = slots
+            session.pending_booking_modality = arguments.get("modality", "Any")
+            mod_title = arguments.get("modality", "Radiology")
+
+            if slots:
+                slot_lines = [f"• [{s['slot_id']}] {s['datetime_str']} — {s['modality']} ({s['room']})" for s in slots]
+                msg = (
+                    f"Found {len(slots)} available appointment slot(s) for {mod_title} scan:\n"
+                    + "\n".join(slot_lines)
+                    + f"\n\nConfirmation Required: Would you like to confirm any of these slots? (e.g. 'Yes, book slot {slots[0]['slot_id']}')."
+                )
+            else:
+                msg = f"No appointment slots currently available for {mod_title} scan. Please check back later."
+
+            return {
+                "status": "confirmation_required",
+                "message": msg,
+                "modality": mod_title,
+                "available_slots": slots,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
+    # =========================================================================
+    # AGENT 5: CONSULTATION & REPORT-AWARE AGENT
     # =========================================================================
     else:
         # Check active report guardrail
