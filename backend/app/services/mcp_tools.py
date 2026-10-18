@@ -92,6 +92,28 @@ DENTAL_ASSISTANT_TOOLS = [
             },
             "required": ["report_id", "claim_text"]
         }
+    },
+    {
+        "name": "query_clinic_database",
+        "description": "Answers natural language questions about the clinic database, including total scan counts, modality breakdowns (OPG, CBCT, Bitewing), report counts for a patient, or lists of registered patients.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The natural language question asked by the clinician."
+                },
+                "patient_name": {
+                    "type": "string",
+                    "description": "Optional patient name if the question inquires about a specific patient."
+                },
+                "modality": {
+                    "type": "string",
+                    "description": "Optional scan modality (e.g. 'OPG', 'CBCT', 'Bitewing') if querying about a scan type."
+                }
+            },
+            "required": ["question"]
+        }
     }
 ]
 
@@ -109,6 +131,94 @@ def get_ollama_tool_definitions() -> List[Dict[str, Any]]:
             }
         })
     return ollama_tools
+
+def execute_clinic_database_query(question: str, patient_name: Optional[str] = None, modality: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Deterministic clinical database query executor.
+    Calculates exact facts, scan counts, modality breakdowns, and patient report lists.
+    """
+    from .retrieval import get_all_patients
+    patients = get_all_patients()
+    total_patients = len(patients)
+    total_reports = sum(len(p.get("reports", [])) for p in patients)
+    patient_names = [p.get("patient_name") for p in patients]
+
+    # Modality aggregation
+    modality_to_patients = {}
+    for p in patients:
+        p_name = p.get("patient_name")
+        for r in p.get("reports", []):
+            m_type = r.get("report_type", "Other")
+            if m_type not in modality_to_patients:
+                modality_to_patients[m_type] = []
+            modality_to_patients[m_type].append({
+                "patient_name": p_name,
+                "patient_id": p.get("patient_id"),
+                "report_id": r.get("report_id")
+            })
+
+    # Patient matching if name provided or mentioned in question
+    target_name = patient_name or ""
+    matched_patients = []
+    if target_name:
+        for p in patients:
+            if target_name.lower() in p.get("patient_name", "").lower():
+                matched_patients.append(p)
+    if not matched_patients:
+        for p in patients:
+            p_full = p.get("patient_name", "")
+            if p_full.lower() in question.lower():
+                matched_patients.append(p)
+        if not matched_patients:
+            for p in patients:
+                first_name = p.get("patient_name", "").split()[0].lower()
+                if len(first_name) > 3 and first_name in question.lower():
+                    matched_patients.append(p)
+
+    # Modality matching if specified
+    target_mod = modality or ""
+    matched_modality = None
+    if target_mod:
+        for real_m in modality_to_patients.keys():
+            if target_mod.lower() in real_m.lower():
+                matched_modality = real_m
+                break
+    if not matched_modality:
+        for m_key in ["cbct", "opg", "bitewing", "periapical", "cephalogram", "dental examination", "iopa"]:
+            if m_key in question.lower():
+                for real_m in modality_to_patients.keys():
+                    if m_key in real_m.lower():
+                        matched_modality = real_m
+                        break
+                if matched_modality:
+                    break
+
+    modality_summary = ", ".join([f"{k}: {len(v)}" for k, v in modality_to_patients.items()])
+
+    # Formulate answer
+    if matched_patients:
+        if len(matched_patients) == 1:
+            p = matched_patients[0]
+            p_cnt = len(p.get("reports", []))
+            r_desc = ", ".join([f"{r.get('report_type')} ({r.get('report_id')})" for r in p.get("reports", [])])
+            answer = f"{p['patient_name']} has {p_cnt} reports in the database: {r_desc}."
+        else:
+            lines = [f"• {p['patient_name']} ({p.get('patient_id')}): {len(p.get('reports', []))} reports ({', '.join(r.get('report_type') for r in p.get('reports', []))})" for p in matched_patients]
+            answer = f"I found {len(matched_patients)} matching patients in the database:\n" + "\n".join(lines)
+    elif matched_modality:
+        records = modality_to_patients.get(matched_modality, [])
+        pts = list(dict.fromkeys([f"{r['patient_name']} ({r['report_id']})" for r in records]))
+        answer = f"There is {len(records)} {matched_modality} scan in the database across: {', '.join(pts)}." if len(records) == 1 else f"There are {len(records)} {matched_modality} scans in the database across: {', '.join(pts)}."
+    elif "patient" in question.lower() and any(w in question.lower() for w in ["how many", "list", "show", "who", "all"]):
+        answer = f"There are {total_patients} registered patients in the clinic database: {', '.join(patient_names)}."
+    else:
+        answer = f"There are currently {total_reports} radiological reports across {total_patients} registered patients in the clinic database ({modality_summary}). You can ask me to open any patient's report (e.g. 'Open Vikram Malhotra's CBCT')."
+
+    return {
+        "status": "success",
+        "answer": answer,
+        "citations": [f"ViScan Clinic Database: {total_reports} total scans across {total_patients} registered patients"]
+    }
 
 # =====================================================================
 # 2. DETERMINISTIC TOOL EXECUTION ENGINE
@@ -180,6 +290,12 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "violations": verif_res.violations,
                 "citations": verif_res.evidence_citations
             }
+
+        elif tool_name == "query_clinic_database":
+            question = arguments.get("question", "")
+            p_name = arguments.get("patient_name")
+            mod = arguments.get("modality")
+            return execute_clinic_database_query(question=question, patient_name=p_name, modality=mod)
 
         else:
             return {

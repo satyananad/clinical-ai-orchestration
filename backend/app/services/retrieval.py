@@ -12,8 +12,10 @@ def load_patients_data() -> List[Dict[str, Any]]:
         data = json.load(f)
     for p in data:
         for r in p.get("reports", []):
-            if "patient_id" not in r or not r["patient_id"]:
-                r["patient_id"] = p["patient_id"]
+            r["patient_id"] = p["patient_id"]
+            r["patient_name"] = p["patient_name"]
+            r["dob"] = p.get("dob")
+            r["gender"] = p.get("gender")
     return data
 
 PATIENTS_DATA = load_patients_data()

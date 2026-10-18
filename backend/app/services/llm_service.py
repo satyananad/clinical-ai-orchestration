@@ -32,6 +32,7 @@ class RetrievalIntentModel(BaseModel):
     report_type: str = "Any"
 
 OLLAMA_ENDPOINT = os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/api/generate")
+OLLAMA_CHAT_ENDPOINT = os.getenv("OLLAMA_CHAT_ENDPOINT", "http://localhost:11434/api/chat")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
 
 # =====================================================================
@@ -109,6 +110,41 @@ def query_ollama(prompt: str, system_prompt: Optional[str] = None, json_format: 
             return response_text
     except Exception as e:
         print(f"⚠️ [Local LLM Offline: {e}] Falling back to deterministic clinical engine.")
+        return None
+
+def query_ollama_chat_tools(messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Direct function / tool calling via local Ollama /api/chat.
+    Returns the parsed tool call dictionary: {"tool_name": str, "arguments": dict} or None.
+    """
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": messages,
+        "tools": tools,
+        "stream": False
+    }
+    req = urllib.request.Request(
+        OLLAMA_CHAT_ENDPOINT,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            msg = data.get("message", {})
+            tool_calls = msg.get("tool_calls", [])
+            if tool_calls:
+                tc = tool_calls[0].get("function", {})
+                tool_name = tc.get("name")
+                args = tc.get("arguments", {})
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except Exception:
+                        pass
+                return {"tool_name": tool_name, "arguments": args}
+            return None
+    except Exception as e:
         return None
 
 def extract_retrieval_intent_with_llm(user_input: str) -> Dict[str, str]:

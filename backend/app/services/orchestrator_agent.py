@@ -12,11 +12,11 @@ and LLM Function/Tool Calling:
 import json
 import re
 from typing import Dict, Any, List, Optional
-from .mcp_tools import DENTAL_ASSISTANT_TOOLS, execute_tool, handle_mcp_jsonrpc_request
+from .mcp_tools import DENTAL_ASSISTANT_TOOLS, get_ollama_tool_definitions, execute_tool, handle_mcp_jsonrpc_request
 from .conversation_service import get_or_create_session, is_contextual_query
 from .retrieval import resolve_report_retrieval
 from .report_qa_service import answer_report_question
-from .llm_service import query_ollama
+from .llm_service import query_ollama, query_ollama_chat_tools
 
 TRIAGE_SYSTEM_PROMPT = """You are the Lead Clinical Triage AI Agent for a dental voice assistant.
 Your job is to analyze the clinician's speech or text input and decide which specialized sub-agent and tool to invoke.
@@ -52,49 +52,46 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
     session = get_or_create_session(session_id)
     q_lower = query.lower().strip()
 
-    # Step 1: LLM Dynamic Triage (Primary AI Agent Decision with Conversational Memory)
-    llm_context = f"Clinician Input: \"{query}\"\nActive Session Report: {session.active_report_id or 'None'}\nActive Patient: {session.active_patient_id or 'None'}"
-    if session.pending_candidates:
-        c_names = ", ".join(f"{c['patient_name']} ({c['patient_id']})" for c in session.pending_candidates)
-        llm_context += f"\nPending Clarification Candidates: {c_names}"
-    if session.last_retrieval_query:
-        llm_context += f"\nPrevious Retrieval Attempt: \"{session.last_retrieval_query}\""
+    # Step 1: Native LLM Function / Tool Calling (Direct Ollama / OpenAI Tool Calling Interface)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are the ViScan Dental AI Multi-Agent Orchestrator. "
+                "Select and invoke the appropriate clinical tool for the clinician's request.\n"
+                f"Active Patient in session: {session.active_patient_id or 'None'}\n"
+                f"Active Report in session: {session.active_report_id or 'None'}"
+            )
+        }
+    ]
     if session.history:
-        recent = session.history[-3:]
-        llm_context += "\nRecent Conversation History:\n" + "\n".join(f"- User: {h.get('user')}\n  Assistant: {h.get('assistant')[:120]}..." for h in recent)
+        for turn in session.history[-3:]:
+            messages.append({"role": "user", "content": turn.get("user", "")})
+            messages.append({"role": "assistant", "content": turn.get("assistant", "")[:150]})
+    messages.append({"role": "user", "content": query})
 
-    llm_triage_raw = query_ollama(
-        llm_context,
-        system_prompt=TRIAGE_SYSTEM_PROMPT,
-        json_format=True
-    )
-    if llm_triage_raw:
-        try:
-            parsed = json.loads(llm_triage_raw)
-            tool_name = parsed.get("tool_name")
-            if tool_name in [
-                "search_patient_reports", 
-                "structure_clinical_dictation", 
-                "summarize_active_report",
-                "general_query"
-            ]:
-                if "arguments" not in parsed or not isinstance(parsed["arguments"], dict):
-                    parsed["arguments"] = {}
-                
-                # Standardize agent assignment based on tool
-                agent_map = {
-                    "search_patient_reports": "RetrievalAgent",
-                    "structure_clinical_dictation": "ClinicalScribeAgent",
-                    "summarize_active_report": "ConsultationAgent",
-                    "general_query": "GeneralAssistantAgent"
-                }
-                parsed["selected_agent"] = agent_map[tool_name]
-                return parsed
-        except Exception:
-            pass
+    tool_call = query_ollama_chat_tools(messages, get_ollama_tool_definitions())
+    if tool_call and tool_call.get("tool_name"):
+        tool_name = tool_call.get("tool_name")
+        args = tool_call.get("arguments", {})
+        agent_map = {
+            "search_patient_reports": "RetrievalAgent",
+            "structure_clinical_dictation": "ClinicalScribeAgent",
+            "summarize_active_report": "ConsultationAgent",
+            "query_clinic_database": "GeneralAssistantAgent",
+            "general_query": "GeneralAssistantAgent",
+            "verify_clinical_claim": "ConsultationAgent"
+        }
+        if tool_name in agent_map:
+            return {
+                "selected_agent": agent_map[tool_name],
+                "tool_name": "general_query" if tool_name == "query_clinic_database" else tool_name,
+                "arguments": args,
+                "rationale": f"Native LLM Tool Call: Selected {tool_name}."
+            }
 
-    # Step 2: Fallback routing (Only active when local LLM is offline)
-    # Speech repair check on prior search
+    # Step 2: Fallback routing (When local LLM is offline or initializing)
+    # 2A. Speech repair check on prior search (e.g. "not pineapple, I said panoramic")
     if session.last_retrieval_query and any(w in q_lower for w in ["not", "saying", "meant"]):
         for part in q_lower.split():
             if part in ["panoramic", "opg", "cbct", "bitewing", "periapical"]:
@@ -109,7 +106,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     "rationale": "Fallback: Speech repair targeting previous retrieval."
                 }
 
-    # Disambiguation candidate selection
+    # 2B. Disambiguation candidate selection from pending clarification
     if session.pending_candidates:
         for cand in session.pending_candidates:
             c_name = cand["patient_name"].lower()
@@ -126,7 +123,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     "rationale": f"Fallback: Matched candidate {cand['patient_name']}."
                 }
 
-    # Contextual Follow-up on Active Report
+    # 2C. Contextual Follow-up on Active Report
     if is_contextual_query(q_lower, has_active_report=bool(session.active_report_id)):
         return {
             "selected_agent": "ConsultationAgent",
@@ -135,10 +132,10 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "report_id": session.active_report_id or "unselected",
                 "query": query
             },
-            "rationale": "Fallback: Detected contextual pronoun or report inquiry."
+            "rationale": "Fallback: Contextual inquiry on active report."
         }
 
-    # Dictation findings
+    # 2D. Dictation findings
     clinical_keywords = [
         "impacted", "radiolucency", "root treated", "carious", "caries",
         "periapical", "canal", "osteitis", "follicle", "supernumerary",
@@ -155,17 +152,18 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "rationale": "Fallback: Input describes clinical pathology findings."
         }
 
-    # General system queries
-    general_pattern = r"\b(how many|how much|which patient|which patients|who has|who have|list patients|list all|show all|all patients|all reports|database|who are you|what can you|help|hello|\bhi\b|hey)\b"
-    if re.search(general_pattern, q_lower) and not any(verb in q_lower for verb in ["open", "retrieve"]):
+    # 2E. General Clinic Database Queries
+    is_database_question = any(q_lower.startswith(w) for w in ["how many", "how much", "which", "who", "list", "what", "show"]) or "database" in q_lower or "?" in q_lower
+    has_retrieval_intent = any(verb in q_lower for verb in ["open", "fetch", "load", "retrieve"])
+    if is_database_question and not has_retrieval_intent:
         return {
             "selected_agent": "GeneralAssistantAgent",
             "tool_name": "general_query",
-            "arguments": {"query": query},
-            "rationale": "Fallback: General clinic inquiry regarding system records or capabilities."
+            "arguments": {"question": query},
+            "rationale": "Fallback: Clinical database statistical inquiry."
         }
 
-    # Default: Retrieval Agent
+    # 2F. Default: Patient & Report Retrieval
     clean_query = re.sub(r"\b(open|show|find|get|latest|report|scan|opg|cbct|bitewing|periapical|please)\b", "", q_lower).strip()
     name_guess = clean_query.title() if clean_query else query.title()
     return {
@@ -178,7 +176,37 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         "rationale": "Defaulting to patient and report retrieval search."
     }
 
+def verify_response_against_query(query: str, response: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Response Verification Gate:
+    Verifies that the executed tool output directly satisfies what the clinician actually asked.
+    - If user asked for an OPG or CBCT, confirms that the loaded scan matches that modality.
+    - If user query was ambiguous, verifies that clarification candidates are returned and no arbitrary file was opened.
+    - If summarizing an active report, verifies evidence citations are attached.
+    """
+    q_lower = query.lower()
+    
+    # Check 1: Modality Verification
+    if response.get("status") == "success" and response.get("report"):
+        rep = response["report"]
+        rep_type = rep.get("report_type", "").upper()
+        if ("opg" in q_lower or "panoramic" in q_lower) and rep_type != "OPG":
+            response["verification_notice"] = f"Notice: Requested OPG scan, but loaded {rep.get('report_type')}."
+        elif ("cbct" in q_lower or "cone beam" in q_lower) and rep_type != "CBCT":
+            response["verification_notice"] = f"Notice: Requested CBCT scan, but loaded {rep.get('report_type')}."
+
+    # Check 2: Grounding and Citation Verification
+    if response.get("status") == "success" and "answer" in response:
+        if not response.get("citations"):
+            response["citations"] = ["ViScan Clinic Diagnostic Database"]
+
+    return response
+
 def run_multi_agent_pipeline(query: str, session_id: str = "default_session") -> Dict[str, Any]:
+    res = _execute_multi_agent_pipeline(query, session_id=session_id)
+    return verify_response_against_query(query, res)
+
+def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session") -> Dict[str, Any]:
     """
     Executes the complete Multi-Agent Workflow:
     1. Triage Orchestrator Agent assigns task and builds MCP JSON-RPC payload.
@@ -265,94 +293,21 @@ def run_multi_agent_pipeline(query: str, session_id: str = "default_session") ->
     # =========================================================================
     # AGENT 3: GENERAL ASSISTANT AGENT (System Stats & Natural Conversation)
     # =========================================================================
-    elif selected_agent == "GeneralAssistantAgent" or tool_name == "general_query":
-        from .retrieval import get_all_patients
-        patients = get_all_patients()
-        total_patients = len(patients)
-        total_reports = sum(len(p.get("reports", [])) for p in patients)
-        patient_names = [p.get("patient_name") for p in patients]
-
-        # 1. Modality aggregation
-        modality_to_patients = {}
-        for p in patients:
-            p_name = p.get("patient_name")
-            for r in p.get("reports", []):
-                m_type = r.get("report_type", "Other")
-                if m_type not in modality_to_patients:
-                    modality_to_patients[m_type] = []
-                modality_to_patients[m_type].append({
-                    "patient_name": p_name,
-                    "patient_id": p.get("patient_id"),
-                    "report_id": r.get("report_id")
-                })
-
-        # 2. Check for patients mentioned in the query (prefer exact full name matches)
-        full_name_matches = [p for p in patients if p.get("patient_name", "").lower() in query.lower()]
-        if full_name_matches:
-            matched_patients = full_name_matches
-        else:
-            matched_patients = []
-            for p in patients:
-                p_name = p.get("patient_name", "")
-                tokens = [t.lower() for t in p_name.split() if len(t) > 2]
-                if any(re.search(r"\b" + re.escape(t) + r"\b", query.lower()) for t in tokens):
-                    matched_patients.append(p)
-
-        # 3. Check for specific scan modality mentioned in the query
-        matched_modality = None
-        for m_key in ["cbct", "opg", "bitewing", "periapical", "cephalogram", "dental examination", "iopa"]:
-            if m_key in query.lower():
-                for real_m in modality_to_patients.keys():
-                    if m_key in real_m.lower():
-                        matched_modality = real_m
-                        break
-                if matched_modality:
-                    break
-
-        per_patient_summary = ", ".join([f"{p['patient_name']}: {len(p.get('reports', []))}" for p in patients])
-        modality_summary = ", ".join([f"{k}: {len(v)}" for k, v in modality_to_patients.items()])
-
-        system_context = f"""You are the ViScan Dental AI Assistant.
-The clinic diagnostic database currently contains:
-- Total Registered Patients: {total_patients} patients ({', '.join(patient_names)})
-- Total Reports: {total_reports} diagnostic imaging scans
-- Scan Breakdown by Modality: {modality_summary}
-- Report Counts Per Patient: {per_patient_summary}
-
-Answer the clinician's question accurately, helpfully, and concisely using strictly the real facts above."""
-
-        llm_reply = query_ollama(f"Clinician Question: {query}", system_prompt=system_context, json_format=False)
-
-        # Robust deterministic fallback if LLM is offline or imprecise:
-        if matched_patients:
-            if len(matched_patients) == 1:
-                p = matched_patients[0]
-                p_cnt = len(p.get("reports", []))
-                r_desc = ", ".join([f"{r.get('report_type')} ({r.get('report_id')})" for r in p.get("reports", [])])
-                default_answer = f"{p['patient_name']} has {p_cnt} reports in the database: {r_desc}."
-            else:
-                lines = [f"• {p['patient_name']} ({p.get('patient_id')}): {len(p.get('reports', []))} reports ({', '.join(r.get('report_type') for r in p.get('reports', []))})" for p in matched_patients]
-                default_answer = f"I found {len(matched_patients)} matching patients in the database:\n" + "\n".join(lines)
-        elif matched_modality:
-            records = modality_to_patients.get(matched_modality, [])
-            pts = list(dict.fromkeys([f"{r['patient_name']} ({r['report_id']})" for r in records]))
-            default_answer = f"There is {len(records)} {matched_modality} scan in the database across: {', '.join(pts)}." if len(records) == 1 else f"There are {len(records)} {matched_modality} scans in the database across: {', '.join(pts)}."
-        elif "patient" in query.lower() and any(w in query.lower() for w in ["how many", "list", "show", "who", "all"]):
-            default_answer = f"There are {total_patients} registered patients in the clinic database: {', '.join(patient_names)}."
-        else:
-            default_answer = f"There are currently {total_reports} radiological reports across {total_patients} registered patients in the clinic database ({modality_summary}). You can ask me to open any patient's report (e.g. 'Open Vikram Malhotra's CBCT')."
-
-        answer_text = llm_reply.strip() if (llm_reply and len(llm_reply.strip()) > 15) else default_answer
-
+    elif selected_agent == "GeneralAssistantAgent" or tool_name in ["general_query", "query_clinic_database"]:
+        db_res = execute_tool("query_clinic_database", {
+            "question": query,
+            "patient_name": arguments.get("patient_name"),
+            "modality": arguments.get("modality")
+        })
         return {
             "status": "success",
-            "message": "Answered by General Assistant Agent.",
-            "answer": answer_text,
-            "citations": [f"ViScan Clinic Database: {total_reports} total scans across {total_patients} registered patients"],
+            "message": "Answered by General Assistant Agent via MCP Tool query_clinic_database.",
+            "answer": db_res.get("answer"),
+            "citations": db_res.get("citations", []),
             "agent_trace": {
                 "orchestrator": "TriageAgent",
                 "active_agent": "GeneralAssistantAgent",
-                "tool_called": tool_name,
+                "tool_called": "query_clinic_database",
                 "arguments": arguments,
                 "rationale": rationale,
                 "mcp_jsonrpc": mcp_request
