@@ -7,8 +7,8 @@ from fastapi.staticfiles import StaticFiles
 from .api import patients, reports, assistant, dictation, mcp
 
 app = FastAPI(
-    title="Viscan Voice-First Dental Assistant API",
-    description="Multi-Agent system with MCP Tool Calling for report retrieval, clinical dictation, and conversational context.",
+    title="Dental Radiology & Clinical Workstation API",
+    description="Clinical multi-agent system with MCP tool execution for radiology retrieval, clinical dictation, and evidence-grounded consultation.",
     version="1.0.0"
 )
 
@@ -36,7 +36,7 @@ def health_check():
     """Health check endpoint to verify backend service readiness."""
     return {
         "status": "healthy",
-        "service": "viscan-dental-assistant-api",
+        "service": "dental-clinical-workstation-api",
         "version": "1.0.0",
         "agents": ["TriageAgent", "RetrievalAgent", "ClinicalScribeAgent", "ConsultationAgent"],
         "mcp_protocol": "JSON-RPC 2.0"
@@ -60,13 +60,13 @@ def serve_dictation_pdf(filename: str):
 
 @app.get("/", response_class=HTMLResponse, tags=["Web UI"])
 def get_dashboard_ui():
-    """Serves the modernized interactive Multi-Agent Dental Assistant UI."""
+    """Serves the modernized interactive Clinical Dental Workstation UI."""
     return """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Viscan AI Dental Assistant | Multi-Agent Clinical Platform</title>
+    <title>Dental Clinical Workstation | Radiology & Charting</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -79,27 +79,27 @@ def get_dashboard_ui():
 <body class="bg-slate-900 text-slate-100 font-sans antialiased min-h-screen flex flex-col">
 
     <!-- Top Navigation Bar -->
-    <header class="bg-slate-800/90 backdrop-blur border-b border-slate-700/80 sticky top-0 z-50 shadow-md">
+    <header class="bg-slate-800/95 backdrop-blur border-b border-slate-700/80 sticky top-0 z-50 shadow-md">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <div class="flex items-center space-x-3">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-blue-500/20">
-                    <i class="fa-solid fa-tooth"></i>
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-600 to-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-md shadow-sky-600/20">
+                    <i class="fa-solid fa-hospital-user"></i>
                 </div>
                 <div>
                     <div class="flex items-center space-x-2">
-                        <h1 class="font-bold text-base text-white tracking-tight leading-none">Viscan Dental AI</h1>
-                        <span class="text-[10px] bg-blue-500/20 text-blue-300 font-mono px-2 py-0.5 rounded border border-blue-500/30">v1.0 Multi-Agent</span>
+                        <h1 class="font-bold text-base text-white tracking-tight leading-none">Dental Clinical Workstation</h1>
+                        <span class="text-[10px] bg-sky-500/10 text-sky-300 font-medium px-2 py-0.5 rounded border border-sky-500/20">Clinical EHR</span>
                     </div>
-                    <p class="text-[11px] text-slate-400 mt-0.5">Voice-First Radiology Assistant • Model Context Protocol (MCP)</p>
+                    <p class="text-[11px] text-slate-400 mt-0.5">Radiology Records & Clinical Dictation</p>
                 </div>
             </div>
 
             <!-- Active Session Context Pill -->
-            <div id="activeContextBanner" class="hidden sm:flex items-center space-x-2 bg-slate-900/80 border border-slate-700 px-3 py-1.5 rounded-full text-xs">
+            <div id="activeContextBanner" class="hidden sm:flex items-center space-x-2 bg-slate-900/90 border border-slate-700 px-3.5 py-1.5 rounded-full text-xs shadow-sm">
                 <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span class="text-slate-400">Context:</span>
+                <span class="text-slate-400 font-medium">Active Study:</span>
                 <span id="activeContextText" class="font-semibold text-emerald-300">None Selected</span>
-                <button onclick="resetSession()" class="text-slate-400 hover:text-rose-400 ml-1 text-xs" title="Reset Session Context">
+                <button onclick="resetSession()" class="text-slate-400 hover:text-rose-400 ml-1.5 text-xs transition" title="Clear Active Study Context">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
@@ -110,11 +110,11 @@ def get_dashboard_ui():
     <!-- Workspace Tabs Navigation -->
     <div class="bg-slate-800 border-b border-slate-700">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1 sm:space-x-4">
-            <button onclick="switchTab('assistant')" id="tabBtn-assistant" class="px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 border-blue-500 text-blue-400 flex items-center transition">
-                <i class="fa-solid fa-comments mr-2"></i> 1. Voice & Conversational Assistant (Feature A & C)
+            <button onclick="switchTab('assistant')" id="tabBtn-assistant" class="px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 border-sky-500 text-sky-400 flex items-center transition">
+                <i class="fa-solid fa-x-ray mr-2"></i> Patient Records & Imaging
             </button>
             <button onclick="switchTab('dictation')" id="tabBtn-dictation" class="px-4 py-3 text-xs sm:text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center transition">
-                <i class="fa-solid fa-microphone-lines mr-2"></i> 2. Clinical Dictation Studio (Feature B)
+                <i class="fa-solid fa-microphone-lines mr-2"></i> Clinical Dictation & Notes
             </button>
         </div>
     </div>
@@ -123,23 +123,22 @@ def get_dashboard_ui():
     <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
 
         <!-- =================================================================== -->
-        <!-- TAB 1: CONVERSATIONAL ASSISTANT & REPORT VIEWER (FEATURES A, C & BONUS) -->
+        <!-- TAB 1: PATIENT RECORDS & RADIOLOGY IMAGING -->
         <!-- =================================================================== -->
         <div id="tabContent-assistant" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-            <!-- Left 6 Columns: Interactive Chat & Fast Test Buttons -->
+            <!-- Left 6 Columns: Clinical Assistant & Voice/Text Search -->
             <div class="lg:col-span-6 flex flex-col space-y-4">
-                
 
-                <!-- Chat Messages Terminal Card -->
+                <!-- Clinical Assistant Terminal Card -->
                 <div class="bg-slate-800 border border-slate-700 rounded-2xl shadow-lg flex flex-col h-[520px]">
-                    <div class="p-3 border-b border-slate-700 bg-slate-800/90 rounded-t-2xl flex items-center justify-between">
+                    <div class="p-3 border-b border-slate-700 bg-slate-800/95 rounded-t-2xl flex items-center justify-between">
                         <div class="flex items-center space-x-2">
-                            <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
-                            <span class="font-semibold text-xs text-white">Live Multi-Agent Dialogue Stream</span>
+                            <i class="fa-solid fa-stethoscope text-sky-400 text-sm"></i>
+                            <span class="font-semibold text-xs text-white">Clinical Assistant & Search</span>
                         </div>
                         <button onclick="resetSession()" class="text-[11px] text-slate-400 hover:text-rose-400 transition flex items-center">
-                            <i class="fa-solid fa-rotate-left mr-1"></i> Clear Dialogue
+                            <i class="fa-solid fa-rotate-left mr-1"></i> Clear Conversation
                         </button>
                     </div>
 
@@ -147,27 +146,23 @@ def get_dashboard_ui():
                     <div id="chatMessages" class="flex-1 p-4 overflow-y-auto space-y-3 custom-scroll text-xs">
                         <!-- Initial Welcome Message -->
                         <div class="bg-slate-700/50 border border-slate-600/80 rounded-2xl p-3.5 text-slate-200">
-                            <p class="font-bold text-blue-400 text-xs mb-1 flex items-center">
-                                <i class="fa-solid fa-robot mr-1.5"></i> Multi-Agent Orchestrator Ready
+                            <p class="font-bold text-sky-400 text-xs mb-1 flex items-center">
+                                <i class="fa-solid fa-user-doctor mr-1.5"></i> Clinical Assistant Ready
                             </p>
-                            Welcome Doctor. The system routes voice and text commands to specialized clinical agents:
-                            <div class="mt-2 text-[11px] text-slate-300 space-y-1">
-                                <div>• <strong>RetrievalAgent:</strong> Locates scans and safely pauses on ambiguous names.</div>
-                                <div>• <strong>ConsultationAgent:</strong> Summarizes reports and answers grounded Q&A with citations.</div>
-                            </div>
+                            Welcome Doctor. You can search patient records by name (e.g. <em>'Open Vikram Malhotra's CBCT'</em>), ask clinical questions about the loaded report (<em>'What are the findings for tooth 48?'</em>), or summarize the active study (<em>'Summarize her report'</em>).
                         </div>
                     </div>
 
                     <!-- Input Controls -->
                     <div class="p-3 border-t border-slate-700 bg-slate-800/95 rounded-b-2xl">
                         <div class="flex items-center space-x-2">
-                            <input id="chatInput" type="text" placeholder="Speak or type (e.g. 'Open Vikram Malhotra\'s CBCT', 'Summarize her report')..." 
+                            <input id="chatInput" type="text" placeholder="Search patient by name or ask a question (e.g., 'Open Vikram Malhotra\'s CBCT', 'Summarize findings')..." 
                                    onkeydown="if(event.key==='Enter') sendChat()"
-                                   class="flex-1 text-xs bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                   class="flex-1 text-xs bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-sky-500">
                             <button onclick="toggleVoiceRecord('chatInput', 'voiceBtn')" id="voiceBtn" class="bg-slate-700 hover:bg-slate-600 text-slate-200 w-10 h-10 rounded-xl flex items-center justify-center transition shadow-sm" title="Click to Speak Voice Command">
                                 <i class="fa-solid fa-microphone text-sm"></i>
                             </button>
-                            <button onclick="sendChat()" class="bg-blue-600 hover:bg-blue-500 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30 transition">
+                            <button onclick="sendChat()" class="bg-sky-600 hover:bg-sky-500 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shadow-sky-600/30 transition">
                                 <i class="fa-solid fa-paper-plane text-xs"></i>
                             </button>
                         </div>
@@ -176,7 +171,7 @@ def get_dashboard_ui():
 
             </div>
 
-            <!-- Right 6 Columns: Active Report Viewer & Findings -->
+            <!-- Right 6 Columns: Active Radiology Study Viewer -->
             <div class="lg:col-span-6 flex flex-col space-y-4">
                 
                 <!-- Report Card -->
@@ -184,14 +179,14 @@ def get_dashboard_ui():
                     <div class="flex items-center justify-between border-b border-slate-700 pb-3 mb-4">
                         <div>
                             <div class="flex items-center space-x-2">
-                                <span id="reportModalityBadge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">NO SCAN</span>
-                                <h2 id="reportTitle" class="font-bold text-white text-base">Radiology Report Viewer</h2>
+                                <span id="reportModalityBadge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">NO STUDY LOADED</span>
+                                <h2 id="reportTitle" class="font-bold text-white text-base">Diagnostic Radiology Report</h2>
                             </div>
-                            <p id="reportPatientMeta" class="text-xs text-slate-400 mt-1">Patient: None selected • Report ID: -</p>
+                            <p id="reportPatientMeta" class="text-xs text-slate-400 mt-1">Patient: None selected • Study ID: -</p>
                         </div>
                         <div id="pdfDownloadContainer" class="hidden">
                             <a id="pdfDownloadBtn" href="#" target="_blank" class="inline-flex items-center text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white px-3.5 py-2 rounded-xl transition shadow-lg shadow-rose-600/20">
-                                <i class="fa-solid fa-file-pdf mr-1.5 text-sm"></i> Open PDF Report
+                                <i class="fa-solid fa-file-pdf mr-1.5 text-sm"></i> Open PDF Study
                             </a>
                         </div>
                     </div>
@@ -200,8 +195,8 @@ def get_dashboard_ui():
                     <div id="reportContent" class="flex-1 space-y-4 text-xs text-slate-200">
                         <div class="p-8 bg-slate-900/60 border border-dashed border-slate-700 rounded-2xl text-center text-slate-400">
                             <i class="fa-solid fa-file-waveform text-4xl mb-3 text-slate-600"></i>
-                            <p class="font-medium text-slate-300">No diagnostic imaging report active.</p>
-                            <p class="text-[11px] text-slate-500 mt-1">Select any patient from the directory above or type in the chat (e.g. <code class="text-blue-400 bg-slate-800 px-1 py-0.5 rounded">"Open Vikram Malhotra's CBCT"</code>) to load findings.</p>
+                            <p class="font-medium text-slate-300">No diagnostic imaging study currently active.</p>
+                            <p class="text-[11px] text-slate-500 mt-1">Search or speak a patient's name to view their imaging findings (e.g. <code class="text-sky-400 bg-slate-800 px-1 py-0.5 rounded">"Open Vikram Malhotra's CBCT"</code>).</p>
                         </div>
                     </div>
                 </div>
@@ -211,7 +206,7 @@ def get_dashboard_ui():
         </div>
 
         <!-- =================================================================== -->
-        <!-- TAB 2: CLINICAL DICTATION STUDIO (FEATURE B) -->
+        <!-- TAB 2: CLINICAL DICTATION & NOTES -->
         <!-- =================================================================== -->
         <div id="tabContent-dictation" class="hidden flex-col space-y-6">
             
@@ -222,19 +217,19 @@ def get_dashboard_ui():
                             <i class="fa-solid fa-stethoscope text-base"></i>
                         </div>
                         <div>
-                            <h2 class="font-bold text-white text-base">Feature B: Clinical Speech & Audio Dictation Studio</h2>
-                            <p class="text-xs text-slate-400">Normalizes dental tooth numbering (FDI, Palmer, Universal), labels uncertainty, and generates signed drafts.</p>
+                            <h2 class="font-bold text-white text-base">Clinical Speech & Dictation</h2>
+                            <p class="text-xs text-slate-400">Dictate examination findings to produce verified structured reports with standardized tooth notation.</p>
                         </div>
                     </div>
                     <span class="text-xs font-semibold text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 px-3 py-1 rounded-full flex items-center">
-                        <i class="fa-solid fa-shield-halved mr-1.5"></i> Anti-Hallucination Guardrail Active
+                        <i class="fa-solid fa-shield-halved mr-1.5"></i> Clinical Verification Active
                     </span>
                 </div>
 
                 <!-- Dictation Input Section -->
                 <div class="space-y-3">
                     <div class="flex items-center justify-between">
-                        <label class="text-xs font-bold uppercase tracking-wider text-slate-300">Clinician Voice Dictation Audio Transcript:</label>
+                        <label class="text-xs font-bold uppercase tracking-wider text-slate-300">Clinical Voice or Written Dictation:</label>
                         <button onclick="toggleVoiceRecord('dictationInput', 'dictationMicBtn')" id="dictationMicBtn" class="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1.5 rounded-xl transition flex items-center shadow-md">
                             <i class="fa-solid fa-microphone mr-1.5"></i> Click & Speak Dictation
                         </button>
@@ -245,7 +240,7 @@ def get_dashboard_ui():
                     
                     <div class="flex items-center justify-end pt-2">
                         <button onclick="processDictation()" id="synthesizeBtn" class="text-xs bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-emerald-600/30 transition flex items-center">
-                            <i class="fa-solid fa-wand-magic-sparkles mr-2 text-sm"></i> Synthesize Structured Report & Generate PDF
+                            <i class="fa-solid fa-file-circle-check mr-2 text-sm"></i> Generate Verified Clinical Report & PDF
                         </button>
                     </div>
                 </div>
@@ -260,7 +255,7 @@ def get_dashboard_ui():
                                 <i class="fa-solid fa-triangle-exclamation mr-2"></i> MANDATORY CLINICIAN REVIEW REQUIRED
                             </p>
                             <p class="text-[11px] text-amber-200/80 mt-0.5">
-                                AI synthesized draft from spoken transcript. Must be reviewed, verified, and signed by attending radiologist.
+                                Generated clinical draft from dictation. Must be verified and signed by attending clinician prior to permanent record entry.
                             </p>
                         </div>
                         <div id="dictationPdfDownloadBtnContainer"></div>
@@ -273,14 +268,14 @@ def get_dashboard_ui():
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="bg-slate-900 border border-slate-700 rounded-xl p-3.5">
                             <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                                <span class="text-xs font-bold text-emerald-400">Validated Structured JSON (FHIR Schema)</span>
-                                <span class="text-[10px] text-slate-500 font-mono">Normalized Teeth</span>
+                                <span class="text-xs font-bold text-emerald-400">Structured Clinical Findings (FHIR Schema)</span>
+                                <span class="text-[10px] text-slate-500 font-mono">Standardized Notation</span>
                             </div>
                             <pre id="jsonOutput" class="text-[11px] text-emerald-300 font-mono max-h-64 overflow-y-auto custom-scroll"></pre>
                         </div>
                         <div class="bg-slate-900 border border-slate-700 rounded-xl p-3.5">
                             <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                                <span class="text-xs font-bold text-slate-200">Readable Radiology Draft Narrative</span>
+                                <span class="text-xs font-bold text-slate-200">Radiology Narrative Draft</span>
                                 <span class="text-[10px] text-slate-500 font-mono">Formatted Draft</span>
                             </div>
                             <div id="narrativeOutput" class="text-xs text-slate-300 whitespace-pre-wrap font-sans max-h-64 overflow-y-auto custom-scroll"></div>
@@ -305,7 +300,7 @@ def get_dashboard_ui():
                 document.getElementById(`tabBtn-${t}`).className = "px-4 py-3 text-xs sm:text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center transition";
             });
             document.getElementById(`tabContent-${tabId}`).classList.remove('hidden');
-            document.getElementById(`tabBtn-${tabId}`).className = "px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 border-blue-500 text-blue-400 flex items-center transition";
+            document.getElementById(`tabBtn-${tabId}`).className = "px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 border-sky-500 text-sky-400 flex items-center transition";
         }
 
 
@@ -325,18 +320,26 @@ def get_dashboard_ui():
                 });
                 const data = await resp.json();
 
-                // Display Agent Trace Badge if available
+                // Display Verified Clinical Action Indicator
                 let agentBadgeHtml = "";
                 if (data.agent_trace) {
+                    const actionMap = {
+                        "search_patient_reports": "Patient Records Search",
+                        "structure_clinical_dictation": "Clinical Dictation Processing",
+                        "summarize_active_report": "Report Consultation & Summary",
+                        "general_query": "Clinical Database Query",
+                        "query_clinic_database": "Clinical Database Query"
+                    };
+                    const actionName = actionMap[data.agent_trace.tool_called] || "Clinical Task Executed";
                     agentBadgeHtml = `
-                        <div class="mb-2 pb-1.5 border-b border-slate-700 flex items-center justify-between text-[10px] text-blue-400 font-mono">
-                            <span><i class="fa-solid fa-microchip mr-1"></i> Agent: <strong>${data.agent_trace.active_agent}</strong></span>
-                            <span class="bg-blue-500/20 px-1.5 py-0.5 rounded border border-blue-500/30">MCP Tool: ${data.agent_trace.tool_called}</span>
+                        <div class="mb-2 pb-1.5 border-b border-slate-700/80 flex items-center justify-between text-[11px] text-slate-300 font-sans">
+                            <span class="flex items-center text-emerald-400"><i class="fa-solid fa-circle-check mr-1.5 text-xs"></i> <strong class="text-slate-200">${actionName}</strong></span>
+                            <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">Verified</span>
                         </div>
                     `;
                 }
 
-                // CASE 1: Clarification Required (Feature A Ambiguity Safety Check)
+                // CASE 1: Clarification Required (Ambiguity Safety Check)
                 if (data.status === "clarification_required" && data.candidates) {
                     let html = `${agentBadgeHtml}<p class="font-semibold text-amber-300 text-xs mb-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i> ${data.message}</p>`;
                     html += `<div class="space-y-1.5 mt-2">`;
@@ -348,7 +351,7 @@ def get_dashboard_ui():
                                     <span class="text-slate-400 text-[11px] ml-1.5">(DOB: ${c.date_of_birth} | ${c.sex})</span>
                                 </div>
                                 <button onclick="sendChat('Open ${c.patient_name}\\'s latest report')" 
-                                        class="text-[11px] bg-blue-600 hover:bg-blue-500 text-white font-semibold px-2.5 py-1 rounded-lg transition shadow-sm">
+                                        class="text-[11px] bg-sky-600 hover:bg-sky-500 text-white font-semibold px-2.5 py-1 rounded-lg transition shadow-sm">
                                     Select Patient
                                 </button>
                             </div>
@@ -368,12 +371,12 @@ def get_dashboard_ui():
                     return;
                 }
 
-                // CASE 3: Conversational Answer (Feature C & Bonus Q&A)
+                // CASE 3: Conversational Answer (Evidence-Grounded Q&A)
                 if (data.answer) {
                     let html = `${agentBadgeHtml}<p class="whitespace-pre-line text-xs text-slate-200">${data.answer}</p>`;
                     if (data.citations && data.citations.length > 0) {
                         html += `<div class="mt-3 pt-2.5 border-t border-slate-700 text-[11px] text-slate-400">`;
-                        html += `<span class="font-bold text-slate-300 flex items-center mb-1"><i class="fa-solid fa-quote-left mr-1.5 text-blue-400"></i> Source Evidence Citations:</span>`;
+                        html += `<span class="font-bold text-slate-300 flex items-center mb-1"><i class="fa-solid fa-quote-left mr-1.5 text-sky-400"></i> Source Evidence Citations:</span>`;
                         data.citations.forEach(cit => {
                             html += `<div class="mt-1 bg-slate-800/80 p-2 rounded-lg border border-slate-700 font-mono text-[10px] text-slate-300">• ${cit}</div>`;
                         });
@@ -386,7 +389,7 @@ def get_dashboard_ui():
                 // Default Message
                 appendMessage("assistant", data.message || "Request completed.");
             } catch (err) {
-                appendMessage("assistant", "Error connecting to Viscan API.");
+                appendMessage("assistant", "Unable to connect to clinical workstation service.");
             }
         }
 
@@ -394,11 +397,11 @@ def get_dashboard_ui():
             const container = document.getElementById("chatMessages");
             const div = document.createElement("div");
             if (sender === "user") {
-                div.className = "bg-blue-600 text-white rounded-2xl p-3 max-w-[85%] ml-auto text-xs shadow-md";
-                div.innerHTML = `<p class="font-bold text-[10px] text-blue-200 mb-0.5">Clinician</p>${text}`;
+                div.className = "bg-sky-600 text-white rounded-2xl p-3 max-w-[85%] ml-auto text-xs shadow-md";
+                div.innerHTML = `<p class="font-bold text-[10px] text-sky-200 mb-0.5">Clinician</p>${text}`;
             } else {
                 div.className = "bg-slate-700/80 border border-slate-600 text-slate-100 rounded-2xl p-3 max-w-[85%] text-xs shadow-md";
-                div.innerHTML = `<p class="font-bold text-[10px] text-slate-400 mb-0.5">Viscan Assistant</p>${text}`;
+                div.innerHTML = `<p class="font-bold text-[10px] text-sky-400 mb-0.5">Clinical Assistant</p>${text}`;
             }
             container.appendChild(div);
             container.scrollTop = container.scrollHeight;
@@ -477,7 +480,7 @@ def get_dashboard_ui():
             if (!text) return;
 
             const btn = document.getElementById("synthesizeBtn");
-            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Structuring via Llama 3.1...`;
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Structuring Clinical Report...`;
 
             try {
                 const resp = await fetch(`${API_BASE}/dictation/structure`, {
@@ -496,7 +499,7 @@ def get_dashboard_ui():
                 if (data.anatomical_sites) {
                     data.anatomical_sites.forEach(s => {
                         badgesHtml += `
-                            <span class="inline-flex items-center text-xs bg-blue-500/20 border border-blue-500/40 text-blue-300 px-2.5 py-1 rounded-lg">
+                            <span class="inline-flex items-center text-xs bg-sky-500/20 border border-sky-500/40 text-sky-300 px-2.5 py-1 rounded-lg">
                                 <i class="fa-solid fa-tooth mr-1.5"></i> ${s.anatomical_name} ${s.fdi_number ? `(FDI ${s.fdi_number})` : ''}
                             </span>
                         `;
@@ -523,7 +526,7 @@ def get_dashboard_ui():
             } catch (err) {
                 alert("Error structuring dictation.");
             } finally {
-                btn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles mr-2 text-sm"></i> Synthesize Structured Report & Generate PDF`;
+                btn.innerHTML = `<i class="fa-solid fa-file-circle-check mr-2 text-sm"></i> Generate Verified Clinical Report & PDF`;
             }
         }
 
@@ -532,17 +535,17 @@ def get_dashboard_ui():
             updateContextBanner(null, null);
             document.getElementById("chatMessages").innerHTML = `
                 <div class="bg-slate-700/50 border border-slate-600 rounded-2xl p-3 text-slate-300 text-xs">
-                    <p class="font-bold text-blue-400 mb-1"><i class="fa-solid fa-rotate-left mr-1"></i> Context Cleared</p>
-                    Session memory reset. You can request any new patient scan.
+                    <p class="font-bold text-sky-400 mb-1"><i class="fa-solid fa-rotate-left mr-1"></i> Context Cleared</p>
+                    Session memory reset. You can search or request any new patient study.
                 </div>
             `;
-            document.getElementById("reportModalityBadge").innerText = "NO SCAN";
-            document.getElementById("reportTitle").innerText = "Radiology Report Viewer";
-            document.getElementById("reportPatientMeta").innerText = "Patient: None selected • Report ID: -";
+            document.getElementById("reportModalityBadge").innerText = "NO STUDY LOADED";
+            document.getElementById("reportTitle").innerText = "Diagnostic Radiology Report";
+            document.getElementById("reportPatientMeta").innerText = "Patient: None selected • Study ID: -";
             document.getElementById("reportContent").innerHTML = `
                 <div class="p-8 bg-slate-900/60 border border-dashed border-slate-700 rounded-2xl text-center text-slate-400">
                     <i class="fa-solid fa-file-waveform text-4xl mb-3 text-slate-600"></i>
-                    <p class="font-medium text-slate-300">No diagnostic imaging report active.</p>
+                    <p class="font-medium text-slate-300">No diagnostic imaging study currently active.</p>
                 </div>
             `;
             document.getElementById("pdfDownloadContainer").classList.add("hidden");

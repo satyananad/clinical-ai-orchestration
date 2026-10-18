@@ -68,17 +68,17 @@ def generate_dictation_pdf(pdf_path: str, patient_name: str, patient_id: str, ra
         # Amber Banner for Draft
         "0.85 0.45 0.1 rg 45 760 505 48 re f",
         f"BT /F1 13 Tf 1 1 1 rg 55 785 Td ({sanitize_pdf('CLINICAL DICTATION DRAFT - MANDATORY CLINICIAN REVIEW')}) Tj ET",
-        f"BT /F3 8.5 Tf 1 1 1 rg 55 771 Td ({sanitize_pdf('ViScan AI Scribe Network • Generated from Radiologist Speech / Dictation')}) Tj ET",
+        f"BT /F3 8.5 Tf 1 1 1 rg 55 771 Td ({sanitize_pdf('Clinical Scribe Network • Generated from Radiologist Speech / Dictation')}) Tj ET",
 
         # Patient Info Box
         "0.82 0.82 0.82 RG 1 w 45 675 505 75 re S",
         f"BT /F1 9.5 Tf 0 0 0 rg 55 732 Td ({sanitize_pdf('PATIENT: ' + patient_name.upper())}) Tj ET",
         f"BT /F2 8.5 Tf 0.25 0.25 0.25 rg 55 715 Td ({sanitize_pdf('PATIENT ID: ' + patient_id)}) Tj ET",
-        f"BT /F2 8.5 Tf 0.25 0.25 0.25 rg 55 698 Td ({sanitize_pdf('STATUS: Unverified AI Synthesis (Pending Attending Sign-Off)')}) Tj ET",
+        f"BT /F2 8.5 Tf 0.25 0.25 0.25 rg 55 698 Td ({sanitize_pdf('STATUS: Unverified Clinical Draft (Pending Attending Sign-Off)')}) Tj ET",
 
         f"BT /F1 9.5 Tf 0 0 0 rg 310 732 Td ({sanitize_pdf('REPORT TYPE: Dictation Draft')}) Tj ET",
         f"BT /F2 8.5 Tf 0.25 0.25 0.25 rg 310 715 Td ({sanitize_pdf('DATE: ' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))}) Tj ET",
-        f"BT /F2 8.5 Tf 0.25 0.25 0.25 rg 310 698 Td ({sanitize_pdf('AI ENGINE: Llama-3.1 / Medical LLM')}) Tj ET",
+        f"BT /F2 8.5 Tf 0.25 0.25 0.25 rg 310 698 Td ({sanitize_pdf('SYSTEM: Clinical Speech & Verification Engine')}) Tj ET",
 
         # Raw Dictation Transcript Box
         f"BT /F1 10 Tf 0.12 0.23 0.45 rg 50 655 Td ({sanitize_pdf('VERBATIM DICTATION AUDIO TRANSCRIPT')}) Tj ET"
@@ -102,12 +102,12 @@ def generate_dictation_pdf(pdf_path: str, patient_name: str, patient_id: str, ra
         cmds.append(f"BT /F1 8.5 Tf 0.1 0.1 0.1 rg 60 {y} Td ({sanitize_pdf('- [' + site + '] (' + cat + '):')}) Tj ET")
         y -= 11
 
-        for o_line in wrap_lines(obs, max_chars=78):
-            cmds.append(f"BT /F2 8.5 Tf 0.25 0.25 0.25 rg 72 {y} Td ({sanitize_pdf(o_line)}) Tj ET")
-            y -= 11
+    for o_line in wrap_lines(obs, max_chars=78):
+        cmds.append(f"BT /F2 8.5 Tf 0.25 0.25 0.25 rg 72 {y} Td ({sanitize_pdf(o_line)}) Tj ET")
+        y -= 11
 
-        cmds.append(f"BT /F3 8 Tf 0.4 0.4 0.4 rg 72 {y} Td ({sanitize_pdf('Diagnostic Certainty: ' + cert)}) Tj ET")
-        y -= 13
+    cmds.append(f"BT /F3 8 Tf 0.4 0.4 0.4 rg 72 {y} Td ({sanitize_pdf('Diagnostic Certainty: ' + cert)}) Tj ET")
+    y -= 13
 
     # Impressions
     y -= 4
@@ -131,7 +131,7 @@ def generate_dictation_pdf(pdf_path: str, patient_name: str, patient_id: str, ra
     cmds.extend([
         "0.85 0.85 0.85 RG 1 w 45 105 505 0 m 550 105 l S",
         f"BT /F1 9 Tf 0 0 0 rg 50 85 Td ({sanitize_pdf('Attending Clinician Approval: ___________________________')}) Tj 230 0 Td ({sanitize_pdf('Sign-Off Date: _________________')}) Tj ET",
-        f"BT /F3 8 Tf 0.4 0.4 0.4 rg 50 68 Td ({sanitize_pdf('ViScan Dental Assistant • Draft Document - Not Approved for Medical Records Without Clinician Signature')}) Tj ET"
+        f"BT /F3 8 Tf 0.4 0.4 0.4 rg 50 68 Td ({sanitize_pdf('Clinical Dental Workstation • Draft Document - Not Approved for Medical Records Without Clinician Signature')}) Tj ET"
     ])
 
     stream = "\n".join(cmds)

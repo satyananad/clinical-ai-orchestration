@@ -217,7 +217,7 @@ def execute_clinic_database_query(question: str, patient_name: Optional[str] = N
     return {
         "status": "success",
         "answer": answer,
-        "citations": [f"ViScan Clinic Database: {total_reports} total scans across {total_patients} registered patients"]
+        "citations": [f"Clinic Database: {total_reports} total scans across {total_patients} registered patients"]
     }
 
 # =====================================================================

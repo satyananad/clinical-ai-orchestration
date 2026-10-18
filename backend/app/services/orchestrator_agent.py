@@ -57,7 +57,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         {
             "role": "system",
             "content": (
-                "You are the ViScan Dental AI Multi-Agent Orchestrator. "
+                "You are the Dental Clinical Workstation Orchestrator. "
                 "Select and invoke the appropriate clinical tool for the clinician's request.\n"
                 f"Active Patient in session: {session.active_patient_id or 'None'}\n"
                 f"Active Report in session: {session.active_report_id or 'None'}"
@@ -203,7 +203,7 @@ def verify_response_against_query(query: str, response: Dict[str, Any]) -> Dict[
     # Check 2: Grounding and Citation Verification
     if response.get("status") == "success" and "answer" in response:
         if not response.get("citations"):
-            response["citations"] = ["ViScan Clinic Diagnostic Database"]
+            response["citations"] = ["Clinic Diagnostic Database"]
 
     return response
 
