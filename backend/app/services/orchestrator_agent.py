@@ -1465,10 +1465,39 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
     elif selected_agent == "ClinicalScribeAgent":
         dictation_res = execute_tool("structure_clinical_dictation", arguments)
         is_complete = dictation_res.get("status") == "success" and bool(dictation_res.get("findings"))
+        findings = dictation_res.get("findings", [])
+        impressions = dictation_res.get("impressions", [])
+
+        # Build readable clinical draft response for the clinician
+        findings_bullets = []
+        for idx, f in enumerate(findings, 1):
+            site_info = f.get("anatomical_site") or "Anatomical site"
+            t_num = f" (Tooth {f.get('tooth_number')})" if f.get("tooth_number") else ""
+            cat = f" [{f.get('category')}]" if f.get("category") else ""
+            cert = f.get("certainty", "definite observation")
+            findings_bullets.append(f"{idx}. **{site_info}**{t_num}{cat}:\n   Observation: {f.get('observation')}\n   *Diagnostic Certainty: {cert}*")
+
+        impressions_bullets = [f"• {imp}" for imp in impressions] if impressions else ["• Diagnostic review completed."]
+
+        draft_answer = (
+            f"📋 **Clinical Dictation Draft Report Generated**\n\n"
+            f"**Key Findings & Anatomical Sites:**\n"
+            f"{(chr(10) + chr(10)).join(findings_bullets) if findings_bullets else '• No specific clinical findings detected.'}\n\n"
+            f"**Radiologist Impression:**\n"
+            f"{chr(10).join(impressions_bullets)}\n\n"
+            f"⚠️ **Review Notice:** Status is `DRAFT_PENDING_REVIEW`. All observations require attending clinician verification and sign-off before permanent record entry."
+        )
+
+        citations = [f.get("source_quote") for f in findings if f.get("source_quote")]
+        if not citations and dictation_res.get("raw_dictation"):
+            citations = [dictation_res.get("raw_dictation")]
+
         return {
             "status": "success" if is_complete else "incomplete",
             "extraction_status": dictation_res.get("extraction_status", "COMPLETE" if is_complete else "INCOMPLETE_REQUIRES_REVIEW"),
             "message": dictation_res.get("message", "Clinical observations structured into validated draft report."),
+            "answer": draft_answer,
+            "citations": citations,
             "dictation_result": dictation_res,
             "agent_trace": {
                 "orchestrator": "TriageAgent",

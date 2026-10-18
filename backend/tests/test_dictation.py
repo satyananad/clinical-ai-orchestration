@@ -154,3 +154,74 @@ def test_spoken_dictation_assessment_requirements():
     assert any("root Bridge option" in u for u in guardrails["unsupported_findings"])
     assert "Unclear speech transcription artifact flagged" in guardrails["anti_hallucination_guarantee"]
 
+
+def test_audio_upload_and_editable_confirmation():
+    """
+    Tests Feature B mandatory requirement:
+    1. Accept audio or speech-to-text transcript.
+    2. Produce editable structured JSON with findings, anatomical site, and readable draft report.
+    3. Label uncertainty and require clinician review.
+    4. Confirm and sign-off workflow.
+    """
+    import io
+
+    # 1. Test Audio Upload Endpoint
+    fake_audio = io.BytesIO(b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00D\xac\x00\x00\x88X\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00")
+    files = {"audio": ("test_voice_dictation.wav", fake_audio, "audio/wav")}
+    data = {
+        "transcript": "Lower right third molar is horizontally impacted with roots approximating the inferior alveolar nerve canal.",
+        "patient_name": "Priya Sharma",
+        "patient_id": "PAT-1004"
+    }
+    resp = client.post("/dictation/audio", files=files, data=data)
+    assert resp.status_code == 200
+    res_json = resp.json()
+
+    assert res_json["patient_context"]["patient_name"] == "Priya Sharma"
+    assert res_json["patient_context"]["patient_id"] == "PAT-1004"
+    assert res_json["report_metadata"]["status"] == "DRAFT_PENDING_REVIEW"
+    assert res_json["report_metadata"]["clinician_review_required"] is True
+
+    # Verify FDI tooth numbering and findings
+    findings = res_json["findings"]
+    assert len(findings) >= 1
+    f_impaction = findings[0]
+    assert f_impaction["tooth_number"] == "48"
+    assert "horizontally impacted" in f_impaction["observation"].lower()
+    assert f_impaction["certainty"] == "definite observation"
+
+    # Verify readable draft report is generated
+    assert "DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF" in res_json["narrative_draft"]
+    assert "Priya Sharma" in res_json["narrative_draft"]
+
+    # 2. Test Chat Interface Clinical Dictation Draft Generation
+    chat_resp = client.post("/assistant/chat", json={
+        "query": "Lower right third molar is horizontally impacted",
+        "session_id": "test-scribe-turn"
+    })
+    assert chat_resp.status_code == 200
+    chat_data = chat_resp.json()
+    assert chat_data["status"] == "success"
+    assert "Clinical Dictation Draft Report Generated" in chat_data["answer"]
+    assert "Tooth 48" in chat_data["answer"]
+    assert "horizontally impacted" in chat_data["answer"].lower()
+    assert "DRAFT_PENDING_REVIEW" in chat_data["answer"]
+
+    # 3. Test Editable Modification & Clinician Sign-Off
+    # Simulate clinician editing observation and signing off
+    edited_findings = [dict(f_impaction, observation="Confirmed mesioangular / horizontal impaction of tooth 48.")]
+    confirm_payload = {
+        "dictation_json_path": res_json["dictation_json_path"],
+        "patient_name": "Priya Sharma",
+        "patient_id": "PAT-1004",
+        "findings": edited_findings,
+        "impressions": ["Confirmed mesioangular / horizontal impaction of tooth 48."],
+        "raw_dictation": res_json["raw_dictation"]
+    }
+    confirm_resp = client.post("/dictation/confirm", json=confirm_payload)
+    assert confirm_resp.status_code == 200
+    conf_data = confirm_resp.json()
+    assert conf_data["report_metadata"]["status"] == "CONFIRMED_BY_CLINICIAN"
+    assert conf_data["report_metadata"]["clinician_review_required"] is False
+    assert conf_data["findings"][0]["observation"] == "Confirmed mesioangular / horizontal impaction of tooth 48."
+

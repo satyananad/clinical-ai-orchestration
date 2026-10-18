@@ -109,6 +109,29 @@ export async function structureDictation(text: string, patientId?: string, patie
   return res.json();
 }
 
+export async function confirmDictation(payload: any): Promise<DictationResponse> {
+  const res = await fetch(`${API_BASE}/dictation/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return res.json();
+}
+
+export async function uploadAudioDictation(audioFile: File, transcript?: string, patientId?: string, patientName?: string): Promise<DictationResponse> {
+  const formData = new FormData();
+  formData.append('audio', audioFile);
+  if (transcript) formData.append('transcript', transcript);
+  if (patientId) formData.append('patient_id', patientId);
+  if (patientName) formData.append('patient_name', patientName);
+
+  const res = await fetch(`${API_BASE}/dictation/audio`, {
+    method: 'POST',
+    body: formData
+  });
+  return res.json();
+}
+
 export async function resetSession(sessionId: string = 'default_session'): Promise<any> {
   const res = await fetch(`${API_BASE}/sessions/${sessionId}/reset`, { method: 'POST' });
   return res.json();
