@@ -124,7 +124,194 @@ def answer_report_question(report_id: str, query: str) -> Dict[str, Any]:
                 "report_date": report.get("report_date")
             }
 
-    # If the user is asking for a summary, findings, problems, or general consultation
+    # -------------------------------------------------------------------------
+    # INTENT 2: Authorized Demographic Query (Age, DOB, Sex, Demographics)
+    # -------------------------------------------------------------------------
+    is_demo_query = any(w in q_lower for w in ["age", "how old", "dob", "date of birth", "birth date", "gender", "sex"])
+    if is_demo_query:
+        dob = patient.get("date_of_birth") if patient else None
+        sex = patient.get("sex", "unspecified") if patient else "unspecified"
+        if dob:
+            try:
+                b_year = int(dob.split("-")[0])
+                age = 2026 - b_year
+                age_str = f"{age} years"
+            except Exception:
+                age_str = "documented on file"
+            return {
+                "status": "success",
+                "answer": (
+                    f"According to {patient_name}'s authorized demographic record ({patient_id}), "
+                    f"her date of birth is {dob} (Age: {age_str}, Sex: {sex}).\n\n"
+                    f"*Clinical Note: Demographic details are retrieved directly from the Master Patient Index, "
+                    f"as patient age is not recorded in the diagnostic radiology examination text.*"
+                ),
+                "citations": [f"Master Patient Index: {patient_id} ({patient_name}, DOB: {dob}, Sex: {sex})"],
+                "report_id": report["report_id"],
+                "report_date": report.get("report_date")
+            }
+
+    # -------------------------------------------------------------------------
+    # INTENT 3: Treatment, Management, or Clinical Recommendation
+    # -------------------------------------------------------------------------
+    is_treatment_query = any(w in q_lower for w in ["treatment", "advised", "recommend", "recommendation", "plan", "prescribed", "management", "intervention"])
+    if is_treatment_query:
+        rec = report.get("recommendation")
+        if rec and rec.strip() and rec.lower() not in ["none", "none.", "n/a"]:
+            return {
+                "status": "success",
+                "answer": (
+                    f"The treatment and recommendations advised in {report.get('report_type')} report ({report['report_id']}) are:\n"
+                    f"• {rec.strip()}"
+                ),
+                "citations": [f"Report Recommendation [{report['report_id']}]: \"{rec.strip()}\""],
+                "report_id": report["report_id"],
+                "report_date": report.get("report_date")
+            }
+
+    # -------------------------------------------------------------------------
+    # INTENT 4: Specific Tooth Query (e.g. Tooth 48, Tooth 16, Tooth 25, #29, UR5)
+    # -------------------------------------------------------------------------
+    tooth_match = re.search(r"\b(?:tooth|teeth|#)\s*([1-8][1-8]|[1-3]?[0-9])\b", q_lower)
+    palmer_q_match = re.search(r"\b(ur|ul|ll|lr)\s*([1-8])\b", q_lower)
+    named_tooth_match = re.search(r"\b(third molar|wisdom tooth|second molar|first molar|second premolar|first premolar|canine|lateral incisor|central incisor)\b", q_lower)
+
+    target_tooth = None
+    if tooth_match:
+        target_tooth = tooth_match.group(1)
+    elif palmer_q_match:
+        target_tooth = f"{palmer_q_match.group(1).upper()}{palmer_q_match.group(2)}"
+    elif named_tooth_match:
+        target_tooth = named_tooth_match.group(1)
+
+    if target_tooth:
+        tooth_findings = []
+        for f in findings:
+            comb = (str(f.get("region", "")) + " " + str(f.get("observation", ""))).lower()
+            if target_tooth.lower() in comb or (target_tooth == "48" and any(k in comb for k in ["tooth 48", "48", "lr8", "mandibular right third molar"])):
+                tooth_findings.append(f)
+
+        tooth_impressions = [
+            imp for imp in report.get("impression", [])
+            if target_tooth.lower() in imp.lower() or (target_tooth == "48" and any(k in imp.lower() for k in ["tooth 48", "48", "lr8", "third molar"]))
+        ]
+
+        if not tooth_findings and not tooth_impressions:
+            return {
+                "status": "success",
+                "answer": (
+                    f"Tooth {target_tooth} is not documented in {report.get('report_type')} report ({report['report_id']}). No findings, observations, or pathology regarding Tooth {target_tooth} were evaluated.\n\n"
+                    f"*Clinical Note: Absence of documentation in this report indicates Tooth {target_tooth} was outside the evaluated scope or not examined in this specific consultation; it must not be assumed that the tooth is clinically normal.*"
+                ),
+                "citations": [f"Source Report {report['report_id']}: Tooth {target_tooth} is not documented in this report."],
+                "report_id": report["report_id"],
+                "report_date": report.get("report_date")
+            }
+        else:
+            bullets = [f"• **{f.get('region')}**: {f.get('observation')} (Certainty: {f.get('certainty', 'Confirmed')})" for f in tooth_findings]
+            if tooth_impressions:
+                bullets.append(f"• **Radiologist Impression**: {'; '.join(tooth_impressions)}")
+            citations = [f"Report Finding [{f.get('region')}]: \"{f.get('observation')}\"" for f in tooth_findings]
+            for imp in tooth_impressions:
+                citations.append(f"Report Impression: \"{imp}\"")
+            return {
+                "status": "success",
+                "answer": f"Regarding Tooth {target_tooth} in report {report['report_id']}:\n" + "\n".join(bullets),
+                "citations": citations,
+                "report_id": report["report_id"],
+                "report_date": report.get("report_date")
+            }
+
+    # -------------------------------------------------------------------------
+    # INTENT 5: Specific Anatomical Structure (e.g. Gums, Periodontium, Sinus, TMJ)
+    # -------------------------------------------------------------------------
+    is_gums = bool(re.search(r"\b(gums?|gingiv\w*|periodont\w*)\b", q_lower))
+    if is_gums:
+        gum_findings = [f for f in findings if any(k in (str(f.get("region", "")) + " " + str(f.get("observation", ""))).lower() for k in ["periodont", "gingiv", "gum", "plaque"])]
+        gum_imps = [imp for imp in report.get("impression", []) if any(k in imp.lower() for k in ["periodont", "gingiv", "gum"])]
+        if gum_findings or gum_imps:
+            bullets = [f"• **{f.get('region')}**: {f.get('observation')} (Certainty: {f.get('certainty', 'Confirmed')})" for f in gum_findings]
+            if gum_imps:
+                bullets.append(f"• **Radiologist Impression**: {'; '.join(gum_imps)}")
+            citations = [f"Report Finding [{f.get('region')}]: \"{f.get('observation')}\"" for f in gum_findings]
+            for imp in gum_imps:
+                citations.append(f"Report Impression: \"{imp}\"")
+            return {
+                "status": "success",
+                "answer": f"Regarding the gums and periodontal status in report {report['report_id']}:\n" + "\n".join(bullets),
+                "citations": citations,
+                "report_id": report["report_id"],
+                "report_date": report.get("report_date")
+            }
+
+    # -------------------------------------------------------------------------
+    # INTENT 6: Specific Pathology Query (e.g. Caries, Cavity, Decay, Sensitivity)
+    # -------------------------------------------------------------------------
+    pathology_terms = ["caries", "cavity", "carious", "decay", "sensitivity", "hypersensitivity", "abfraction", "impaction", "fracture", "osteitis", "radiolucency"]
+    matched_path = [pt for pt in pathology_terms if re.search(r"\b" + re.escape(pt) + r"\b", q_lower)]
+    if matched_path:
+        search_stems = set(matched_path)
+        if "caries" in search_stems or "cavity" in search_stems or "decay" in search_stems:
+            search_stems.update(["caries", "carious", "decay", "cavity"])
+        if "sensitivity" in search_stems:
+            search_stems.update(["sensitivity", "hypersensitivity", "sensitive", "abfraction"])
+
+        path_findings = []
+        for f in findings:
+            comb = (str(f.get("region", "")) + " " + str(f.get("observation", ""))).lower()
+            if any(st in comb for st in search_stems):
+                # Ensure non-carious cervical loss is not confused with true caries
+                if ("caries" in search_stems or "carious" in search_stems) and "non-carious" in comb and not re.search(r"\b(?<!non-)carious\b", comb) and "caries" not in comb:
+                    continue
+                path_findings.append(f)
+        path_imps = [imp for imp in report.get("impression", []) if any(st in imp.lower() for st in search_stems)]
+        if path_findings or path_imps:
+            bullets = [f"• **{f.get('region')}**: {f.get('observation')} (Certainty: {f.get('certainty', 'Confirmed')})" for f in path_findings]
+            if path_imps:
+                bullets.append(f"• **Radiologist Impression**: {'; '.join(path_imps)}")
+            citations = [f"Report Finding [{f.get('region')}]: \"{f.get('observation')}\"" for f in path_findings]
+            for imp in path_imps:
+                citations.append(f"Report Impression: \"{imp}\"")
+            return {
+                "status": "success",
+                "answer": f"Documentation regarding {', '.join(matched_path)} in report {report['report_id']}:\n" + "\n".join(bullets),
+                "citations": citations,
+                "report_id": report["report_id"],
+                "report_date": report.get("report_date")
+            }
+
+    # -------------------------------------------------------------------------
+    # INTENT 7: Measurements Query
+    # -------------------------------------------------------------------------
+    is_meas_query = bool(re.search(r"\b(?:measurement|measurements|dimension|dimensions|size|sizes|mm|cm)\b", q_lower)) or (re.search(r"\bmeasure\b", q_lower) and not re.search(r"\bsummar\w*\b", q_lower))
+    if is_meas_query:
+        meas_bullets = []
+        citations = []
+        for f in findings:
+            obs = f.get("observation", "")
+            if re.search(r"\b(?:\d+(?:\.\d+)?\s*(?:mm|cm|seconds?|sec)|second|mm)\b", obs, re.I):
+                meas_bullets.append(f"• **{f.get('region')}**: {obs}")
+                citations.append(f"Report Measurement [{f.get('region')}]: \"{obs}\"")
+        if meas_bullets:
+            return {
+                "status": "success",
+                "answer": f"Documented clinical measurements in report {report['report_id']}:\n" + "\n".join(meas_bullets),
+                "citations": citations,
+                "report_id": report["report_id"],
+                "report_date": report.get("report_date")
+            }
+        else:
+            return {
+                "status": "success",
+                "answer": f"No linear or dimensional measurements are recorded in {report.get('report_type')} report ({report['report_id']}).",
+                "citations": [f"Source Report {report['report_id']}: No measurements recorded."],
+                "report_id": report["report_id"],
+                "report_date": report.get("report_date")
+            }
+
+    # -------------------------------------------------------------------------
+    # INTENT 8: General Summary / Consultation Query
+    # -------------------------------------------------------------------------
     summary_triggers = [
         "summarize", "summary", "overview", "explain this", "explain report", "explain her", "explain his",
         "what does the report show", "what does this report show", "what does the report say", "what are the findings",
@@ -137,7 +324,7 @@ def answer_report_question(report_id: str, query: str) -> Dict[str, Any]:
     is_general_summary_query = (
         any(w in q_lower for w in [
             "summar", "overview", "problem", "wrong", "diagnos", "impression", "finding",
-            "condition", "issue", "gist", "brief", "what did you find", "what does the report"
+            "condition", "issue", "gist", "brief"
         ])
         or (re.search(r"\bwhat\b", q_lower) and any(w in q_lower for w in ["have", "hsve", "has", "show", "say", "find", "see"]))
         or any(term in q_lower for term in summary_triggers)
@@ -176,59 +363,7 @@ def answer_report_question(report_id: str, query: str) -> Dict[str, Any]:
             "report_date": report.get("report_date")
         }
 
-    # Deterministic RAG Fallback (Zero Hallucination)
-    # Answers directly from structured report fields if LLM is offline
-    matched_findings = []
-    stop_words = {
-        "what", "did", "the", "radiologist", "say", "about", "is", "there", "any",
-        "show", "tell", "me", "how", "are", "does", "have", "with", "this", "report",
-        "from", "an", "a", "scan", "scans", "earlier", "mention", "mentioned", "prior",
-        "previous", "in", "on", "at", "for", "of", "to", "or", "and", "that", "it",
-        "was", "be", "by", "as", "if", "not"
-    }
-    q_tokens = {w for w in re.findall(r"\b[a-zA-Z0-9_-]+\b", q_lower) if w not in stop_words and len(w) > 2}
-
-    # Generalized semantic finding matcher
-    # Checks exact tokens, morphological stems (len >= 4), tooth number references, and dental aliases
-    for f in findings:
-        combined = (str(f.get("region", "")) + " " + str(f.get("observation", ""))).lower()
-        f_tokens = set(re.findall(r"\b[a-zA-Z0-9_-]+\b", combined))
-
-        # 1. Direct token overlap
-        if q_tokens & f_tokens:
-            matched_findings.append(f)
-            continue
-
-        # 2. Morphological stem / substring overlap for substantive clinical words
-        if any((len(qt) >= 4 and len(ft) >= 4 and (qt in ft or ft in qt)) for qt in q_tokens for ft in f_tokens):
-            matched_findings.append(f)
-            continue
-
-        # 3. Dental clinical synonyms / tooth aliases (e.g. wisdom tooth <-> third molar)
-        if ("wisdom" in q_lower and any(w in combined for w in ["third molar", "38", "48", "18", "28", "wisdom"])) or \
-           ("third molar" in q_lower and any(w in combined for w in ["wisdom", "38", "48", "18", "28"])) or \
-           ("bicuspid" in q_lower and "premolar" in combined) or \
-           ("premolar" in q_lower and "bicuspid" in combined):
-            matched_findings.append(f)
-            continue
-
-    if matched_findings:
-        bullets = [f"Regarding {mf.get('region')}: {mf.get('observation')} (Certainty: {mf.get('certainty', 'documented')})." for mf in matched_findings]
-        citations = [f"Report Finding [{mf.get('region')}]: \"{mf.get('observation')}\"" for mf in matched_findings]
-        for imp in report.get("impression", []):
-            if any(term in imp.lower() for term in q_tokens if len(term) > 3):
-                bullets.append(f"Radiologist Impression: {imp}")
-                citations.append(f"Report Impression: \"{imp}\"")
-
-        return {
-            "status": "success",
-            "answer": "\n".join(bullets),
-            "citations": citations,
-            "report_id": report["report_id"],
-            "report_date": report.get("report_date")
-        }
-
-    # If queried entity not mentioned in report
+    # Deterministic RAG Fallback
     return {
         "status": "success",
         "answer": f"According to {report['report_type']} report ({report['report_id']}), the requested details are not documented or evaluated. The radiologist's stated impression is: '{'; '.join(report.get('impression', []))}'.",

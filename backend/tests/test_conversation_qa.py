@@ -157,3 +157,50 @@ def test_patient_listing_and_menu_retrieval_queries():
     assert "No patient records found matching 'retrieving'" not in ans3
     assert any(w in ans3.lower() for w in ["retrieve patient imaging", "open", "patient", "explore"])
 
+
+def test_dynamic_report_qa_intent_coverage():
+    """
+    Evaluates dynamic question understanding across clinical report JSON:
+    1. 'Which tooth has caries?' -> identifies Tooth 16; excludes non-carious Tooth 25.
+    2. 'What treatment is advised?' -> extracts treatment/recommendations.
+    3. 'What does it say about the gums?' -> targets periodontium/gingiva findings.
+    4. 'Is there any measurement for tooth 25?' -> extracts thermal test response.
+    5. 'Does this report mention tooth 48?' -> explicitly states not documented; no hallucinated normalcy.
+    6. "What is Priya's age?" -> checks authorized Master Patient Index demographics.
+    """
+    # 1. Which tooth has caries?
+    res_caries = answer_report_question("RPT-2003", "Which tooth has caries?")
+    assert res_caries["status"] == "success"
+    ans_caries = res_caries["answer"]
+    assert "Tooth 16" in ans_caries
+    assert "Tooth 25" not in ans_caries
+
+    # 2. What treatment is advised?
+    res_treat = answer_report_question("RPT-2003", "What treatment is advised?")
+    assert res_treat["status"] == "success"
+    assert "topical varnish" in res_treat["answer"] or "composite resin restoration" in res_treat["answer"]
+
+    # 3. What does it say about the gums?
+    res_gums = answer_report_question("RPT-2003", "What does it say about the gums?")
+    assert res_gums["status"] == "success"
+    assert "Periodontium" in res_gums["answer"]
+    assert "gingival inflammation" in res_gums["answer"].lower()
+
+    # 4. Is there any measurement for tooth 25?
+    res_meas = answer_report_question("RPT-2003", "Is there any measurement for tooth 25?")
+    assert res_meas["status"] == "success"
+    assert "Tooth 25" in res_meas["answer"]
+    assert "2 seconds" in res_meas["answer"]
+
+    # 5. Does this report mention tooth 48?
+    res_48 = answer_report_question("RPT-2003", "Does this report mention tooth 48?")
+    assert res_48["status"] == "success"
+    assert "not documented" in res_48["answer"].lower()
+    assert "must not be assumed that the tooth is clinically normal" in res_48["answer"]
+
+    # 6. What is Priya's age?
+    res_age = answer_report_question("RPT-2003", "What is Priya's age?")
+    assert res_age["status"] == "success"
+    assert "1998-04-12" in res_age["answer"]
+    assert "Master Patient Index" in res_age["answer"]
+
