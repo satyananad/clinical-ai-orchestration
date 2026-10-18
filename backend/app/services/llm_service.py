@@ -266,6 +266,20 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
     and anti-hallucination verification.
     """
     cleaned_text = clean_conversational_dictation(dictation_text)
+    from .claim_verification import is_clinically_relevant_dictation, extract_patient_demographics
+    if not is_clinically_relevant_dictation(cleaned_text):
+        patient_details = extract_patient_demographics(cleaned_text)
+        return {
+            "anatomical_sites": [],
+            "findings": [],
+            "impressions": [],
+            "recommendations": [],
+            "extraction_status": "NON_CLINICAL_INPUT_REJECTED",
+            "findings_count": 0,
+            "patient_details": patient_details,
+            "clinical_warning": "Input text does not contain dental or maxillofacial clinical dictation. No clinical findings were extracted."
+        }
+
     prompt = f'Clinical dictation transcript:\n"{cleaned_text}"'
     raw_llm = query_llm(prompt, system_prompt=DICTATION_SYSTEM_PROMPT, json_format=True)
     result = None
@@ -620,13 +634,25 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
     from .claim_verification import (
         extract_patient_demographics,
         extract_measurements,
-        classify_clinical_finding_status
+        classify_clinical_finding_status,
+        is_clinically_relevant_dictation
     )
     cleaned_text = clean_conversational_dictation(dictation_text)
     patient_details = extract_patient_demographics(cleaned_text)
 
     # 1. Clean and partition text into clinical observation body
     clinical_body = extract_clinical_body(cleaned_text)
+    if not is_clinically_relevant_dictation(clinical_body):
+        return {
+            "patient_details": patient_details,
+            "anatomical_sites": [],
+            "findings": [],
+            "impressions": [],
+            "recommendations": [],
+            "extraction_status": "NON_CLINICAL_INPUT_REJECTED",
+            "findings_count": 0,
+            "clinical_warning": "Input text does not contain dental or maxillofacial clinical dictation. No clinical findings were extracted."
+        }
 
     # Strip age, measurements, and dates before extracting teeth to prevent misidentifying age as FDI tooth
     clean_no_age = re.sub(r"\b\d{1,2}\s*(?:-|–|\s)?(?:year|yr)s?(?:-|–|\s)?old\b|\bage\s*(?:is\s*)?\d{1,2}\b", " ", clinical_body, flags=re.IGNORECASE)

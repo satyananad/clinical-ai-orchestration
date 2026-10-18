@@ -31,8 +31,8 @@ def verify_anti_hallucination(raw_dictation: str, structured_findings: List[Dict
     
     # Map to standard API response fields
     raw_status = verification.get("status", "PASSED")
-    if raw_status == "FLAGGED_FOR_REVIEW":
-        status = "FLAGGED_FOR_REVIEW"
+    if raw_status in ("FLAGGED_FOR_REVIEW", "NON_CLINICAL_INPUT_REJECTED"):
+        status = raw_status
     elif raw_status == "PASSED":
         status = "PASSED"
     elif raw_status == "EXTRACTION_EMPTY_REQUIRES_REVIEW":

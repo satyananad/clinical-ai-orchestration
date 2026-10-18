@@ -35,6 +35,42 @@ HEDGING_WORDS = [
 # Image Limitation Triggers
 LIMITATION_WORDS = ["limited", "obscured", "partially obscured", "superimposition", "artifact", "projection limited"]
 
+# Dental and Maxillofacial Clinical Terms Regex Patterns
+CLINICAL_RELEVANCE_PATTERNS = [
+    # 1. Tooth names and dentition terminology
+    r"\b(?:tooth|teeth|molar|premolar|bicuspid|canine|cuspid|incisor|wisdom\s+tooth|dentition|dentate|edentulous)\b",
+    # 2. Dental notation / tooth numbers
+    r"\b(?:UR|UL|LL|LR)[\s_-]*([1-8]|[A-E])\b",
+    r"\b(?:teeth|tooth)\s*#?\d{1,2}\b",
+    r"\btooth\s*#?[A-T]\b",
+    r"\b(?:fdi|palmer|universal\s+numbering)\b",
+    # 3. Dental and maxillofacial anatomical structures
+    r"\b(?:enamel|dentin|pulp|pulpal|root|apices|apex|furcation|trifurcation|bifurcation|crown|cervical|gingiv\w+|periodont\w+|pdl|periodontal\s+ligament)\b",
+    r"\b(?:alveolar\s+(?:bone|ridge|crest)|alveolus|maxill\w+|mandib\w+|condyle|ramus|coronoid|tmj|temporomandibular|fossa|submandibular)\b",
+    r"\b(?:inferior\s+alveolar|ianc|mandibular\s+canal|mental\s+foramen|incisive\s+canal|maxillary\s+sinus\w*|sinus\s+floor|sinonasal|palate|palatine|tonsillolith|calcification\w*|buccal\s+cortex|lingual\s+cortex|cortical\s+plate)\b",
+    # 4. Dental pathologies & radiographic abnormalities
+    r"\b(?:caries|carious|decay|cavity|radiolucen\w+|radiopac\w+|periapical|abscess|osteitis|granuloma|cyst\w*|lesion|ameloblast\w+|odontom\w+)\b",
+    r"\b(?:impaction|impacted|unerupted|ectopic|supernumerary|resorption|luxation|avulsion|bone\s+loss|cortical\s+thinning|perforation|fracture|defect|peri-implantitis)\b",
+    # 5. Dental restorations, interventions, & therapies
+    r"\b(?:restor\w+|filling|composite|amalgam|pontic|implant\w*|abutment|osseointegrat\w*|root\s+canal|pulpectomy|obturation|gutta-percha|extraction|post\s+and\s+core|prosthesis|denture)\b",
+    # 6. Radiographic modalities & dental imaging terms
+    r"\b(?:cbct|cone\s+beam|opg|orthopantomogram|panoramic(?:\s+radiograph|\s+image|\s+scan)?|bitewing|periapical(?:\s+radiograph|\s+film|\s+view)?|iopa|cephalogram|radiograph\w*|field\s+of\s+view|voxel)\b"
+]
+
+def is_clinically_relevant_dictation(text: str) -> bool:
+    """
+    Evaluates whether an input transcript contains genuine dental, maxillofacial,
+    or radiological clinical content. Rejects generic technical discussions,
+    software documentation, non-medical chit-chat, and conversational prompts.
+    """
+    if not text or len(text.strip()) < 4:
+        return False
+    t_lower = text.lower()
+    for pat in CLINICAL_RELEVANCE_PATTERNS:
+        if re.search(pat, t_lower, re.IGNORECASE):
+            return True
+    return False
+
 
 # =============================================================================
 # REVISED RULE 3: MULTI-DIMENSIONAL CLINICAL STATUS
@@ -560,6 +596,35 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
     - Measurements and units preserved
     - Cross-checks Impressions against Findings for internal clinical contradictions
     """
+    # Check Empty Findings or Non-Clinical Relevance Gate
+    if not findings or not is_clinically_relevant_dictation(raw_dictation):
+        is_relevant = is_clinically_relevant_dictation(raw_dictation)
+        unsupported = (
+            [] if is_relevant else
+            ["Input text does not contain dental or maxillofacial clinical dictation. Attending clinician review required."]
+        )
+        return {
+            "status": "EXTRACTION_EMPTY_REQUIRES_REVIEW",
+            "grounded_ratio": 0.0,
+            "claim_support_ratio": 0.0,
+            "measurement_preservation": 1.0,
+            "extraction_completeness": 0.0,
+            "unresolved_issue_count": 1,
+            "verified_count": "0/0",
+            "claims_total": 0,
+            "supported_claims": 0,
+            "contradicted_claims": [],
+            "unsupported_findings": unsupported,
+            "detailed_results": [{
+                "status": ClaimStatus.INSUFFICIENT_EVIDENCE,
+                "dimension": "clinical_relevance" if not is_relevant else "extraction_completeness",
+                "details": "Input text does not contain dental or maxillofacial clinical dictation. Zero clinical findings could be grounded." if not is_relevant else "No clinical findings extracted; manual entry and clinician review required.",
+                "claim": raw_dictation[:100] + "..." if len(raw_dictation) > 100 else raw_dictation
+            }],
+            "clinician_review_required": True,
+            "anti_hallucination_guarantee": "No clinical findings extracted; attending clinician manual entry and verification required."
+        }
+
     unsupported_claims = []
     contradicted_claims = []
     flagged_unclear_claims = []
