@@ -11,6 +11,46 @@ import re
 from .retrieval import get_patient, get_report_by_id, resolve_report_retrieval
 from .report_qa_service import answer_report_question, generate_report_summary
 
+from enum import Enum
+
+class BookingStage(str, Enum):
+    IDLE = "IDLE"
+    COLLECTING_DETAILS = "COLLECTING_DETAILS"
+    SLOTS_PRESENTED = "SLOTS_PRESENTED"
+    AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION"
+    CONFIRMED = "CONFIRMED"
+    CANCELLED = "CANCELLED"
+
+class BookingWorkflowState:
+    """Explicit state machine tracking appointment booking stages and validated entities."""
+    def __init__(self):
+        self.stage: BookingStage = BookingStage.IDLE
+        self.patient_id: Optional[str] = None
+        self.patient_name: Optional[str] = None
+        self.patient_type: str = "registered"  # "registered", "walk_in"
+        self.modality: Optional[str] = None
+        self.preferred_date: Optional[str] = None
+        self.preferred_time: Optional[str] = None
+        self.displayed_slots: List[Dict[str, Any]] = []
+        self.selected_slot: Optional[Dict[str, Any]] = None
+        self.summary_displayed: bool = False
+        self.completed_booking: Optional[Dict[str, Any]] = None
+        self.last_action_status: Optional[str] = None
+
+    def reset(self):
+        self.stage = BookingStage.IDLE
+        self.patient_id = None
+        self.patient_name = None
+        self.patient_type = "registered"
+        self.modality = None
+        self.preferred_date = None
+        self.preferred_time = None
+        self.displayed_slots = []
+        self.selected_slot = None
+        self.summary_displayed = False
+        self.completed_booking = None
+        self.last_action_status = None
+
 class SessionState:
     """
     Encapsulates isolated session context for a specific clinician conversation.
@@ -25,8 +65,23 @@ class SessionState:
         self.pending_request: Optional[Dict[str, Any]] = None
         self.last_retrieval_query: Optional[str] = None
         self.last_retrieval_modality: Optional[str] = None
-        self.pending_booking_slots: Optional[List[Dict[str, Any]]] = None
-        self.pending_booking_modality: Optional[str] = None
+        self.booking_state: BookingWorkflowState = BookingWorkflowState()
+
+    @property
+    def pending_booking_slots(self) -> Optional[List[Dict[str, Any]]]:
+        return self.booking_state.displayed_slots if self.booking_state.displayed_slots else None
+
+    @pending_booking_slots.setter
+    def pending_booking_slots(self, value: Optional[List[Dict[str, Any]]]):
+        self.booking_state.displayed_slots = value or []
+
+    @property
+    def pending_booking_modality(self) -> Optional[str]:
+        return self.booking_state.modality
+
+    @pending_booking_modality.setter
+    def pending_booking_modality(self, value: Optional[str]):
+        self.booking_state.modality = value
 
     def set_active(self, patient_id: str, report_id: str):
         """Updates active patient & report ONLY upon verified successful retrieval."""
@@ -36,6 +91,12 @@ class SessionState:
         self.pending_request = None
         self.last_retrieval_query = None
         self.last_retrieval_modality = None
+        # Synchronize patient context with booking state if idle
+        if self.booking_state.stage == BookingStage.IDLE:
+            self.booking_state.patient_id = patient_id
+            p = get_patient(patient_id)
+            if p:
+                self.booking_state.patient_name = p.get("patient_name")
 
     def clear(self):
         """Clears session context and resets active selections."""
@@ -46,8 +107,7 @@ class SessionState:
         self.pending_request = None
         self.last_retrieval_query = None
         self.last_retrieval_modality = None
-        self.pending_booking_slots = None
-        self.pending_booking_modality = None
+        self.booking_state.reset()
 
 # Thread-safe session dictionary keyed by unique session_id
 SESSIONS: Dict[str, SessionState] = {}

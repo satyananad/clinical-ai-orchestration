@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class CandidatePatient(BaseModel):
     patient_id: str
@@ -86,6 +86,8 @@ class AssistantChatRequest(BaseModel):
     session_id: Optional[str] = "default_session"
 
 class AssistantChatResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     status: str
     message: str
     candidates: Optional[List[CandidatePatient]] = None

@@ -11,9 +11,10 @@ and LLM Function/Tool Calling:
 
 import json
 import re
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from .mcp_tools import DENTAL_ASSISTANT_TOOLS, get_ollama_tool_definitions, execute_tool, handle_mcp_jsonrpc_request
-from .conversation_service import get_or_create_session, is_contextual_query
+from .conversation_service import get_or_create_session, is_contextual_query, BookingStage
 from .retrieval import resolve_report_retrieval, extract_retrieval_intent
 from .report_qa_service import answer_report_question
 from .llm_service import query_llm, query_ollama, query_ollama_chat_tools
@@ -227,8 +228,12 @@ def resolve_pending_slot_from_query(query: str, pending_slots: List[Dict[str, An
                 return m["slot_id"]
         return matched[0]["slot_id"]
 
-    # 4. Confirmation keyword fallback (default to slot 1)
-    if any(w in q_norm for w in ["yes", "confirm", "book", "proceed", "sure", "ok", "please"]):
+    # 4. Explicit confirmation keyword fallback (default to slot 1 if user explicitly confirms without picking)
+    is_standalone_confirm = any(
+        re.search(r"\b" + re.escape(w) + r"\b", q_norm)
+        for w in ["yes", "confirm", "book it", "take it", "proceed", "first one", "first slot", "that one"]
+    ) and not any(w in q_norm for w in ["cbct", "opg", "patient", "panoramic", "bitewing", "periapical"])
+    if is_standalone_confirm:
         return pending_slots[0]["slot_id"]
 
     return None
@@ -236,17 +241,15 @@ def resolve_pending_slot_from_query(query: str, pending_slots: List[Dict[str, An
 def extract_date_from_query(query: str) -> Optional[str]:
     """
     Extracts an appointment or scan date from clinician natural language:
-    - 'tomorrow' -> 2026-10-19
-    - 'today' -> 2026-10-18
-    - '23rd october', '20 october', '19 oct' -> 2026-MM-DD
-    - 'october 23rd', 'oct 20' -> 2026-MM-DD
-    - ISO dates e.g. '2026-10-23'
+    Uses clock.get_current_date() for dynamic calculation.
     """
+    from .clock import get_current_date
+    now_d = get_current_date()
     q_lower = query.lower().strip()
     if "tomorrow" in q_lower:
-        return "2026-10-19"
+        return (now_d + timedelta(days=1)).strftime("%Y-%m-%d")
     if "today" in q_lower:
-        return "2026-10-18"
+        return now_d.strftime("%Y-%m-%d")
 
     iso = re.search(r"\b(202\d)-(0[1-9]|1[0-2])-([0-3]\d)\b", q_lower)
     if iso:
@@ -257,7 +260,7 @@ def extract_date_from_query(query: str) -> Optional[str]:
         "feb": "02", "february": "02",
         "mar": "03", "march": "03",
         "apr": "04", "april": "04",
-        "may": "05",
+        "may": "05", "may": "05",
         "jun": "06", "june": "06",
         "jul": "07", "july": "07",
         "aug": "08", "august": "08",
@@ -275,7 +278,7 @@ def extract_date_from_query(query: str) -> Optional[str]:
         m_str = m_day_first.group(2)
         for k, v in months.items():
             if m_str.startswith(k):
-                return f"2026-{v}-{day:02d}"
+                return f"{now_d.year}-{v}-{day:02d}"
 
     # "october 23rd", "oct 20" (ensure day is not time like 10:00)
     m_month_first = re.search(rf"\b({m_re})\s+([0-3]?\d)(?:st|nd|rd|th)?(?!\s*[:\d])\b", q_lower)
@@ -284,7 +287,7 @@ def extract_date_from_query(query: str) -> Optional[str]:
         day = int(m_month_first.group(2))
         for k, v in months.items():
             if m_str.startswith(k):
-                return f"2026-{v}-{day:02d}"
+                return f"{now_d.year}-{v}-{day:02d}"
 
     return None
 
@@ -338,61 +341,244 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             if is_database_q or has_retrieval_cmd:
                 session.pending_candidates = None
 
-    # Step 0B: Scan booking confirmation resolution from pending slots
-    if session.pending_booking_slots:
-        matched_slot_id = resolve_pending_slot_from_query(query, session.pending_booking_slots)
-        if matched_slot_id:
-            pat_name = None
-            pat_id = session.active_patient_id
-            if pat_id:
-                from .retrieval import get_patient
-                p = get_patient(pat_id)
-                if p:
-                    pat_name = p.get("patient_name")
-            if not pat_name:
-                pat_name = "Walk-in Patient"
+    # Step 0B: State-Machine Booking Workflow Management
+    b_state = session.booking_state
 
-            session.pending_booking_slots = None
+    ref_match = re.search(r"\b(BKG-[A-Za-z0-9_-]+|SLOT-\d+)\b", query, re.IGNORECASE)
+    b_ref = ref_match.group(1).upper() if ref_match else None
+
+    # 0B.1 Cancellation request (Must check before lookup so 'cancel booking BKG-...' is treated as cancellation)
+    is_cancel_query = (
+        any(w in q_lower for w in ["cancel", "release", "revoke", "delete"])
+        and any(w in q_lower for w in ["booking", "appointment", "slot", "it"])
+    )
+    if is_cancel_query:
+        ident = b_ref or (b_state.completed_booking.get("booking_reference") if b_state.completed_booking else None)
+        if not ident and b_state.selected_slot:
+            ident = b_state.selected_slot.get("slot_id")
+
+        return {
+            "selected_agent": "ScanBookingAgent",
+            "tool_name": "cancel_scan_booking",
+            "arguments": {
+                "booking_identifier": ident or "UNKNOWN",
+                "reason": "Clinician requested cancellation"
+            },
+            "rationale": "Clinician requested appointment cancellation."
+        }
+
+    # 0B.2 Existing booking lookup inquiry ("I already booked", "Show my appointment", "Check my booking")
+    is_lookup_query = (
+        bool(b_ref and b_ref.startswith("BKG-"))
+        or any(p in q_lower for p in [
+            "i already booked", "already booked", "already have an appointment", "already have a booking",
+            "show my appointment", "show my booking", "check my booking", "view my booking",
+            "view my appointment", "check my appointment", "is my appointment booked",
+            "my existing appointment", "my existing booking", "my appointment", "my appointments",
+            "existing appointment", "existing booking", "appointment details", "booking details"
+        ])
+        or (any(w in q_lower for w in ["lookup", "find", "show", "view", "check", "retrieve", "details"]) and any(w in q_lower for w in ["my booking", "my appointment", "existing booking", "existing appointment", "appointment details", "booking details"]))
+    )
+    if is_lookup_query:
+        pat_name = b_state.patient_name
+        pat_id = b_state.patient_id or session.active_patient_id
+        if not pat_name and pat_id:
+            from .retrieval import get_patient
+            p = get_patient(pat_id)
+            if p:
+                pat_name = p.get("patient_name")
+        q_intent = extract_retrieval_intent(query)
+        if q_intent.get("patient_name") and q_intent["patient_name"].lower() not in ["patient", "booking", "appointment", "my", "details"]:
+            from .retrieval import search_patients
+            found_cands = search_patients(q_intent["patient_name"])
+            if found_cands:
+                pat_name = found_cands[0]["patient_name"]
+                pat_id = found_cands[0]["patient_id"]
+            else:
+                pat_name = q_intent["patient_name"].title()
+
+        return {
+            "selected_agent": "ScanBookingAgent",
+            "tool_name": "lookup_existing_booking",
+            "arguments": {
+                "patient_name": pat_name,
+                "patient_id": pat_id,
+                "booking_reference": b_ref,
+                "date": extract_date_from_query(query)
+            },
+            "rationale": "Clinician requested lookup of existing appointment booking."
+        }
+
+    # 0B.3 Idempotency check if user repeats confirmation when already booked
+    if b_state.stage == BookingStage.CONFIRMED and b_state.completed_booking:
+        if any(w in q_lower for w in ["confirm", "yes", "book"]):
+            cb = b_state.completed_booking
+            return {
+                "selected_agent": "ScanBookingAgent",
+                "tool_name": "booking_already_confirmed",
+                "arguments": {
+                    "booking": cb
+                },
+                "rationale": "Idempotency: Appointment was already confirmed."
+            }
+
+    # 0B.4 Workflow in AWAITING_CONFIRMATION
+    if b_state.stage == BookingStage.AWAITING_CONFIRMATION and b_state.selected_slot:
+        is_approval = any(re.search(r"\b" + re.escape(w) + r"\b", q_lower) for w in ["yes", "confirm", "proceed", "sure", "ok", "book it", "please", "go ahead", "approved"]) or "yes" in q_lower or "confirm" in q_lower
+        is_decline = any(w in q_lower for w in ["no", "cancel", "stop", "abort", "never mind", "don't"])
+
+        if is_approval and not is_decline:
+            slot = b_state.selected_slot
             return {
                 "selected_agent": "ScanBookingAgent",
                 "tool_name": "confirm_scan_booking",
                 "arguments": {
-                    "slot_id": matched_slot_id,
-                    "patient_name": pat_name,
-                    "patient_id": pat_id
+                    "slot_id": slot["slot_id"],
+                    "patient_name": b_state.patient_name or "Patient",
+                    "patient_id": b_state.patient_id,
+                    "modality": b_state.modality or slot.get("modality")
                 },
-                "rationale": f"Clarification Resolution: Matched slot {matched_slot_id} from user input '{query}'."
+                "rationale": "Explicit Confirmation: Clinician confirmed booking."
             }
-        elif any(w in q_lower for w in ["cancel", "never mind", "stop", "abort", "no"]):
-            session.pending_booking_slots = None
+        elif is_decline:
+            b_state.reset()
             return {
-                "selected_agent": "GeneralAssistantAgent",
-                "tool_name": "general_query",
-                "arguments": {"question": "Appointment booking cancelled."},
-                "rationale": "Clinician cancelled appointment booking."
+                "selected_agent": "ScanBookingAgent",
+                "tool_name": "booking_declined",
+                "arguments": {"reason": "Declined by clinician"},
+                "rationale": "Clinician declined booking confirmation."
             }
+
+    # 0B.5 Workflow in SLOTS_PRESENTED or pending_booking_slots active
+    if b_state.stage == BookingStage.SLOTS_PRESENTED or session.pending_booking_slots:
+        avail_slots = b_state.displayed_slots or session.pending_booking_slots or []
+
+        # If user provides new booking criteria (specifying modality, preferred date, or patient)
+        # without selecting a specific slot ID, treat as refined search instead of slot selection
+        has_new_booking_criteria = (
+            (any(w in q_lower for w in ["cbct", "opg", "panoramic", "bitewing", "periapical", "cephalogram"])
+             or extract_date_from_query(query) is not None
+             or bool(re.search(r"\bpatient\s+[a-z]+", q_lower))
+             or bool(re.search(r"\bfor\s+(?:patient\s+)?[a-z]+", q_lower)))
+            and not bool(re.search(r"\b(slot[- ]?\d+|\b10[1-7]\b)\b", q_lower))
+        )
+        if has_new_booking_criteria:
+            b_state.displayed_slots = []
         else:
-            is_new_inquiry = (
-                any(w in q_lower for w in ["is there", "any dr", "any doctor", "how many", "check", "want to book", "i want", "other", "another", "what are", "which"])
-                or any(v in q_lower for v in ["open", "find", "retrieve", "dictate", "generate", "summarize", "database"])
-            )
-            is_time_or_date = any(t in q_lower for t in ["am", "pm", "a.m.", "p.m.", ":", "tomorrow", "oct", "october", "morning", "afternoon", "slot", "#", "first", "second", "third", "take", "give me"]) or any(c.isdigit() for c in query)
-            if is_new_inquiry:
-                session.pending_booking_slots = None
-            elif is_time_or_date:
+            matched_slot_id = resolve_pending_slot_from_query(query, avail_slots)
+            is_approval_intent = any(w in q_lower for w in ["yes", "confirm", "please confirm", "book slot", "confirm slot"])
+            is_decline = any(w in q_lower for w in ["cancel", "never mind", "stop", "abort", "no"])
+
+            if is_decline:
+                b_state.reset()
                 return {
                     "selected_agent": "ScanBookingAgent",
-                    "tool_name": "invalid_slot_selection",
-                    "arguments": {
-                        "query": query,
-                        "available_slots": session.pending_booking_slots
-                    },
-                    "rationale": f"Safety Gate: User query '{query}' did not match any available slot."
+                    "tool_name": "booking_declined",
+                    "arguments": {"reason": "Cancelled by clinician"},
+                    "rationale": "Clinician cancelled appointment booking."
                 }
+
+            if matched_slot_id:
+                matched_slot = next((s for s in avail_slots if s["slot_id"].upper() == matched_slot_id.upper()), None)
+                if not matched_slot:
+                    from .booking_service import get_slot_by_id
+                    matched_slot = get_slot_by_id(matched_slot_id)
+
+                # Determine patient identity
+                pat_name = b_state.patient_name
+                pat_id = b_state.patient_id or session.active_patient_id
+                if not pat_name and pat_id:
+                    from .retrieval import get_patient
+                    p = get_patient(pat_id)
+                    if p:
+                        pat_name = p.get("patient_name")
+
+                # Check if user mentioned patient in this query
+                if not pat_name:
+                    q_intent = extract_retrieval_intent(query)
+                    cand_name = q_intent.get("patient_name", "")
+                    if cand_name and cand_name.lower() not in ["patient", "slot", "appointment", "yes", "please"]:
+                        from .retrieval import search_patients
+                        found_cands = search_patients(cand_name)
+                        exact_cands = [c for c in found_cands if c["patient_name"].lower() == cand_name.lower()]
+                        if len(exact_cands) == 1:
+                            pat_name = exact_cands[0]["patient_name"]
+                            pat_id = exact_cands[0]["patient_id"]
+                        elif len(cand_name.split()) == 1:
+                            same_f = [c for c in found_cands if c["patient_name"].split()[0].lower() == cand_name.lower()]
+                            if len(same_f) == 1:
+                                pat_name = same_f[0]["patient_name"]
+                                pat_id = same_f[0]["patient_id"]
+                            else:
+                                pat_name = cand_name.title()
+                        else:
+                            pat_name = cand_name.title()
+
+                if not pat_name:
+                    pat_name = "Walk-in Patient" if (b_state.patient_type == "walk_in" or "walk" in q_lower) else "Walk-in Patient"
+
+                b_state.selected_slot = matched_slot
+                b_state.patient_name = pat_name
+                b_state.patient_id = pat_id
+
+                # Distinguish explicit selection (e.g. 'select the 10am slot') from direct confirmation (e.g. 'October 10:00 a.m.')
+                is_explicit_selection = bool(
+                    re.search(r"\b(select|choose|pick|option)\b", q_lower)
+                    or "change that to" in q_lower
+                    or "switch to" in q_lower
+                    or "let's select" in q_lower
+                )
+
+                if not is_explicit_selection:
+                    session.pending_booking_slots = None
+                    return {
+                        "selected_agent": "ScanBookingAgent",
+                        "tool_name": "confirm_scan_booking",
+                        "arguments": {
+                            "slot_id": matched_slot_id,
+                            "patient_name": pat_name,
+                            "patient_id": pat_id,
+                            "modality": matched_slot.get("modality") if matched_slot else b_state.modality
+                        },
+                        "rationale": f"Direct Confirmation: Confirmed slot {matched_slot_id}."
+                    }
+                else:
+                    # Show summary and await explicit confirmation
+                    b_state.stage = BookingStage.AWAITING_CONFIRMATION
+                    return {
+                        "selected_agent": "ScanBookingAgent",
+                        "tool_name": "show_booking_summary",
+                        "arguments": {
+                            "slot": matched_slot,
+                            "patient_name": pat_name,
+                            "patient_id": pat_id,
+                            "modality": matched_slot.get("modality") if matched_slot else b_state.modality
+                        },
+                        "rationale": f"Slot Selected: Presenting summary for {matched_slot_id} awaiting explicit confirmation."
+                    }
             else:
-                session.pending_booking_slots = None
+                is_new_inquiry = (
+                    any(w in q_lower for w in ["is there", "any dr", "any doctor", "how many", "check", "want to book", "i want", "other", "another", "what are", "which"])
+                    or any(v in q_lower for v in ["open", "find", "retrieve", "dictate", "generate", "summarize", "database"])
+                )
+                is_time_or_date = any(t in q_lower for t in ["am", "pm", "a.m.", "p.m.", ":", "tomorrow", "oct", "october", "morning", "afternoon", "slot", "#", "first", "second", "third", "take", "give me"]) or any(c.isdigit() for c in query)
+                if is_new_inquiry:
+                    b_state.displayed_slots = []
+                elif is_time_or_date:
+                    return {
+                        "selected_agent": "ScanBookingAgent",
+                        "tool_name": "invalid_slot_selection",
+                        "arguments": {
+                            "query": query,
+                            "available_slots": avail_slots
+                        },
+                        "rationale": f"Safety Gate: User query '{query}' did not match any available slot."
+                    }
+                else:
+                    b_state.displayed_slots = []
+
     else:
-        # If session pending_booking_slots was cleared/None, check if user directly entered a slot ID or time/date
+        # If session has no pending slots, check if user directly entered a slot ID or time
         is_direct_slot_or_time = bool(
             re.search(r"\b(?:slot[- ]?\d+|10:00|02:30|2:30|11:15|04:00|4:00|09:00|9:00|10:30|03:15|3:15)\b", q_lower)
             or (any(t in q_lower for t in ["am", "pm", "a.m.", "p.m."]) and any(c.isdigit() for c in q_lower))
@@ -403,25 +589,52 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             all_avail = check_available_slots()
             matched_slot_id = resolve_pending_slot_from_query(query, all_avail)
             if matched_slot_id:
-                pat_name = None
-                pat_id = session.active_patient_id
-                if pat_id:
+                matched_slot = next((s for s in all_avail if s["slot_id"].upper() == matched_slot_id.upper()), None)
+                pat_name = b_state.patient_name
+                pat_id = b_state.patient_id or session.active_patient_id
+                if not pat_name and pat_id:
                     from .retrieval import get_patient
                     p = get_patient(pat_id)
                     if p:
                         pat_name = p.get("patient_name")
                 if not pat_name:
                     pat_name = "Walk-in Patient"
-                return {
-                    "selected_agent": "ScanBookingAgent",
-                    "tool_name": "confirm_scan_booking",
-                    "arguments": {
-                        "slot_id": matched_slot_id,
-                        "patient_name": pat_name,
-                        "patient_id": pat_id
-                    },
-                    "rationale": f"Direct Slot Resolution: Matched slot {matched_slot_id} from user input '{query}'."
-                }
+
+                b_state.selected_slot = matched_slot
+                b_state.patient_name = pat_name
+                b_state.patient_id = pat_id
+
+                is_explicit_selection = bool(
+                    re.search(r"\b(select|choose|pick|option)\b", q_lower)
+                    or "change that to" in q_lower
+                    or "switch to" in q_lower
+                    or "let's select" in q_lower
+                )
+                if not is_explicit_selection:
+                    return {
+                        "selected_agent": "ScanBookingAgent",
+                        "tool_name": "confirm_scan_booking",
+                        "arguments": {
+                            "slot_id": matched_slot_id,
+                            "patient_name": pat_name,
+                            "patient_id": pat_id,
+                            "modality": matched_slot.get("modality") if matched_slot else b_state.modality
+                        },
+                        "rationale": f"Direct Slot Resolution: Confirmed slot {matched_slot_id}."
+                    }
+                else:
+                    b_state.stage = BookingStage.AWAITING_CONFIRMATION
+                    return {
+                        "selected_agent": "ScanBookingAgent",
+                        "tool_name": "show_booking_summary",
+                        "arguments": {
+                            "slot": matched_slot,
+                            "patient_name": pat_name,
+                            "patient_id": pat_id,
+                            "modality": matched_slot.get("modality") if matched_slot else b_state.modality
+                        },
+                        "rationale": f"Slot Selected: Presenting summary for {matched_slot_id} awaiting explicit confirmation."
+                    }
 
     # Step 1: LLM Dynamic Multi-Agent Triage (Groq / Ollama Clinical Orchestrator Agent)
     prompt = (
@@ -528,7 +741,11 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         or (any(w in q_lower for w in ["dr", "doctor", "radiologist", "scan"]) and any(w in q_lower for w in ["have", "available", "free", "open", "slot", "slots", "schedule", "appointment", "oct", "october", "nov", "dec", "tomorrow", "today", "any", "is there", "are there"]))
         or (bool(detected_date) and any(w in q_lower for w in ["have", "available", "slot", "slots", "appointment", "dr", "doctor", "scan", "can i"]))
     )
-    is_retrieval_override = any(w in q_lower for w in ["open", "show", "view", "find report", "retrieve"])
+    has_booking_keyword = any(w in q_lower for w in ["slot", "slots", "appointment", "appoint ment", "booking", "schedule", "reschedule"])
+    is_retrieval_override = (
+        not has_booking_keyword
+        and any(w in q_lower for w in ["open", "show", "view", "find report", "retrieve", "load report"])
+    )
     if is_booking_request and not is_retrieval_override:
         detected_mod = "Any"
         if any(w in q_lower for w in ["cbct", "cone beam", "3d"]):
@@ -540,12 +757,69 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         elif any(w in q_lower for w in ["periapical", "iopa"]):
             detected_mod = "Periapical"
 
+        # Check if patient is specified
+        pat_name_for_booking = None
+        pat_id_for_booking = session.active_patient_id
+        if any(w in q_lower for w in ["walk-in", "walk in"]):
+            session.booking_state.patient_type = "walk_in"
+            pat_name_for_booking = "Walk-in Patient"
+        else:
+            q_intent = extract_retrieval_intent(query)
+            cand_name = q_intent.get("patient_name", "")
+            if cand_name and cand_name.lower() not in ["patient", "slot", "appointment", "booking", "scan", "any"]:
+                from .retrieval import search_patients
+                cands = search_patients(cand_name)
+                exact_cands = [c for c in cands if c["patient_name"].lower() == cand_name.lower()]
+                if len(exact_cands) == 1:
+                    pat_name_for_booking = exact_cands[0]["patient_name"]
+                    pat_id_for_booking = exact_cands[0]["patient_id"]
+                elif len(exact_cands) > 1:
+                    session.pending_candidates = exact_cands
+                    return {
+                        "selected_agent": "RetrievalAgent",
+                        "tool_name": "clarification_required",
+                        "arguments": {"candidates": exact_cands},
+                        "rationale": f"Ambiguous patient name '{cand_name}' for booking. Clarification required."
+                    }
+                else:
+                    cand_tokens = cand_name.split()
+                    if len(cand_tokens) == 1:
+                        cand_first = cand_tokens[0].lower()
+                        same_first = [c for c in cands if c["patient_name"].split()[0].lower() == cand_first]
+                        if len(same_first) == 1:
+                            pat_name_for_booking = same_first[0]["patient_name"]
+                            pat_id_for_booking = same_first[0]["patient_id"]
+                        elif len(same_first) > 1:
+                            session.pending_candidates = same_first
+                            return {
+                                "selected_agent": "RetrievalAgent",
+                                "tool_name": "clarification_required",
+                                "arguments": {"candidates": same_first},
+                                "rationale": f"Ambiguous patient name '{cand_name}' for booking. Clarification required."
+                            }
+                        else:
+                            pat_name_for_booking = cand_name.title()
+                            pat_id_for_booking = None
+                            session.booking_state.patient_type = "new"
+                    else:
+                        pat_name_for_booking = cand_name.title()
+                        pat_id_for_booking = None
+                        session.booking_state.patient_type = "new"
+
+        session.booking_state.patient_name = pat_name_for_booking
+        session.booking_state.patient_id = pat_id_for_booking
+        session.booking_state.modality = detected_mod
+        session.booking_state.preferred_date = detected_date
+        session.booking_state.stage = BookingStage.SLOTS_PRESENTED
+
         return {
             "selected_agent": "ScanBookingAgent",
             "tool_name": "check_appointment_slots",
             "arguments": {
                 "modality": detected_mod,
-                "preferred_date": detected_date
+                "preferred_date": detected_date,
+                "patient_name": pat_name_for_booking,
+                "patient_id": pat_id_for_booking
             },
             "rationale": f"Fallback: Clinician requested scan booking/availability for {detected_mod} on {detected_date or 'any date'}."
         }
@@ -972,14 +1246,14 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
     # =========================================================================
     # AGENT 4: SCAN-BOOKING AGENT (Voice & Typed Appointment Scheduling)
     # =========================================================================
-    elif selected_agent == "ScanBookingAgent" or tool_name in ["check_appointment_slots", "confirm_scan_booking"]:
+    elif selected_agent == "ScanBookingAgent" or tool_name in ["check_appointment_slots", "confirm_scan_booking", "show_booking_summary", "lookup_existing_booking", "cancel_scan_booking", "booking_already_confirmed"]:
         if tool_name == "confirm_scan_booking":
             slot_id = arguments.get("slot_id")
-            if not slot_id and session.pending_booking_slots:
-                slot_id = session.pending_booking_slots[0]["slot_id"]
+            if not slot_id and session.booking_state.displayed_slots:
+                slot_id = session.booking_state.displayed_slots[0]["slot_id"]
 
-            patient_name = arguments.get("patient_name")
-            patient_id = arguments.get("patient_id")
+            patient_name = arguments.get("patient_name") or session.booking_state.patient_name
+            patient_id = arguments.get("patient_id") or session.booking_state.patient_id
             if not patient_name and session.active_patient_id:
                 from .retrieval import get_patient
                 p = get_patient(session.active_patient_id)
@@ -987,21 +1261,88 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                     patient_name = p.get("patient_name")
                     patient_id = p.get("patient_id")
             if not patient_name:
-                patient_name = "Patient"
+                patient_name = "Walk-in Patient" if session.booking_state.patient_type == "walk_in" else "Walk-in Patient"
 
             confirm_res = execute_tool("confirm_scan_booking", {
                 "slot_id": slot_id,
                 "patient_name": patient_name,
-                "patient_id": patient_id
+                "patient_id": patient_id,
+                "scan_type": arguments.get("modality") or session.booking_state.modality
             })
-            session.pending_booking_slots = None
-            session.pending_booking_modality = None
+
+            if confirm_res.get("status") == "success":
+                session.booking_state.stage = BookingStage.CONFIRMED
+                session.booking_state.completed_booking = confirm_res.get("slot")
+                session.booking_state.displayed_slots = []
+                session.booking_state.selected_slot = None
+
+                return {
+                    "status": "success",
+                    "message": confirm_res.get("message"),
+                    "booking_reference": confirm_res.get("booking_reference"),
+                    "slot": confirm_res.get("slot"),
+                    "agent_trace": {
+                        "orchestrator": "TriageAgent",
+                        "active_agent": "ScanBookingAgent",
+                        "tool_called": tool_name,
+                        "arguments": arguments,
+                        "rationale": rationale,
+                        "mcp_jsonrpc": mcp_request
+                    }
+                }
+            else:
+                # Slot is already booked or unavailable
+                session.booking_state.stage = BookingStage.SLOTS_PRESENTED
+                from .booking_service import check_available_slots as get_open_slots
+                fresh_slots = get_open_slots(modality=session.booking_state.modality or "Any")
+                session.booking_state.displayed_slots = fresh_slots
+                slot_lines = [f"• [{s['slot_id']}] {s['datetime_str']} — {s['modality']} ({s['room']})" for s in fresh_slots]
+                fail_msg = (
+                    f"{confirm_res.get('message')}\n\n"
+                    f"Please choose an alternative from the currently available slots:\n"
+                    + "\n".join(slot_lines)
+                    + f"\n\nConfirmation Required: Would you like to confirm any of these slots? (e.g. 'Yes, book slot {fresh_slots[0]['slot_id']}')."
+                )
+                return {
+                    "status": "confirmation_required",
+                    "message": fail_msg,
+                    "available_slots": fresh_slots,
+                    "agent_trace": {
+                        "orchestrator": "TriageAgent",
+                        "active_agent": "ScanBookingAgent",
+                        "tool_called": tool_name,
+                        "arguments": arguments,
+                        "rationale": rationale,
+                        "mcp_jsonrpc": mcp_request
+                    }
+                }
+
+        elif tool_name == "show_booking_summary":
+            slot = arguments.get("slot") or session.booking_state.selected_slot or {}
+            patient_name = arguments.get("patient_name") or session.booking_state.patient_name or "Patient"
+            patient_id = arguments.get("patient_id") or session.booking_state.patient_id or "N/A"
+            modality = arguments.get("modality") or slot.get("modality", "Radiology")
+
+            summary_msg = (
+                f"Confirm appointment details:\n"
+                f"• Patient: {patient_name} ({patient_id})\n"
+                f"• Scan: {modality}\n"
+                f"• Date/Time: {slot.get('datetime_str', 'Scheduled slot')}\n"
+                f"• Location: {slot.get('room', 'Radiology Suite')}\n"
+                f"• Slot: {slot.get('slot_id')}\n\n"
+                f"Confirmation Required: Would you like to confirm this booking? (e.g. 'Yes, confirm' or 'Cancel')."
+            )
+            session.booking_state.stage = BookingStage.AWAITING_CONFIRMATION
+            session.booking_state.summary_displayed = True
+            session.booking_state.selected_slot = slot
+            if patient_name:
+                session.booking_state.patient_name = patient_name
 
             return {
-                "status": "success",
-                "message": confirm_res.get("message"),
-                "booking_reference": confirm_res.get("booking_reference"),
-                "slot": confirm_res.get("slot"),
+                "status": "confirmation_required",
+                "message": summary_msg,
+                "slot": slot,
+                "available_slots": session.booking_state.displayed_slots,
                 "agent_trace": {
                     "orchestrator": "TriageAgent",
                     "active_agent": "ScanBookingAgent",
@@ -1011,8 +1352,93 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                     "mcp_jsonrpc": mcp_request
                 }
             }
+
+        elif tool_name == "lookup_existing_booking":
+            res = execute_tool("lookup_existing_booking", arguments)
+            bookings = res.get("bookings", [])
+            p_name = arguments.get("patient_name")
+            if bookings:
+                lines = [f"• [{b.get('booking_reference')}] {b.get('patient_name')} — {b.get('modality')} scan on {b.get('datetime_str')} in {b.get('room')} (Slot: {b.get('slot_id')}, Status: Confirmed)" for b in bookings]
+                msg = (
+                    f"Found {len(bookings)} confirmed appointment booking(s):\n"
+                    + "\n".join(lines)
+                    + f"\n\nYou can keep, reschedule, or cancel this booking (e.g. 'Cancel my booking')."
+                )
+            else:
+                msg = f"No existing appointments were found{' for ' + p_name if p_name else ''}. Would you like to check available slots to book a new appointment?"
+
+            return {
+                "status": "success",
+                "message": msg,
+                "bookings": bookings,
+                "answer": msg,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
+        elif tool_name == "cancel_scan_booking":
+            res = execute_tool("cancel_scan_booking", arguments)
+            session.booking_state.reset()
+            return {
+                "status": "success",
+                "message": res.get("message"),
+                "answer": res.get("message"),
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
+        elif tool_name == "booking_already_confirmed":
+            cb = arguments.get("booking") or session.booking_state.completed_booking or {}
+            msg = (
+                f"This appointment is already confirmed:\n"
+                f"• Patient: {cb.get('patient_name')}\n"
+                f"• Scan: {cb.get('modality')}\n"
+                f"• Date/Time: {cb.get('datetime_str')}\n"
+                f"• Booking Reference: {cb.get('booking_reference')}\n"
+                f"No duplicate booking was created."
+            )
+            return {
+                "status": "success",
+                "message": msg,
+                "booking_reference": cb.get("booking_reference"),
+                "slot": cb,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+        elif tool_name == "booking_declined":
+            return {
+                "status": "cancelled",
+                "message": "Appointment booking has been cancelled as requested. No appointment was booked.",
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
         elif tool_name == "invalid_slot_selection":
-            slots = session.pending_booking_slots or []
+            slots = session.booking_state.displayed_slots or []
             if slots:
                 slot_lines = [f"• [{s['slot_id']}] {s['datetime_str']} — {s['modality']} ({s['room']})" for s in slots]
                 msg = (
@@ -1043,12 +1469,14 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             raw_mod = arguments.get("modality")
             pref_date = arguments.get("preferred_date")
             mod_title = raw_mod if (raw_mod and str(raw_mod).lower() not in ["none", "any", "null", "all"]) else "Radiology"
-            session.pending_booking_slots = slots
-            session.pending_booking_modality = mod_title
+            session.booking_state.displayed_slots = slots
+            session.booking_state.modality = mod_title
+            if slots:
+                session.booking_state.stage = BookingStage.SLOTS_PRESENTED
 
             date_str = ""
             if pref_date:
-                iso_m = re.search(r"2026-(\d{2})-(\d{2})", str(pref_date))
+                iso_m = re.search(r"202\d-(\d{2})-(\d{2})", str(pref_date))
                 if iso_m:
                     m_num, d_num = iso_m.group(1), iso_m.group(2)
                     m_names = {"01": "January", "02": "February", "03": "March", "04": "April", "05": "May", "06": "June", "07": "July", "08": "August", "09": "September", "10": "October", "11": "November", "12": "December"}
@@ -1063,8 +1491,9 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             if slots:
                 slot_lines = [f"• [{s['slot_id']}] {s['datetime_str']} — {s['modality']} ({s['room']})" for s in slots]
                 mod_phrase = f" for {mod_title} scan" if mod_title != "Radiology" else ""
+                p_phrase = f" for {session.booking_state.patient_name}" if session.booking_state.patient_name and session.booking_state.patient_name != "Patient" else ""
                 msg = (
-                    f"Found {len(slots)} available appointment slot(s){mod_phrase}{date_str}:\n"
+                    f"Found {len(slots)} available appointment slot(s){mod_phrase}{p_phrase}{date_str}:\n"
                     + "\n".join(slot_lines)
                     + f"\n\nConfirmation Required: Would you like to confirm any of these slots? (e.g. 'Yes, book slot {slots[0]['slot_id']}')."
                 )
@@ -1073,7 +1502,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                 all_open = get_all_slots(modality=raw_mod or "Any")
                 if all_open:
                     slot_lines = [f"• [{s['slot_id']}] {s['datetime_str']} — {s['modality']} ({s['room']})" for s in all_open]
-                    session.pending_booking_slots = all_open
+                    session.booking_state.displayed_slots = all_open
                     msg = (
                         f"No appointment slots or radiologists are currently scheduled{date_str}. "
                         f"However, we have {len(all_open)} available scan slot(s) on upcoming dates:\n"

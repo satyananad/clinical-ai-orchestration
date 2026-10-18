@@ -161,6 +161,32 @@ DENTAL_ASSISTANT_TOOLS = [
         }
     },
     {
+        "name": "lookup_existing_booking",
+        "description": "Searches for an existing confirmed radiological scan appointment by patient name, patient ID, booking reference, or date.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "patient_name": {"type": "string", "description": "Patient full or partial name."},
+                "patient_id": {"type": "string", "description": "Patient identifier (e.g. 'PAT-1001')."},
+                "booking_reference": {"type": "string", "description": "Booking reference code (e.g. 'BKG-101-1234')."},
+                "date": {"type": "string", "description": "Appointment date filter."}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "cancel_scan_booking",
+        "description": "Cancels an existing appointment booking and releases the slot back to available inventory.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "booking_identifier": {"type": "string", "description": "Booking reference or slot ID to cancel."},
+                "reason": {"type": "string", "description": "Optional cancellation reason."}
+            },
+            "required": ["booking_identifier"]
+        }
+    },
+    {
         "name": "conversation",
         "description": "Handles general clinical questions, dental radiology concepts (e.g. 'what is CBCT?', 'explain caries'), workstation help, capabilities, and conversational dialogue without running database queries.",
         "inputSchema": {
@@ -387,7 +413,28 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             slot_id = arguments.get("slot_id", "")
             patient_name = arguments.get("patient_name", "")
             patient_id = arguments.get("patient_id")
-            return confirm_booking(slot_id=slot_id, patient_name=patient_name, patient_id=patient_id)
+            scan_type = arguments.get("scan_type") or arguments.get("modality")
+            return confirm_booking(slot_id=slot_id, patient_name=patient_name, patient_id=patient_id, scan_type=scan_type)
+
+        elif tool_name == "lookup_existing_booking":
+            from .booking_service import lookup_existing_bookings
+            p_name = arguments.get("patient_name")
+            p_id = arguments.get("patient_id")
+            b_ref = arguments.get("booking_reference")
+            d_query = arguments.get("date")
+            bookings = lookup_existing_bookings(patient_name=p_name, patient_id=p_id, booking_reference=b_ref, date_query=d_query)
+            return {
+                "status": "success",
+                "bookings": bookings,
+                "count": len(bookings),
+                "message": f"Found {len(bookings)} existing booking(s)." if bookings else "No existing appointments found matching the specified details."
+            }
+
+        elif tool_name == "cancel_scan_booking":
+            from .booking_service import cancel_booking
+            ident = arguments.get("booking_identifier", "")
+            reason = arguments.get("reason")
+            return cancel_booking(ident, reason=reason)
 
         else:
             return {
