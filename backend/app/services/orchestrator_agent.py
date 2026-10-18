@@ -811,21 +811,11 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     "rationale": f"Report Switch: Switched to {matched_rep.get('report_type')} ({matched_rep['report_id']}) for active patient."
                 }
 
-        # Check if user is asking a question about the active report
-        is_report_question = (
-            is_contextual_query(q_lower, has_active_report=True)
-            or any(w in q_lower for w in [
-                "what problem", "what problems", "what is the problem", "what's the problem", "what is wrong", "what's wrong",
-                "what did you find", "what did the scan show", "what findings", "what does the report say",
-                "summarize", "summary", "overview", "diagnosis", "impression", "impressions", "findings", "finding",
-                "caries", "decay", "cavity", "cavities", "pain", "molar", "tooth", "teeth", "bone loss",
-                "nerve", "canal", "impaction", "lesion", "root", "apical", "periapical",
-                "what does she have", "what does he have", "what does it have", "what does patient have",
-                "what they have", "what do they have", "what have they", "what she has", "what he has", "what do they",
-                "explain", "tell me about", "what does it mean", "pdf", "recommendation"
-            ])
-        )
-        if is_report_question and not is_booking_request and not is_database_inquiry and not has_new_patient_retrieval:
+        # Active Report Consultation & Evidence-Grounded Follow-Up
+        # When an active report is open, any inquiry that is not a new patient retrieval,
+        # not an appointment booking command, and not a clinic-wide database count
+        # automatically belongs to this active report context.
+        if not is_booking_request and not is_database_inquiry and not has_new_patient_retrieval:
             return {
                 "selected_agent": "ConsultationAgent",
                 "tool_name": "summarize_active_report",

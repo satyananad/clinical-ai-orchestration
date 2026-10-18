@@ -140,21 +140,46 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onReportLoaded }) 
               )}
 
               {m.available_reports && m.available_reports.length > 0 && (
-                <div className="mt-2.5 space-y-1.5 border-t border-blue-100 pt-2">
-                  <p className="text-[11px] font-bold text-blue-900">Available Reports for this Patient ({m.available_reports.length}):</p>
-                  <div className="flex flex-wrap gap-1.5">
+                <div className="mt-2.5 space-y-2 border-t border-blue-100 pt-2">
+                  <p className="text-[11px] font-bold text-blue-900">Patient Reports On File ({m.available_reports.length}):</p>
+                  <div className="grid grid-cols-1 gap-1.5">
                     {m.available_reports.map((rep) => (
                       <button
                         key={rep.report_id}
                         onClick={() => handleSend(`Open ${rep.report_type} report ${rep.report_id}`)}
-                        className="bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-lg px-2.5 py-1 text-[11px] font-medium transition flex items-center space-x-1"
+                        className="w-full text-left bg-blue-50/70 hover:bg-blue-100/90 text-blue-900 border border-blue-200/80 rounded-lg px-2.5 py-1.5 text-[11px] transition flex justify-between items-center group shadow-xs"
                         title={`Switch to ${rep.report_type} (${rep.report_id})`}
                       >
-                        <span>📄</span>
-                        <span>{rep.report_type}</span>
-                        <span className="text-slate-400 text-[10px]">({rep.report_id})</span>
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-blue-600">📄</span>
+                          <span className="font-semibold">{rep.report_type}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">({rep.report_id})</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 group-hover:text-blue-800 font-medium">{rep.report_date} →</span>
                       </button>
                     ))}
+                  </div>
+
+                  <div className="pt-1.5 flex flex-wrap gap-1">
+                    <span className="text-[10px] text-slate-500 mr-1 self-center">Ask:</span>
+                    <button
+                      onClick={() => handleSend("Summarize her report")}
+                      className="text-[10px] bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-900 px-2 py-0.5 rounded-full border border-slate-200 transition"
+                    >
+                      💡 Summarize report
+                    </button>
+                    <button
+                      onClick={() => handleSend("What are the key findings?")}
+                      className="text-[10px] bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-900 px-2 py-0.5 rounded-full border border-slate-200 transition"
+                    >
+                      💡 Key findings
+                    </button>
+                    <button
+                      onClick={() => handleSend("What is the radiologist impression?")}
+                      className="text-[10px] bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-900 px-2 py-0.5 rounded-full border border-slate-200 transition"
+                    >
+                      💡 Impression
+                    </button>
                   </div>
                 </div>
               )}

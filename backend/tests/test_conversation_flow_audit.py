@@ -125,3 +125,37 @@ def test_what_they_have_pronoun_resolution():
     # MUST contain verifiable report evidence citations
     assert len(r3.get("citations", [])) > 0
     assert any("RPT-2003" in c for c in r3["citations"])
+
+
+def test_multi_report_switching_and_typo_query():
+    """
+    Tests:
+    1. Disambiguation for Priya Sharma via DOB: 1998.
+    2. Multi-report switching via 'Open OPG report RPT-2001' (verifying RPT-2001 does not match Sneha Reddy DOB 2001).
+    3. Typo-tolerant consultation 'what problem they hsve' answering from active RPT-2001 report with citations.
+    """
+    session_id = "test-multi-report-typo-session"
+    get_or_create_session(session_id).clear()
+
+    # Step 1: Disambiguate Priya Sharma
+    r1 = client.post("/assistant/chat", json={"query": "open report priya sharma", "session_id": session_id}).json()
+    assert r1["status"] == "clarification_required"
+
+    r2 = client.post("/assistant/chat", json={"query": "DOB: 1998", "session_id": session_id}).json()
+    assert r2["status"] == "success"
+    assert r2["report"]["report_id"] == "RPT-2003"
+
+    # Step 2: Switch to OPG report RPT-2001
+    r3 = client.post("/assistant/chat", json={"query": "Open OPG report RPT-2001", "session_id": session_id}).json()
+    assert r3["status"] == "success"
+    assert r3["report"]["report_id"] == "RPT-2001"
+    assert r3["patient"]["patient_name"] == "Priya Sharma"
+
+    # Step 3: Typo query "what problem they hsve"
+    r4 = client.post("/assistant/chat", json={"query": "what problem they hsve", "session_id": session_id}).json()
+    assert r4["status"] == "success"
+    ans4 = (r4.get("answer") or r4.get("message") or "").lower()
+    # Tooth 48 mesioangular impaction is the key finding in RPT-2001
+    assert "tooth 48" in ans4 or "impaction" in ans4 or "periapical" in ans4
+    assert len(r4.get("citations", [])) > 0
+    assert any("RPT-2001" in c for c in r4["citations"])

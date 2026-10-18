@@ -129,6 +129,9 @@ def search_patients(query: str) -> List[Dict[str, Any]]:
         if not p_dob:
             continue
         p_year = p_dob.split("-")[0]
+        # Ensure year token is not part of a report identifier (e.g. RPT-2001)
+        if re.search(r"\brpt[- ]?" + re.escape(p_year) + r"\b", clean_q):
+            continue
         if p_dob in clean_q or re.search(r"\b" + re.escape(p_year) + r"\b", clean_q):
             p_copy = dict(p)
             p_copy["reports"] = [dict(r, patient_id=p["patient_id"]) for r in p.get("reports", [])]
@@ -228,6 +231,26 @@ def resolve_report_retrieval(query: str, patient_name: Optional[str] = None, mod
     """
     Feature A: Patient & Report Retrieval with strict safety ambiguity handling.
     """
+    # Check if query contains an explicit Report ID (e.g. 'RPT-2001', 'Open OPG report RPT-2001')
+    rid_match = re.search(r"\b(RPT-\d+)\b", query, re.IGNORECASE)
+    if rid_match:
+        target_rid = rid_match.group(1).upper()
+        report = get_report_by_id(target_rid)
+        if report:
+            patient = get_patient(report["patient_id"])
+            return {
+                "status": "success",
+                "message": f"Retrieved {report.get('report_type')} report ({report['report_id']}) for {patient['patient_name']}.",
+                "candidates": None,
+                "patient": {
+                    "patient_id": patient["patient_id"],
+                    "patient_name": patient["patient_name"],
+                    "date_of_birth": patient["date_of_birth"],
+                    "sex": patient["sex"]
+                },
+                "report": report
+            }
+
     intent = extract_retrieval_intent(query)
     target_name = patient_name.strip() if patient_name else intent["patient_name"]
     requested_modality = modality if (modality and modality != "Any") else intent["report_type"]
