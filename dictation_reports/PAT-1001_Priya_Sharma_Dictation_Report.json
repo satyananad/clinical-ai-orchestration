@@ -2,7 +2,7 @@
   "report_metadata": {
     "report_type": "Radiological Dictation Draft",
     "status": "DRAFT_PENDING_REVIEW",
-    "generated_at": "2026-10-18 15:37:00",
+    "generated_at": "2026-10-18 17:54:40",
     "source_type": "Spoken Voice Dictation / Speech-to-Text Transcript",
     "clinician_review_required": true,
     "disclaimer": "ATTENTION: This is an unverified AI-generated draft created from clinical dictation. All anatomical findings and impressions must be reviewed and approved by the attending clinician."
@@ -60,7 +60,7 @@
     "Consider targeted CBCT prior to surgical intervention for 3D canal visualization.",
     "MANDATORY CLINICIAN ACTION: Attending dentist/radiologist must review and verify all findings."
   ],
-  "narrative_draft": "====================================================================\n*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***\n====================================================================\nPatient Name:    Priya Sharma\nStatus:          DRAFT (AI Dictation Synthesis)\nDate of Draft:   2026-10-18 15:37\n\nDETAILED FINDINGS:\n  1. [Maxillary right tooth 5 (UR5)] (Impaction / Eruption)\n     Observation: Lower right third molar is horizontally impacted\n     Certainty:   definite observation\n  2. [Maxillary right tooth 5 (UR5)] (General Observation)\n     Observation: Also evaluate UR5 and tooth #29\n     Certainty:   definite observation\n\nIMPRESSION:\n  1. Maxillary right tooth 5 (UR5): Lower right third molar is horizontally impacted. (Certainty: definite observation)\n  2. Maxillary right tooth 5 (UR5): Also evaluate UR5 and tooth #29.\n\nRECOMMENDATIONS & CLINICAL CORRELATION:\n  1. Consider targeted CBCT prior to surgical intervention for 3D canal visualization.\n  2. MANDATORY CLINICIAN ACTION: Attending dentist/radiologist must review and verify all findings.\n====================================================================",
+  "narrative_draft": "====================================================================\n*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***\n====================================================================\nPatient Name:    Priya Sharma\nStatus:          DRAFT (AI Dictation Synthesis)\nDate of Draft:   2026-10-18 17:54\n\nDETAILED FINDINGS:\n  1. [Maxillary right tooth 5 (UR5)] (Impaction / Eruption)\n     Observation: Lower right third molar is horizontally impacted\n     Certainty:   definite observation\n  2. [Maxillary right tooth 5 (UR5)] (General Observation)\n     Observation: Also evaluate UR5 and tooth #29\n     Certainty:   definite observation\n\nIMPRESSION:\n  1. Maxillary right tooth 5 (UR5): Lower right third molar is horizontally impacted. (Certainty: definite observation)\n  2. Maxillary right tooth 5 (UR5): Also evaluate UR5 and tooth #29.\n\nRECOMMENDATIONS & CLINICAL CORRELATION:\n  1. Consider targeted CBCT prior to surgical intervention for 3D canal visualization.\n  2. MANDATORY CLINICIAN ACTION: Attending dentist/radiologist must review and verify all findings.\n====================================================================",
   "safety_guardrails": {
     "status": "PASSED",
     "grounded_ratio": "2/2",

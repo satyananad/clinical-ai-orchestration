@@ -1025,5 +1025,102 @@
         "sex": "Female"
       }
     ]
+  },
+  {
+    "patient_id": "PAT-1011",
+    "patient_name": "Rohan Sharma",
+    "date_of_birth": "1988-08-14",
+    "sex": "Male",
+    "record_number": "MRN-DEMO-1011",
+    "status": "active",
+    "reports": [
+      {
+        "report_id": "RPT-2031",
+        "report_date": "2024-03-20",
+        "report_type": "OPG",
+        "modality": "OPG",
+        "clinical_indication": "Pre-orthodontic screening and third molar evaluation",
+        "comparison": "None",
+        "technique": "Standard panoramic tomogram with automated digital exposure",
+        "findings": [
+          {
+            "region": "Mandibular Molars",
+            "observation": "Tooth 38 and tooth 48 are vertically impacted with crowns in close proximity to the inferior alveolar nerve canal.",
+            "certainty": "definite observation"
+          },
+          {
+            "region": "General Dentition",
+            "observation": "No definite periapical radiolucency. Mild generalized horizontal alveolar bone loss.",
+            "certainty": "negative / normal finding"
+          }
+        ],
+        "impression": [
+          "Bilateral vertically impacted mandibular third molars (38, 48).",
+          "Mild generalized adult periodontitis."
+        ],
+        "recommendation": "CBCT recommended prior to surgical extraction of 38 and 48 if paresthesia risk assessment is indicated.",
+        "report_status": "Finalized",
+        "report_text": "Panoramic radiograph demonstrates bilateral impacted mandibular third molars.",
+        "pdf_filename": "RPT-2031_Rohan_Sharma_OPG.pdf",
+        "patient_id": "PAT-1011",
+        "patient_name": "Rohan Sharma",
+        "date_of_birth": "1988-08-14",
+        "sex": "Male"
+      },
+      {
+        "report_id": "RPT-2032",
+        "report_date": "2024-01-15",
+        "report_type": "Dental Examination",
+        "modality": "Dental Examination",
+        "clinical_indication": "Routine annual oral health examination",
+        "comparison": "Previous exam 2023-01-10",
+        "technique": "Comprehensive visual-tactile examination",
+        "findings": [
+          {
+            "region": "Occlusal Surfaces",
+            "observation": "Tooth 16 exhibits moderate occlusal attrition. No active caries detected.",
+            "certainty": "negative / normal finding"
+          }
+        ],
+        "impression": [
+          "Mild occlusal wear, sound dental restorations."
+        ],
+        "recommendation": "Nightguard evaluation and 6-month hygiene recall.",
+        "report_status": "Finalized",
+        "report_text": "Routine examination completed with no acute pathological findings.",
+        "pdf_filename": "RPT-2032_Rohan_Sharma_Dental_Examination.pdf",
+        "patient_id": "PAT-1011",
+        "patient_name": "Rohan Sharma",
+        "date_of_birth": "1988-08-14",
+        "sex": "Male"
+      },
+      {
+        "report_id": "RPT-2033",
+        "report_date": "2023-09-12",
+        "report_type": "Bitewing Radiographs",
+        "modality": "Bitewing Radiographs",
+        "clinical_indication": "Interproximal caries check",
+        "comparison": "None",
+        "technique": "Right and left posterior horizontal bitewings",
+        "findings": [
+          {
+            "region": "Posterior Interproximal",
+            "observation": "Enamel integrity intact interproximally. No interproximal carious lesions.",
+            "certainty": "negative / normal finding"
+          }
+        ],
+        "impression": [
+          "No active interproximal caries."
+        ],
+        "recommendation": "Continue preventive oral hygiene.",
+        "report_status": "Finalized",
+        "report_text": "Bitewings show healthy interproximal bone levels and no caries.",
+        "pdf_filename": "RPT-2033_Rohan_Sharma_Bitewing_Radiographs.pdf",
+        "patient_id": "PAT-1011",
+        "patient_name": "Rohan Sharma",
+        "date_of_birth": "1988-08-14",
+        "sex": "Male"
+      }
+    ]
   }
 ]

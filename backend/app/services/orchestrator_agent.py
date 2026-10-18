@@ -14,7 +14,7 @@ import re
 from typing import Dict, Any, List, Optional
 from .mcp_tools import DENTAL_ASSISTANT_TOOLS, get_ollama_tool_definitions, execute_tool, handle_mcp_jsonrpc_request
 from .conversation_service import get_or_create_session, is_contextual_query
-from .retrieval import resolve_report_retrieval
+from .retrieval import resolve_report_retrieval, extract_retrieval_intent
 from .report_qa_service import answer_report_question
 from .llm_service import query_ollama, query_ollama_chat_tools
 
@@ -108,6 +108,9 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
 
     # 2B. Disambiguation candidate selection from pending clarification
     if session.pending_candidates:
+        query_intent = extract_retrieval_intent(query)
+        detected_mod = query_intent.get("report_type", "Any")
+        effective_mod = detected_mod if detected_mod != "Any" else (session.last_retrieval_modality or "Any")
         for cand in session.pending_candidates:
             c_name = cand["patient_name"].lower()
             c_id = cand["patient_id"].lower()
@@ -118,7 +121,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     "arguments": {
                         "patient_name": cand["patient_name"],
                         "patient_id": cand["patient_id"],
-                        "modality": session.last_retrieval_modality or "Any"
+                        "modality": effective_mod
                     },
                     "rationale": f"Fallback: Matched candidate {cand['patient_name']}."
                 }
@@ -164,6 +167,8 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         }
 
     # 2F. Default: Patient & Report Retrieval
+    query_intent = extract_retrieval_intent(query)
+    target_modality = query_intent.get("report_type", "Any")
     clean_query = re.sub(r"\b(open|show|find|get|latest|report|scan|opg|cbct|bitewing|periapical|please)\b", "", q_lower).strip()
     name_guess = clean_query.title() if clean_query else query.title()
     return {
@@ -171,7 +176,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         "tool_name": "search_patient_reports",
         "arguments": {
             "patient_name": name_guess,
-            "modality": "Any"
+            "modality": target_modality
         },
         "rationale": "Defaulting to patient and report retrieval search."
     }
@@ -257,7 +262,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             )
         elif retrieval_res.get("status") == "clarification_required":
             session.pending_candidates = retrieval_res.get("candidates")
-            session.last_retrieval_modality = modality_arg
+            session.last_retrieval_modality = modality_arg if (modality_arg and modality_arg != "Any") else extract_retrieval_intent(query).get("report_type", "Any")
 
         return {
             **retrieval_res,
