@@ -14,8 +14,8 @@ def load_patients_data() -> List[Dict[str, Any]]:
         for r in p.get("reports", []):
             r["patient_id"] = p["patient_id"]
             r["patient_name"] = p["patient_name"]
-            r["dob"] = p.get("dob")
-            r["gender"] = p.get("gender")
+            r["date_of_birth"] = p.get("date_of_birth")
+            r["sex"] = p.get("sex")
     return data
 
 PATIENTS_DATA = load_patients_data()

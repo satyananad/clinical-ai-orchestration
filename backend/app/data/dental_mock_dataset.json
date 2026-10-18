@@ -48,8 +48,8 @@
         "pdf_filename": "RPT-2001_Priya_Sharma_OPG.pdf",
         "patient_id": "PAT-1001",
         "patient_name": "Priya Sharma",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1998-04-12",
+        "sex": "Female"
       },
       {
         "report_id": "RPT-2002",
@@ -85,8 +85,8 @@
         "pdf_filename": "RPT-2002_Priya_Sharma_Periapical_Radiograph.pdf",
         "patient_id": "PAT-1001",
         "patient_name": "Priya Sharma",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1998-04-12",
+        "sex": "Female"
       },
       {
         "report_id": "RPT-2003",
@@ -124,8 +124,8 @@
         "pdf_filename": "RPT-2003_Priya_Sharma_Dental_Examination.pdf",
         "patient_id": "PAT-1001",
         "patient_name": "Priya Sharma",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1998-04-12",
+        "sex": "Female"
       }
     ]
   },
@@ -172,8 +172,8 @@
         "pdf_filename": "RPT-2004_Priya_Sharmila_OPG.pdf",
         "patient_id": "PAT-1002",
         "patient_name": "Priya Sharmila",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1996-09-23",
+        "sex": "Female"
       },
       {
         "report_id": "RPT-2005",
@@ -204,8 +204,8 @@
         "pdf_filename": "RPT-2005_Priya_Sharmila_Dental_Examination.pdf",
         "patient_id": "PAT-1002",
         "patient_name": "Priya Sharmila",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1996-09-23",
+        "sex": "Female"
       },
       {
         "report_id": "RPT-2006",
@@ -242,8 +242,8 @@
         "pdf_filename": "RPT-2006_Priya_Sharmila_OPG.pdf",
         "patient_id": "PAT-1002",
         "patient_name": "Priya Sharmila",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1996-09-23",
+        "sex": "Female"
       }
     ]
   },
@@ -285,8 +285,8 @@
         "pdf_filename": "RPT-2007_Rahul_Verma_Bitewing_Radiographs.pdf",
         "patient_id": "PAT-1003",
         "patient_name": "Rahul Verma",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1994-02-08",
+        "sex": "Male"
       },
       {
         "report_id": "RPT-2008",
@@ -312,8 +312,8 @@
         "pdf_filename": "RPT-2008_Rahul_Verma_Dental_Examination.pdf",
         "patient_id": "PAT-1003",
         "patient_name": "Rahul Verma",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1994-02-08",
+        "sex": "Male"
       },
       {
         "report_id": "RPT-2009",
@@ -339,8 +339,8 @@
         "pdf_filename": "RPT-2009_Rahul_Verma_Dental_Examination.pdf",
         "patient_id": "PAT-1003",
         "patient_name": "Rahul Verma",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1994-02-08",
+        "sex": "Male"
       }
     ]
   },
@@ -381,8 +381,8 @@
         "pdf_filename": "RPT-2010_Ananya_Patel_OPG.pdf",
         "patient_id": "PAT-1004",
         "patient_name": "Ananya Patel",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "2000-11-17",
+        "sex": "Female"
       },
       {
         "report_id": "RPT-2011",
@@ -408,8 +408,8 @@
         "pdf_filename": "RPT-2011_Ananya_Patel_Dental_Examination.pdf",
         "patient_id": "PAT-1004",
         "patient_name": "Ananya Patel",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "2000-11-17",
+        "sex": "Female"
       },
       {
         "report_id": "RPT-2012",
@@ -435,8 +435,8 @@
         "pdf_filename": "RPT-2012_Ananya_Patel_Dental_Examination.pdf",
         "patient_id": "PAT-1004",
         "patient_name": "Ananya Patel",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "2000-11-17",
+        "sex": "Female"
       }
     ]
   },
@@ -472,8 +472,8 @@
         "pdf_filename": "RPT-2013_Arjun_Mehta_Periapical_Radiograph.pdf",
         "patient_id": "PAT-1005",
         "patient_name": "Arjun Mehta",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1992-06-30",
+        "sex": "Male"
       },
       {
         "report_id": "RPT-2014",
@@ -499,8 +499,8 @@
         "pdf_filename": "RPT-2014_Arjun_Mehta_Dental_Examination.pdf",
         "patient_id": "PAT-1005",
         "patient_name": "Arjun Mehta",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1992-06-30",
+        "sex": "Male"
       },
       {
         "report_id": "RPT-2015",
@@ -526,8 +526,8 @@
         "pdf_filename": "RPT-2015_Arjun_Mehta_Bitewing_Radiographs.pdf",
         "patient_id": "PAT-1005",
         "patient_name": "Arjun Mehta",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1992-06-30",
+        "sex": "Male"
       }
     ]
   },
@@ -575,8 +575,8 @@
         "pdf_filename": "RPT-2016_Amit_Kumar_OPG.pdf",
         "patient_id": "PAT-1006",
         "patient_name": "Amit Kumar",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1979-08-19",
+        "sex": "Male"
       },
       {
         "report_id": "RPT-2017",
@@ -602,8 +602,8 @@
         "pdf_filename": "RPT-2017_Amit_Kumar_IOPA_Radiograph.pdf",
         "patient_id": "PAT-1006",
         "patient_name": "Amit Kumar",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1979-08-19",
+        "sex": "Male"
       },
       {
         "report_id": "RPT-2018",
@@ -629,8 +629,8 @@
         "pdf_filename": "RPT-2018_Amit_Kumar_Dental_Examination.pdf",
         "patient_id": "PAT-1006",
         "patient_name": "Amit Kumar",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1979-08-19",
+        "sex": "Male"
       }
     ]
   },
@@ -672,8 +672,8 @@
         "pdf_filename": "RPT-2019_Sneha_Reddy_OPG.pdf",
         "patient_id": "PAT-1007",
         "patient_name": "Sneha Reddy",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "2001-07-04",
+        "sex": "Female"
       },
       {
         "report_id": "RPT-2020",
@@ -699,8 +699,8 @@
         "pdf_filename": "RPT-2020_Sneha_Reddy_Cephalogram.pdf",
         "patient_id": "PAT-1007",
         "patient_name": "Sneha Reddy",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "2001-07-04",
+        "sex": "Female"
       },
       {
         "report_id": "RPT-2021",
@@ -726,8 +726,8 @@
         "pdf_filename": "RPT-2021_Sneha_Reddy_Dental_Examination.pdf",
         "patient_id": "PAT-1007",
         "patient_name": "Sneha Reddy",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "2001-07-04",
+        "sex": "Female"
       }
     ]
   },
@@ -763,8 +763,8 @@
         "pdf_filename": "RPT-2022_Ananya_Iyer_OPG.pdf",
         "patient_id": "PAT-1008",
         "patient_name": "Ananya Iyer",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1997-09-15",
+        "sex": "Female"
       },
       {
         "report_id": "RPT-2023",
@@ -790,8 +790,8 @@
         "pdf_filename": "RPT-2023_Ananya_Iyer_Bitewing_Radiographs.pdf",
         "patient_id": "PAT-1008",
         "patient_name": "Ananya Iyer",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1997-09-15",
+        "sex": "Female"
       },
       {
         "report_id": "RPT-2024",
@@ -817,8 +817,8 @@
         "pdf_filename": "RPT-2024_Ananya_Iyer_Dental_Examination.pdf",
         "patient_id": "PAT-1008",
         "patient_name": "Ananya Iyer",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1997-09-15",
+        "sex": "Female"
       }
     ]
   },
@@ -860,8 +860,8 @@
         "pdf_filename": "RPT-2025_Vikram_Malhotra_OPG.pdf",
         "patient_id": "PAT-1009",
         "patient_name": "Vikram Malhotra",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1983-02-22",
+        "sex": "Male"
       },
       {
         "report_id": "RPT-2026",
@@ -893,8 +893,8 @@
         "pdf_filename": "RPT-2026_Vikram_Malhotra_CBCT.pdf",
         "patient_id": "PAT-1009",
         "patient_name": "Vikram Malhotra",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1983-02-22",
+        "sex": "Male"
       },
       {
         "report_id": "RPT-2027",
@@ -925,8 +925,8 @@
         "pdf_filename": "RPT-2027_Vikram_Malhotra_Dental_Examination.pdf",
         "patient_id": "PAT-1009",
         "patient_name": "Vikram Malhotra",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1983-02-22",
+        "sex": "Male"
       }
     ]
   },
@@ -967,8 +967,8 @@
         "pdf_filename": "RPT-2028_Priya_Nair_OPG.pdf",
         "patient_id": "PAT-1010",
         "patient_name": "Priya Nair",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1999-05-26",
+        "sex": "Female"
       },
       {
         "report_id": "RPT-2029",
@@ -994,8 +994,8 @@
         "pdf_filename": "RPT-2029_Priya_Nair_Dental_Examination.pdf",
         "patient_id": "PAT-1010",
         "patient_name": "Priya Nair",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1999-05-26",
+        "sex": "Female"
       },
       {
         "report_id": "RPT-2030",
@@ -1021,8 +1021,8 @@
         "pdf_filename": "RPT-2030_Priya_Nair_Periapical_Radiograph.pdf",
         "patient_id": "PAT-1010",
         "patient_name": "Priya Nair",
-        "dob": null,
-        "gender": null
+        "date_of_birth": "1999-05-26",
+        "sex": "Female"
       }
     ]
   }
