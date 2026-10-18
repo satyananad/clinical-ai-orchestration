@@ -247,6 +247,15 @@ def structure_dictation_endpoint(payload: DictationRequest):
     gender = patient_details.get("gender")
     demographics_summary = patient_details.get("demographics_summary")
 
+    # [DIAGNOSTIC] Checkpoint 1: Immediately after parser returns
+    print(f"\n[DIAGNOSTIC] Checkpoint 1 (Extraction): findings={len(findings)}, impressions={len(impressions)}, recommendations={len(recommendations)}, sites={len(sites)}")
+
+    # [DIAGNOSTIC] Checkpoint 2: Immediately after verification runs
+    print(f"[DIAGNOSTIC] Checkpoint 2 (Verification): status={guardrails.get('status')}, grounded_ratio={guardrails.get('grounded_ratio')}, claim_support={guardrails.get('claim_support_ratio')}, meas_preservation={guardrails.get('measurement_preservation')}")
+
+    # Determine clinical completeness status
+    report_status = "DRAFT_PENDING_REVIEW" if findings else "INCOMPLETE_REQUIRES_REVIEW"
+
     # 2. Compose narrative draft
     narrative = compose_narrative(display_name, findings, impressions, recommendations)
 
@@ -258,10 +267,14 @@ def structure_dictation_endpoint(payload: DictationRequest):
     json_path = os.path.join(DICTATION_DIR, json_filename)
     pdf_path = os.path.join(DICTATION_DIR, pdf_filename)
 
+    # [DIAGNOSTIC] Checkpoint 3: Immediately before saving JSON and PDF
+    print(f"[DIAGNOSTIC] Checkpoint 3 (Saving Artifacts): status={report_status}, json={json_filename}, pdf={pdf_filename}\n")
+
     structured_data = {
         "report_metadata": {
             "report_type": "Radiological Dictation Draft",
-            "status": "DRAFT_PENDING_REVIEW",
+            "status": report_status,
+            "extraction_status": tool_res.get("extraction_status", "COMPLETE" if findings else "INCOMPLETE_REQUIRES_REVIEW"),
             "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "source_type": "Spoken Voice Dictation / Speech-to-Text Transcript",
             "clinician_review_required": True,

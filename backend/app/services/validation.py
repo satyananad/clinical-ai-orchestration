@@ -38,6 +38,8 @@ def verify_anti_hallucination(raw_dictation: str, structured_findings: List[Dict
         status = "FLAGGED_FOR_REVIEW"
     elif raw_status == "PASSED":
         status = "PASSED"
+    elif raw_status == "EXTRACTION_EMPTY_REQUIRES_REVIEW":
+        status = "EXTRACTION_EMPTY_REQUIRES_REVIEW"
     else:
         status = "FLAGGED_UNSUPPORTED"
     unsupported = verification["unsupported_findings"]
@@ -45,6 +47,11 @@ def verify_anti_hallucination(raw_dictation: str, structured_findings: List[Dict
     return {
         "status": status,
         "grounded_ratio": verification["grounded_ratio"],
+        "claim_support_ratio": verification.get("claim_support_ratio", 0.0),
+        "measurement_preservation": verification.get("measurement_preservation", 1.0),
+        "extraction_completeness": verification.get("extraction_completeness", 0.0),
+        "unresolved_issue_count": verification.get("unresolved_issue_count", 0),
+        "verified_count": verification.get("verified_count", "0/0"),
         "unsupported_findings": unsupported,
         "contradicted_claims": verification.get("contradicted_claims", []),
         "anti_hallucination_guarantee": verification.get("anti_hallucination_guarantee", "Zero ungrounded or contradicted findings admitted to final report.")

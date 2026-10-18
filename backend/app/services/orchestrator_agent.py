@@ -636,13 +636,13 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
         }
 
     # =========================================================================
-    # AGENT 2: CLINICAL SCRIBE AGENT
-    # =========================================================================
     elif selected_agent == "ClinicalScribeAgent":
         dictation_res = execute_tool("structure_clinical_dictation", arguments)
+        is_complete = dictation_res.get("status") == "success" and bool(dictation_res.get("findings"))
         return {
-            "status": "success",
-            "message": "Clinical observations structured into validated draft report.",
+            "status": "success" if is_complete else "incomplete",
+            "extraction_status": dictation_res.get("extraction_status", "COMPLETE" if is_complete else "INCOMPLETE_REQUIRES_REVIEW"),
+            "message": dictation_res.get("message", "Clinical observations structured into validated draft report."),
             "dictation_result": dictation_res,
             "agent_trace": {
                 "orchestrator": "TriageAgent",

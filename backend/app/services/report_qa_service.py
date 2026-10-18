@@ -53,8 +53,8 @@ def generate_report_summary(report: Dict[str, Any], patient: Dict[str, Any]) -> 
     findings_bullets = [f"• {f.get('region', 'Tooth')}: {f.get('observation')} (Certainty: {f.get('certainty', 'Observed')})" for f in findings]
     impressions_bullets = [f"• {imp}" for imp in impressions]
 
-    findings_content = "\n".join(findings_bullets) if findings_bullets else "• No specific findings documented in report."
-    impressions_content = "\n".join(impressions_bullets) if impressions_bullets else "• No diagnostic impression documented in report."
+    findings_content = "\n".join(findings_bullets) if findings_bullets else "• No diagnostic findings are documented in the available report."
+    impressions_content = "\n".join(impressions_bullets) if impressions_bullets else "• No diagnostic impression is documented in the available report."
 
     answer_text = (
         f"Summary for {patient.get('patient_name')} ({report_type} Report: {report_id}, Date: {report_date}):\n\n"
@@ -135,9 +135,9 @@ def answer_report_question(report_id: str, query: str) -> Dict[str, Any]:
         report_type=report.get("report_type"),
         report_date=report.get("report_date"),
         clinical_indication=report.get("clinical_indication", "N/A"),
-        findings_text=findings_text or "No specific focal findings.",
-        impression_text=impression_text or "No definitive pathology.",
-        recommendation_text=recommendation_text
+        findings_text=findings_text or "No diagnostic findings are documented in the available report.",
+        impression_text=impression_text or "No diagnostic impression is documented in the available report.",
+        recommendation_text=recommendation_text or "No clinical recommendations are documented in the available report."
     )
 
     user_message = f"Clinician Question: {query}\n\nProvide a factual, grounded answer with citations to the report sections."

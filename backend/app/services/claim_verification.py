@@ -155,13 +155,13 @@ def extract_patient_demographics(text: str) -> Dict[str, Any]:
 def extract_quadrant_info(text: str) -> Optional[str]:
     """Identifies the clinical quadrant referenced in text using strict word boundaries."""
     t_lower = text.lower()
-    if re.search(r"\b(maxillary\s+left|upper\s+left|quadrant\s+2|ul)\b", t_lower):
+    if re.search(r"\b(maxillary\s+left|upper\s+left|quadrant\s+2|ul\d?)\b", t_lower):
         return "maxillary_left"
-    if re.search(r"\b(maxillary\s+right|upper\s+right|quadrant\s+1|ur)\b", t_lower):
+    if re.search(r"\b(maxillary\s+right|upper\s+right|quadrant\s+1|ur\d?)\b", t_lower):
         return "maxillary_right"
-    if re.search(r"\b(mandibular\s+left|lower\s+left|quadrant\s+3|ll)\b", t_lower):
+    if re.search(r"\b(mandibular\s+left|lower\s+left|quadrant\s+3|ll\d?)\b", t_lower):
         return "mandibular_left"
-    if re.search(r"\b(mandibular\s+right|lower\s+right|quadrant\s+4|lr)\b", t_lower):
+    if re.search(r"\b(mandibular\s+right|lower\s+right|quadrant\s+4|lr\d?)\b", t_lower):
         return "mandibular_right"
     return None
 
@@ -262,6 +262,33 @@ def extract_laterality(text: str) -> Optional[str]:
         return "bilateral"
     return None
 
+def is_term_negated_in_text(term: str, text: str) -> bool:
+    """Checks if a clinical term is specifically negated within its local clause."""
+    t_lower = text.lower()
+    # Direct negation patterns e.g. "no caries", "without radiolucency", "negative for caries", "no cortical erosion", "absence of cyst"
+    direct_pat = r"\b(?:no|not|without|denies|negative\s+for|absence\s+of|clear\s+of|neither|nor)\s+(?:evidence\s+of\s+|definite\s+|frank\s+|apparent\s+|visible\s+|active\s+)?(?:[a-z0-9_-]+\s+){0,3}" + re.escape(term) + r"\b"
+    if re.search(direct_pat, t_lower):
+        return True
+    # Reverse negation pattern e.g. "caries is absent", "periapical radiolucency was not seen"
+    reverse_pat = re.escape(term) + r"\s+(?:is\s+|was\s+|are\s+)?(?:absent|negative|ruled\s+out|not\s+(?:seen|identified|detected|observed))"
+    if re.search(reverse_pat, t_lower):
+        return True
+    return False
+
+def extract_all_quadrants(text: str) -> List[str]:
+    """Extracts all clinical quadrants explicitly referenced across text."""
+    t_lower = text.lower()
+    quads = []
+    if re.search(r"\b(maxillary\s+left|upper\s+left|quadrant\s+2|ul\d?)\b", t_lower):
+        quads.append("maxillary_left")
+    if re.search(r"\b(maxillary\s+right|upper\s+right|quadrant\s+1|ur\d?)\b", t_lower):
+        quads.append("maxillary_right")
+    if re.search(r"\b(mandibular\s+left|lower\s+left|quadrant\s+3|ll\d?)\b", t_lower):
+        quads.append("mandibular_left")
+    if re.search(r"\b(mandibular\s+right|lower\s+right|quadrant\s+4|lr\d?)\b", t_lower):
+        quads.append("mandibular_right")
+    return quads
+
 def verify_single_claim_deterministic(source_text: str, claim_text: str) -> Dict[str, Any]:
     """
     Deterministic Layer 1 Verification:
@@ -330,21 +357,20 @@ def verify_single_claim_deterministic(source_text: str, claim_text: str) -> Dict
             best_overlap = overlap
             relevant_src = sent
 
-    # Check 5: Negation Contradiction on relevant sentence
-    src_has_negation = any(re.search(r"\b" + re.escape(w) + r"\b", relevant_src) for w in NEGATION_WORDS)
-    claim_has_negation = any(re.search(r"\b" + re.escape(w) + r"\b", claim_lower) for w in NEGATION_WORDS)
-
-    pathologies = ["caries", "radiolucency", "fracture", "lesion", "bone loss", "impaction", "cyst", "periapical"]
+    # Check 5: Negation Contradiction on relevant sentence (Clause-Aware)
+    pathologies = ["caries", "radiolucency", "fracture", "lesion", "bone loss", "impaction", "cyst", "periapical", "resorption", "erosion"]
     for p in pathologies:
         if p in relevant_src and p in claim_lower:
-            if src_has_negation and not claim_has_negation:
+            src_p_neg = is_term_negated_in_text(p, relevant_src)
+            claim_p_neg = is_term_negated_in_text(p, claim_lower)
+            if src_p_neg and not claim_p_neg:
                 return {
                     "status": ClaimStatus.CONTRADICTED,
                     "dimension": "negation",
                     "details": f"Negation contradiction: Source states absence of '{p}', but claim asserts presence.",
                     "claim": claim_text
                 }
-            if not src_has_negation and claim_has_negation:
+            if not src_p_neg and claim_p_neg:
                 return {
                     "status": ClaimStatus.CONTRADICTED,
                     "dimension": "negation",
@@ -353,6 +379,7 @@ def verify_single_claim_deterministic(source_text: str, claim_text: str) -> Dict
                 }
 
     # Check 6: Uncertainty Escalation on relevant sentence
+    claim_has_negation = any(re.search(r"\b" + re.escape(w) + r"\b", claim_lower) for w in NEGATION_WORDS)
     src_status = classify_clinical_finding_status(relevant_src)
     claim_status = classify_clinical_finding_status(claim_text)
     if src_status["certainty"] == "suspected" and claim_status["certainty"] == "confirmed" and not claim_has_negation:
@@ -402,6 +429,9 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
     verified_count = 0
     all_results = []
 
+    # Pre-segment raw dictation into sentences for scoped contextual matching
+    raw_sentences = [s.strip() for s in re.split(r"(?<!\d)\.(?!\d)|[\n;]+", raw_dictation) if len(s.strip()) > 3]
+
     for f in findings:
         obs = f.get("observation", "")
         certainty = str(f.get("certainty", "")).lower()
@@ -432,7 +462,29 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
             all_results.append(ungrounded_res)
             continue
 
-        res = verify_single_claim_deterministic(raw_dictation, obs)
+        # Determine the scoped source passage for this finding (avoid global multi-quadrant contamination)
+        scoped_source = None
+        if source_quote and (source_quote.lower() in raw_dictation.lower() or re.sub(r"[^\w\s]", "", source_quote.lower()) in re.sub(r"[^\w\s]", "", raw_dictation.lower())):
+            scoped_source = source_quote
+        elif raw_sentences:
+            f_teeth = set(extract_tooth_numbers(f"{f.get('anatomical_site', '')} {obs}"))
+            f_words = set(w.lower() for w in re.findall(r"\w+", obs) if len(w) > 3 and w.lower() not in NEGATION_WORDS)
+            best_score = -1
+            best_sent = raw_dictation
+            for s in raw_sentences:
+                s_teeth = set(extract_tooth_numbers(s))
+                s_words = set(w.lower() for w in re.findall(r"\w+", s) if len(w) > 3)
+                tooth_overlap = len(f_teeth.intersection(s_teeth))
+                word_overlap = len(f_words.intersection(s_words))
+                score = (tooth_overlap * 10) + word_overlap
+                if score > best_score and (tooth_overlap > 0 or word_overlap > 0):
+                    best_score = score
+                    best_sent = s
+            scoped_source = best_sent if best_score > 0 else raw_dictation
+        else:
+            scoped_source = raw_dictation
+
+        res = verify_single_claim_deterministic(scoped_source, obs)
         all_results.append(res)
 
         if res["status"] == ClaimStatus.CONTRADICTED:
@@ -442,19 +494,33 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
         else:
             verified_count += 1
 
-    # Check Quadrant Concordance across all findings (e.g. maxillary left vs mandibular right)
-    src_quad = extract_quadrant_info(raw_dictation)
-    if src_quad and src_quad in QUADRANT_ALLOWED_FDI:
-        allowed_teeth = QUADRANT_ALLOWED_FDI[src_quad]
-        for f in findings:
-            f_text = f"{f.get('anatomical_site', '')} {f.get('observation', '')}"
-            finding_teeth = extract_tooth_numbers(f_text)
+    # Check Quadrant Concordance:
+    # 1. Scoped check: if a finding or its site specifies a quadrant, verify finding's teeth conform.
+    # 2. Global check: ONLY if the entire dictation describes a single quadrant (e.g. focused quadrant study).
+    all_dictation_quads = extract_all_quadrants(raw_dictation)
+    single_quad_context = all_dictation_quads[0] if len(all_dictation_quads) == 1 else None
+
+    for f in findings:
+        obs = f.get("observation", "")
+        f_text = f"{f.get('anatomical_site', '')} {obs}"
+        finding_teeth = extract_tooth_numbers(f_text)
+
+        # If the observation explicitly mentions multiple quadrants (e.g. LL1 and LR1), it is cross-quadrant
+        obs_quads = extract_all_quadrants(obs)
+        if len(obs_quads) > 1:
+            continue
+
+        site_quad = extract_quadrant_info(f.get("anatomical_site", "")) or (obs_quads[0] if obs_quads else None)
+        target_quad = site_quad or single_quad_context
+
+        if target_quad and target_quad in QUADRANT_ALLOWED_FDI:
+            allowed_teeth = QUADRANT_ALLOWED_FDI[target_quad]
             violating_teeth = [t for t in finding_teeth if t not in allowed_teeth]
             if violating_teeth:
                 contradicted_claims.append({
                     "status": ClaimStatus.CONTRADICTED,
                     "dimension": "quadrant_concordance",
-                    "details": f"Quadrant contradiction: Dictation is scoped to {src_quad.replace('_', ' ')}, but finding specifies tooth {violating_teeth} from a conflicting quadrant.",
+                    "details": f"Quadrant contradiction: Anatomical site is scoped to {target_quad.replace('_', ' ')}, but finding specifies tooth {violating_teeth} from a conflicting quadrant.",
                     "claim": f.get("observation", "")
                 })
 
@@ -524,25 +590,50 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
                     "claim": imp
                 })
 
+    # Transparent Quality Metrics
+    evaluated_count = len(findings)
+    preserved_meas_count = sum(
+        1 for rm in raw_measurements
+        if rm in all_findings_text or any(rm in fm for fm in all_findings_measurements)
+    )
+    measurement_preservation = round(preserved_meas_count / len(raw_measurements), 3) if raw_measurements else 1.0
+    claim_support_ratio = round(verified_count / evaluated_count, 3) if evaluated_count > 0 else 0.0
+
+    omissions_count = len([u for u in unsupported_claims if u.get("dimension") in ("omitted_measurement", "omitted_negative_finding")])
+    total_expected = evaluated_count + omissions_count
+    extraction_completeness = round(verified_count / total_expected, 3) if total_expected > 0 else 0.0
+    unresolved_issue_count = len(contradicted_claims) + len(unsupported_claims) + len(flagged_unclear_claims)
+
     overall_status = "PASSED"
     guarantee = "Zero ungrounded or contradicted claims admitted to final report."
-    if contradicted_claims:
+    if evaluated_count == 0:
+        overall_status = "EXTRACTION_EMPTY_REQUIRES_REVIEW"
+        grounded_ratio_val = 0.0
+        guarantee = "No clinical findings extracted; attending clinician manual entry and verification required."
+    elif contradicted_claims:
         overall_status = "CONTRADICTED_CLAIMS_DETECTED"
         guarantee = "Contradiction detected: Attending clinician must reconcile conflicting claims before sign-off."
+        grounded_ratio_val = round(verified_count / evaluated_count, 3)
     elif flagged_unclear_claims:
         overall_status = "FLAGGED_FOR_REVIEW"
         guarantee = "Unclear speech transcription artifact flagged; attending clinician review and verification required before final report sign-off."
+        grounded_ratio_val = round(verified_count / evaluated_count, 3)
     elif unsupported_claims:
         overall_status = "FLAGGED_UNSUPPORTED"
         guarantee = "Unsupported findings flagged for clinician review."
-
-    grounded_ratio_val = round(verified_count / len(findings), 3) if findings else 1.0
+        grounded_ratio_val = round(verified_count / evaluated_count, 3)
+    else:
+        grounded_ratio_val = round(verified_count / evaluated_count, 3)
 
     return {
         "status": overall_status,
         "grounded_ratio": grounded_ratio_val,
-        "verified_count": f"{verified_count}/{len(findings)}",
-        "claims_total": len(findings),
+        "claim_support_ratio": claim_support_ratio,
+        "measurement_preservation": measurement_preservation,
+        "extraction_completeness": extraction_completeness,
+        "unresolved_issue_count": unresolved_issue_count,
+        "verified_count": f"{verified_count}/{evaluated_count}",
+        "claims_total": evaluated_count,
         "supported_claims": verified_count,
         "contradicted_claims": contradicted_claims,
         "unsupported_findings": [c["claim"] for c in flagged_unclear_claims] + [c["claim"] for c in unsupported_claims] + [c["claim"] for c in contradicted_claims],

@@ -41,6 +41,7 @@ class DictationDraftReportModel(BaseModel):
     findings: List[FindingModel] = Field(default_factory=list)
     impressions: List[str] = Field(default_factory=list)
     recommendations: List[str] = Field(default_factory=list)
+    extraction_status: str = Field(default="COMPLETE")
 
 class RetrievalIntentModel(BaseModel):
     patient_name: str
@@ -318,9 +319,10 @@ def detect_transcription_artifacts(text: str) -> List[Dict[str, str]]:
 
 def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
     """
-    Feature B: Uses LLM reasoning + Deterministic Dental Anatomy Normalization.
-    Guarantees 100% correct FDI, Universal, and Palmer tooth notation, and prevents
-    observation category misclassification.
+    Feature B: Clinical Dictation Structuring Engine.
+    Uses LLM instruction reasoning with deterministic dental anatomy normalization
+    for standardized FDI, Universal, and Palmer notation, diagnostic certainty,
+    and anti-hallucination verification.
     """
     cleaned_text = clean_conversational_dictation(dictation_text)
     prompt = f'Clinical dictation transcript:\n"{cleaned_text}"'
@@ -357,6 +359,12 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
                 result["recommendations"] = fallback.get("recommendations", [])
             if not result.get("anatomical_sites") and fallback.get("anatomical_sites"):
                 result["anatomical_sites"] = fallback.get("anatomical_sites", [])
+
+    if not result.get("findings"):
+        result["extraction_status"] = "INCOMPLETE_REQUIRES_REVIEW"
+    else:
+        result["extraction_status"] = "COMPLETE"
+    result["findings_count"] = len(result.get("findings", []))
 
     # Ensure patient_details is populated
     from .claim_verification import extract_patient_demographics, extract_measurements
@@ -675,12 +683,22 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
     for s in sentences:
         s_lower = s.lower().strip()
 
-        # Skip patient demographics header or report verification boilerplate
+        # Skip report metadata, demographic headers, or administrative boilerplate
         if (
             re.search(r"^patient\s+is\s+a\b", s_lower) or
             re.search(r"\breport\s+was\s+verified\b", s_lower) or
-            re.search(r"\bmeasurements\s+should\s+not\s+be\s+made\b", s_lower)
+            re.search(r"\bmeasurements\s+should\s+not\s+be\s+made\b", s_lower) or
+            re.search(r"^(?:dentalscan|office:|report\s+type:|report\s+date:|date\s+of\s+birth:|dob:|study\s+date:|scan\s+type:)\b", s_lower) or
+            re.search(r"^(?:patient:|name:)\s+[a-z\s]+$", s_lower) or
+            re.search(r"^(?:age:|gender:)\s+[0-9a-z\s]+$", s_lower) or
+            re.search(r"^(?:abbreviations:|dental\s+scan\s+ltd|email:|website:|telephone:|gdc\s+registration)\b", s_lower)
         ):
+            continue
+
+        # Clean section header prefix (e.g. "Dental findings: ", "Radiological findings: ")
+        s = re.sub(r"^(?:dental\s+findings|radiological\s+findings|clinical\s+findings|impressions?|findings):\s*", "", s, flags=re.IGNORECASE).strip()
+        s_lower = s.lower()
+        if len(s_lower) < 5:
             continue
 
         # Check if sentence is scan indication / technique boilerplate
@@ -735,7 +753,34 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             t_val = int(sent_tooth_match.group(1))
             target_site = next((st.get("anatomical_name") for st in anatomical_sites if st.get("fdi_number") == t_val or st.get("universal_number") == t_val or f"Tooth {t_val}" in st.get("anatomical_name", "")), None)
 
+        # Check for direct Palmer notation in sentence (e.g. LL6, LL5, LR1, UR8, etc.)
         if not target_site:
+            sent_palmer = re.search(r"\b(UR|UL|LL|LR)[\s_-]*([1-8]|[A-E])\b", s, re.IGNORECASE)
+            if sent_palmer:
+                p_token = f"{sent_palmer.group(1).upper()}{sent_palmer.group(2).upper()}"
+                norm = normalize_dental_site({"anatomical_name": p_token})
+                if norm.get("fdi_number"):
+                    existing = next((st.get("anatomical_name") for st in anatomical_sites if st.get("fdi_number") == norm["fdi_number"]), None)
+                    if not existing:
+                        anatomical_sites.append(norm)
+                        target_site = norm["anatomical_name"]
+                    else:
+                        target_site = existing
+
+        # Check relative tooth positions with sentence-level quadrant context
+        if not target_site:
+            sent_quad = None
+            if re.search(r"\b(maxillary\s+left|upper\s+left|quadrant\s+2|ul)\b", s_lower):
+                sent_quad = "UL"
+            elif re.search(r"\b(maxillary\s+right|upper\s+right|quadrant\s+1|ur)\b", s_lower):
+                sent_quad = "UR"
+            elif re.search(r"\b(mandibular\s+left|lower\s+left|quadrant\s+3|ll)\b", s_lower):
+                sent_quad = "LL"
+            elif re.search(r"\b(mandibular\s+right|lower\s+right|quadrant\s+4|lr)\b", s_lower):
+                sent_quad = "LR"
+            else:
+                sent_quad = active_quad
+
             if "third molar" in s_lower or "wisdom tooth" in s_lower:
                 target_site = next((st.get("anatomical_name") for st in anatomical_sites if "third molar" in st.get("anatomical_name", "").lower()), None)
             elif "second molar" in s_lower:

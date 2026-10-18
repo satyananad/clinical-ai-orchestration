@@ -301,13 +301,18 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         elif tool_name == "structure_clinical_dictation":
             dictation_text = arguments.get("dictation_text", "")
             parsed = parse_dictation_with_llm(dictation_text)
-            guardrails = verify_anti_hallucination(dictation_text, parsed.get("findings", []), impressions=parsed.get("impressions", []))
+            findings = parsed.get("findings", [])
+            guardrails = verify_anti_hallucination(dictation_text, findings, impressions=parsed.get("impressions", []))
+            has_findings = bool(findings)
+            status_label = "success" if has_findings else "incomplete"
             return {
-                "status": "success",
+                "status": status_label,
+                "extraction_status": parsed.get("extraction_status", "COMPLETE" if has_findings else "INCOMPLETE_REQUIRES_REVIEW"),
+                "message": "Clinical observations structured into validated draft report." if has_findings else "Dictation processed, but no clinical findings could be extracted with high confidence. Clinician review required.",
                 "patient_details": parsed.get("patient_details"),
                 "raw_dictation": dictation_text,
                 "anatomical_sites": parsed.get("anatomical_sites", []),
-                "findings": parsed.get("findings", []),
+                "findings": findings,
                 "impressions": parsed.get("impressions", []),
                 "recommendations": parsed.get("recommendations", []),
                 "safety_guardrails": guardrails

@@ -106,3 +106,36 @@ def test_multi_dimensional_clinical_classification():
     # Case D: Image limitation (superimposition)
     r4 = classify_clinical_finding_status("Slight superimposition of distal ramus cortical margin.")
     assert r4["image_limitation"] == "superimposition"
+
+
+def test_clause_level_negation_does_not_reject_positive_finding():
+    """Verify that a sentence containing both positive finding and negative observation does not contradict the positive finding."""
+    source = "A unilocular radiolucency measuring 7 mm is present, with no cortical plate erosion."
+    claim = "Unilocular radiolucency measuring 7 mm is present."
+    res = verify_single_claim_deterministic(source, claim)
+    assert res["status"] == ClaimStatus.SUPPORTED
+
+
+def test_empty_findings_receives_zero_score_and_incomplete_status():
+    """Verify that an empty findings list produces 0.0 grounded_ratio and extraction_empty status."""
+    res = verify_dictation_against_source("Dictation with 5 mm defect", [])
+    assert res["status"] == "EXTRACTION_EMPTY_REQUIRES_REVIEW"
+    assert res["grounded_ratio"] == 0.0
+    assert res["claim_support_ratio"] == 0.0
+    assert "EXTRACTION_EMPTY" in res["status"]
+
+
+def test_multi_quadrant_dentalscan_verification():
+    """Verify that multi-quadrant findings (e.g. LL5, LL6 and LR1) are not falsely rejected by quadrant concordance."""
+    source = "Severe periodontal bone loss is present at LL1 and LR1. Apical radiolucency at LL6."
+    findings = [
+        {"anatomical_site": "Mandibular left (LL6)", "observation": "Apical radiolucency at LL6", "source_quote": "Apical radiolucency at LL6."},
+        {"anatomical_site": "Mandibular dentition", "observation": "Severe periodontal bone loss is present at LL1 and LR1", "source_quote": "Severe periodontal bone loss is present at LL1 and LR1."}
+    ]
+    res = verify_dictation_against_source(source, findings)
+    assert res["status"] == "PASSED"
+    assert res["grounded_ratio"] == 1.0
+    assert len(res["contradicted_claims"]) == 0
+    assert "measurement_preservation" in res
+    assert "extraction_completeness" in res
+
