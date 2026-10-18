@@ -40,6 +40,7 @@ class DictationRequest(BaseModel):
     patient_name: Optional[str] = None
 
 class AnatomicalSite(BaseModel):
+    model_config = ConfigDict(extra="allow")
     site_type: str
     fdi_number: Optional[int] = None
     palmer_notation: Optional[str] = None
@@ -50,6 +51,7 @@ class AnatomicalSite(BaseModel):
 from typing import List, Optional, Dict, Any, Union
 
 class ClinicalFindingItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
     anatomical_site: str
     tooth_number: Optional[str] = None
     category: str
@@ -63,12 +65,14 @@ class ClinicalFindingItem(BaseModel):
     clarification_reason: Optional[str] = None
 
 class SafetyGuardrails(BaseModel):
+    model_config = ConfigDict(extra="allow")
     status: str
     grounded_ratio: Union[float, str]
     unsupported_findings: List[str] = []
     anti_hallucination_guarantee: str
 
 class DictationReportResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
     report_metadata: Dict[str, Any]
     patient_context: Dict[str, Any]
     raw_dictation: str
@@ -80,6 +84,19 @@ class DictationReportResponse(BaseModel):
     safety_guardrails: SafetyGuardrails
     dictation_json_path: Optional[str] = None
     dictation_pdf_path: Optional[str] = None
+
+class ConfirmDictationRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    dictation_json_path: Optional[str] = None
+    patient_id: Optional[str] = None
+    patient_name: Optional[str] = None
+    findings: Optional[List[ClinicalFindingItem]] = None
+    impressions: Optional[List[str]] = None
+    recommendations: Optional[List[str]] = None
+    report_metadata: Optional[Dict[str, Any]] = None
+    patient_context: Optional[Dict[str, Any]] = None
+    raw_dictation: Optional[str] = None
+
 
 class AssistantChatRequest(BaseModel):
     query: str
