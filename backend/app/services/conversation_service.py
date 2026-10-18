@@ -130,36 +130,46 @@ def get_or_create_session(session_id: str) -> SessionState:
         SESSIONS[session_id] = SessionState(session_id)
     return SESSIONS[session_id]
 
-# Linguistic trigger patterns for context-dependent follow-up
-PATIENT_PRONOUN_TRIGGERS = [
-    "her", "his", "their", "they", "them", "the patient", "she", "he",
-    "this report", "the report", "latest one", "the latest",
-    "that scan", "her scan", "his scan", "the scan"
-]
-
 def is_contextual_query(query: str, has_active_report: bool = False) -> bool:
-    """Detects whether a user query refers to an active session context rather than a new patient."""
-    q_lower = query.lower()
-    # General queries for patient names or listings are database inquiries, not pronoun follow-ups
-    if re.search(r"\b(?:patient\s+names?|list\s+(?:of\s+)?patients?|all\s+patients?|how\s+many\s+patients?)\b", q_lower):
+    """
+    Determines whether a clinician's query refers to an active report context:
+    1. If a report is currently active:
+       Any clinical question, inquiry about findings, teeth, impressions, or summary
+       refers to the active report unless the user explicitly requests to open another patient.
+    2. If no report is active:
+       Returns True only if the request explicitly asks for a summary or findings of an implied
+       patient/report (e.g. 'summarize her report', 'what did the report say'), allowing the
+       system to safely prompt the clinician to select a patient/report first.
+    """
+    q_lower = query.lower().strip()
+    
+    # 1. Clinic-wide patient listings or database count questions are not report follow-ups
+    if any(q_lower.startswith(w) for w in ["how many", "how much", "list", "total", "count"]):
         return False
-    if any(re.search(r"\b" + re.escape(p) + r"\b", q_lower) for p in PATIENT_PRONOUN_TRIGGERS):
-        return True
+
+    # 2. Check if this is an explicit new patient retrieval request
+    has_retrieval_cmd = any(v in q_lower for v in ["open", "retrieve", "fetch", "load"])
+    from .retrieval import extract_retrieval_intent
+    r_intent = extract_retrieval_intent(query)
+    cand_name = r_intent.get("patient_name", "").strip()
+    non_name_tokens = {"what", "why", "how", "explain", "tell", "help", "who", "when", "does", "can", "please", "summary", "summarize", "problem", "findings", "finding", "report", "scan", "it", "she", "he", "her", "his", "they", "them", "patient", "tooth", "teeth"}
+    has_distinct_patient = bool(cand_name) and not all(t.lower() in non_name_tokens for t in cand_name.split())
+    if has_retrieval_cmd and has_distinct_patient:
+        return False
+
+    # 3. If an active report is open, questions refer to the active report
     if has_active_report:
-        if re.search(r"\bit\b", q_lower) or any(term in q_lower for term in ["pdf", "download", "link to report", "explain", "why", "tell me about"]):
-            return True
-        followup_triggers = [
-            "summarize", "summary", "overview", "what did", "what does", "what do", "what are", "what is",
-            "what they", "what she", "what he", "what has", "what have",
-            "are there", "is there", "any caries", "caries", "decay", "cavities",
-            "tooth", "teeth", "molar", "impaction", "nerve", "canal",
-            "bone loss", "radiolucency", "recommendation", "findings", "finding", "impression",
-            "explain", "why", "pdf"
-        ]
-        has_new_patient_retrieval = any(re.search(r"\b" + re.escape(v) + r"\b", q_lower) for v in ["open", "retrieve", "search", "fetch"]) and any(w in q_lower for w in ["patient", "mrn", "cbct", "opg", "report for", "scan for"])
-        if any(term in q_lower for term in followup_triggers) and not has_new_patient_retrieval:
-            return True
-    return False
+        return True
+
+    # 4. If no report is active yet: check if clinician is attempting a follow-up or report summary
+    is_report_reference = (
+        any(w in q_lower for w in ["summarize", "summary"])
+        or ("report" in q_lower and any(w in q_lower for w in ["her", "his", "their", "the", "this"]))
+        or ("scan" in q_lower and any(w in q_lower for w in ["her", "his", "their", "that", "this"]))
+    )
+    return is_report_reference
+
+
 
 def handle_assistant_interaction(query: str, session_id: str = "default_session") -> Dict[str, Any]:
     """

@@ -291,6 +291,102 @@ def extract_date_from_query(query: str) -> Optional[str]:
 
     return None
 
+def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
+    """
+    General LLM-driven agent that understands natural-language requests from the
+    current message, conversation history, and application context, then dynamically
+    selects the appropriate available tool and its arguments based on tool schemas.
+    """
+    q_lower = query.lower().strip()
+    
+    # 1. Primary: JSON Structured Triage via Local/Configured LLM
+    prompt = (
+        f"Clinician request: \"{query}\"\n"
+        f"Active Patient in session: {session.active_patient_id or 'None'}\n"
+        f"Active Report in session: {session.active_report_id or 'None'}\n"
+        f"Booking Workflow State: {session.booking_state.stage.value if hasattr(session.booking_state, 'stage') else 'IDLE'}\n"
+        f"Pending Booking Slots: {'Yes (' + str(len(session.pending_booking_slots)) + ' slots)' if session.pending_booking_slots else 'No'}\n"
+        f"Pending Patient Candidates: {'Yes (' + str(len(session.pending_candidates)) + ' candidates)' if session.pending_candidates else 'No'}\n"
+    )
+    if session.history:
+        prompt += "Recent dialogue:\n"
+        for turn in session.history[-3:]:
+            prompt += f"  Clinician: {turn.get('user', '')}\n  Assistant: {turn.get('assistant', '')[:100]}\n"
+
+    raw_triage = query_llm(prompt, system_prompt=TRIAGE_SYSTEM_PROMPT, json_format=True)
+    if raw_triage:
+        try:
+            parsed_triage = json.loads(raw_triage)
+            sel_agent = parsed_triage.get("selected_agent")
+            t_name = parsed_triage.get("tool_name")
+            args = parsed_triage.get("arguments", {})
+            if sel_agent and t_name:
+                if t_name == "summarize_active_report" and args.get("report_id") in ["active", None]:
+                    args["report_id"] = session.active_report_id or "unselected"
+                    if "query" not in args:
+                        args["query"] = query
+                elif t_name == "check_appointment_slots":
+                    if not args.get("preferred_date"):
+                        extracted_d = extract_date_from_query(query)
+                        if extracted_d:
+                            args["preferred_date"] = extracted_d
+                elif t_name == "conversation" and "query" not in args:
+                    args["query"] = query
+                return {
+                    "selected_agent": sel_agent,
+                    "tool_name": t_name,
+                    "arguments": args,
+                    "rationale": f"LLM Multi-Agent Reasoning: {parsed_triage.get('rationale', 'Dynamic triage by Clinical Orchestrator Agent.')}"
+                }
+        except Exception:
+            pass
+
+    # 2. Secondary: Native LLM Tool Calling (Ollama chat tools interface)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are the Dental Clinical Workstation Orchestrator. "
+                "Select and invoke the appropriate clinical tool for the clinician's request.\n"
+                f"Active Patient in session: {session.active_patient_id or 'None'}\n"
+                f"Active Report in session: {session.active_report_id or 'None'}"
+            )
+        }
+    ]
+    if session.history:
+        for turn in session.history[-3:]:
+            messages.append({"role": "user", "content": turn.get("user", "")})
+            messages.append({"role": "assistant", "content": turn.get("assistant", "")[:150]})
+    messages.append({"role": "user", "content": query})
+
+    tool_call = query_ollama_chat_tools(messages, get_ollama_tool_definitions())
+    if tool_call and tool_call.get("tool_name"):
+        tool_name = tool_call.get("tool_name")
+        args = tool_call.get("arguments", {})
+        agent_map = {
+            "search_patient_reports": "RetrievalAgent",
+            "structure_clinical_dictation": "ClinicalScribeAgent",
+            "summarize_active_report": "ConsultationAgent",
+            "query_clinic_database": "GeneralAssistantAgent",
+            "general_query": "GeneralAssistantAgent",
+            "verify_clinical_claim": "ConsultationAgent",
+            "check_appointment_slots": "ScanBookingAgent",
+            "confirm_scan_booking": "ScanBookingAgent",
+            "lookup_existing_booking": "ScanBookingAgent",
+            "cancel_scan_booking": "ScanBookingAgent",
+            "reschedule_scan_booking": "ScanBookingAgent",
+            "conversation": "GeneralAssistantAgent"
+        }
+        if tool_name in agent_map:
+            return {
+                "selected_agent": agent_map[tool_name],
+                "tool_name": "general_query" if tool_name == "query_clinic_database" else tool_name,
+                "arguments": args,
+                "rationale": f"Native LLM Tool Call: Selected {tool_name}."
+            }
+
+    return None
+
 def triage_clinician_request(query: str, session_id: str = "default_session") -> Dict[str, Any]:
     """
     Decides which specialized agent and MCP tool to invoke.
@@ -301,6 +397,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
     """
     session = get_or_create_session(session_id)
     q_lower = query.lower().strip()
+
 
     # Step 0A: Disambiguation candidate selection from pending clarification
     if session.pending_candidates:
@@ -761,9 +858,14 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
     if session.active_report_id:
         intent = extract_retrieval_intent(query)
         extracted_cand_name = intent.get("patient_name", "").strip()
-        non_patient_tokens = {"what", "why", "how", "explain", "tell", "help", "who", "when", "does", "can", "please", "summary", "summarize", "problem", "findings", "finding", "report", "scan", "it", "she", "he", "her", "his"}
+        non_patient_tokens = {
+            "what", "why", "how", "explain", "tell", "help", "who", "when", "does", "can",
+            "please", "summary", "summarize", "problem", "findings", "finding", "report",
+            "scan", "it", "she", "he", "her", "his", "tooth", "teeth", "are", "is", "the",
+            "for", "about", "any", "caries", "canal", "root", "nerve", "impaction"
+        }
         has_new_patient_target = bool(extracted_cand_name) and not all(t.lower() in non_patient_tokens for t in extracted_cand_name.split())
-        has_retrieval_verb = any(v in q_lower for v in ["open", "retrieve", "fetch", "load", "find", "show"])
+        has_retrieval_verb = bool(re.search(r"\b(open|retrieve|fetch|load|switch\s+to)\b", q_lower))
         has_new_patient_retrieval = has_retrieval_verb and has_new_patient_target
         
         # Check if user is asking to switch to another report of the active patient (e.g. 'open her OPG', 'show periapical')
