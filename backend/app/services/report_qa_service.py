@@ -7,6 +7,7 @@ Guarantees zero clinical hallucination by answering solely from verified report 
 """
 
 import json
+import re
 from typing import Dict, Any, List, Optional
 from .retrieval import get_report_by_id, get_patient
 from .llm_service import query_llm
@@ -161,9 +162,22 @@ def answer_report_question(report_id: str, query: str) -> Dict[str, Any]:
     # Deterministic RAG Fallback (Zero Hallucination)
     # Answers directly from structured report fields if LLM is offline
     matched_findings = []
+    stop_words = {
+        "what", "did", "the", "radiologist", "say", "about", "is", "there", "any",
+        "show", "tell", "me", "how", "are", "does", "have", "with", "this", "report",
+        "from", "an", "a", "scan", "scans", "earlier", "mention", "mentioned", "prior",
+        "previous", "in", "on", "at", "for", "of", "to", "or", "and", "that", "it",
+        "was", "be", "by", "as", "if", "not"
+    }
+    q_tokens = {w for w in re.findall(r"\b[a-zA-Z0-9_-]+\b", q_lower) if w not in stop_words and len(w) > 2}
+
     for f in findings:
         combined = (f.get("region", "") + " " + f.get("observation", "")).lower()
-        if any(term in combined for term in ["third molar", "48", "38", "wisdom", "impaction"]) and any(term in q_lower for term in ["third molar", "48", "38", "wisdom", "impaction"]):
+        f_tokens = set(re.findall(r"\b[a-zA-Z0-9_-]+\b", combined))
+        # Check token intersection or common dental patterns
+        if q_tokens & f_tokens:
+            matched_findings.append(f)
+        elif any(term in combined for term in ["third molar", "48", "38", "wisdom", "impaction"]) and any(term in q_lower for term in ["third molar", "48", "38", "wisdom", "impaction"]):
             matched_findings.append(f)
         elif any(term in combined for term in ["caries", "decay", "cavity"]) and any(term in q_lower for term in ["caries", "decay", "cavity"]):
             matched_findings.append(f)
@@ -171,12 +185,14 @@ def answer_report_question(report_id: str, query: str) -> Dict[str, Any]:
             matched_findings.append(f)
         elif any(term in combined for term in ["bone", "resorption", "ridge"]) and any(term in q_lower for term in ["bone", "resorption", "ridge"]):
             matched_findings.append(f)
+        elif any(term in combined for term in ["implant", "osteotomy"]) and any(term in q_lower for term in ["implant", "osteotomy"]):
+            matched_findings.append(f)
 
     if matched_findings:
         bullets = [f"Regarding {mf.get('region')}: {mf.get('observation')} (Certainty: {mf.get('certainty', 'documented')})." for mf in matched_findings]
         citations = [f"Report Finding [{mf.get('region')}]: \"{mf.get('observation')}\"" for mf in matched_findings]
         for imp in report.get("impression", []):
-            if any(term in imp.lower() for term in q_lower.split() if len(term) > 3):
+            if any(term in imp.lower() for term in q_tokens if len(term) > 3):
                 bullets.append(f"Radiologist Impression: {imp}")
                 citations.append(f"Report Impression: \"{imp}\"")
 

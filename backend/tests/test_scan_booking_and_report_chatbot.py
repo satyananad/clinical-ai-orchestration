@@ -200,3 +200,72 @@ def test_report_aware_chatbot_pdf_and_explanation():
     assert "Mandibular Canal & Tooth 48" in r3["answer"]
 
 
+def test_general_question_dynamic_answering_no_predefined_repetition():
+    """
+    Verifies that the chatbot answers general clinical questions, workstation capability questions,
+    and conversational inquiries dynamically and does NOT repeat a predefined static greeting.
+    """
+    session_id = "test_general_dynamic_session"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    # Query 1: Clinical concept: CBCT
+    r1 = run_multi_agent_pipeline("what is a cbct scan?", session_id=session_id)
+    assert r1["status"] == "success"
+    assert r1["agent_trace"]["active_agent"] == "GeneralAssistantAgent"
+    assert any(term in r1["answer"].lower() for term in ["cone beam", "3d", "volumetric", "tomography"])
+    assert "Hello! I am your Dental Clinical Workstation Assistant." not in r1["answer"]
+
+    # Query 2: Clinical concept: Caries
+    r2 = run_multi_agent_pipeline("explain dental caries", session_id=session_id)
+    assert r2["status"] == "success"
+    assert r2["agent_trace"]["active_agent"] == "GeneralAssistantAgent"
+    assert any(term in r2["answer"].lower() for term in ["caries", "demineralization", "decay", "enamel", "dentin"])
+    assert "Hello! I am your Dental Clinical Workstation Assistant." not in r2["answer"]
+
+    # Query 3: Workstation capabilities
+    r3 = run_multi_agent_pipeline("what are you doing?", session_id=session_id)
+    assert r3["status"] == "success"
+    assert any(term in r3["answer"].lower() for term in ["assistant", "retrieval", "imaging", "dictation", "workstation"])
+
+    # Query 4: Clinical concept: OPG
+    r4 = run_multi_agent_pipeline("what is an opg?", session_id=session_id)
+    assert r4["status"] == "success"
+    assert any(term in r4["answer"].lower() for term in ["panoramic", "radiograph", "orthopantomogram", "dentition"])
+    assert "Hello! I am your Dental Clinical Workstation Assistant." not in r4["answer"]
+
+
+def test_direct_time_slot_confirmation_without_prior_pending_slots():
+    """
+    Verifies that if a clinician inputs a time like 'October 10:00 a.m.' directly
+    even when session pending_booking_slots was None, it never searches for a patient
+    named 'October 10:00 A.M.' and successfully resolves to the matching appointment slot.
+    """
+    session_id = "test_cold_slot_session"
+    session = get_or_create_session(session_id)
+    session.clear()
+    assert session.pending_booking_slots is None
+
+    res = run_multi_agent_pipeline("October 10:00 a.m.", session_id=session_id)
+    assert res["status"] == "success"
+    assert res["agent_trace"]["active_agent"] == "ScanBookingAgent"
+    assert "booking_reference" in res
+    assert "10:00 AM" in res["message"]
+
+
+def test_report_retrieval_includes_pdf_url_and_chat_link():
+    """
+    Verifies that retrieving a patient report provides direct pdf_url and formatted
+    clickable link in the chat response.
+    """
+    session_id = "test_retrieval_pdf_session"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    res = run_multi_agent_pipeline("Open Vikram Malhotra's CBCT report", session_id=session_id)
+    assert res["status"] == "success"
+    assert res["pdf_url"] == "/patient-pdf/RPT-2026_Vikram_Malhotra_CBCT.pdf"
+    assert "[View Diagnostic PDF](/patient-pdf/RPT-2026_Vikram_Malhotra_CBCT.pdf)" in res["answer"]
+
+
+

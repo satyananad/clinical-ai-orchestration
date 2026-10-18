@@ -69,7 +69,7 @@ OLLAMA_ENDPOINT = os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/api/gener
 OLLAMA_CHAT_ENDPOINT = os.getenv("OLLAMA_CHAT_ENDPOINT", "http://localhost:11434/api/chat")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
 GROQ_API_KEY = _load_env_var("GROQ_API_KEY")
-GROQ_MODEL = _load_env_var("GROQ_MODEL", "openai/gpt-oss-120b")
+GROQ_MODEL = _load_env_var("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 
 # =====================================================================
@@ -86,35 +86,46 @@ def query_groq(prompt: str, system_prompt: Optional[str] = None, json_format: bo
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
 
-    payload = {
-        "model": GROQ_MODEL or "openai/gpt-oss-120b",
-        "messages": messages,
-        "temperature": 0.1,
-        "max_tokens": 4096
-    }
-    if json_format:
-        payload["response_format"] = {"type": "json_object"}
+    configured_model = GROQ_MODEL or _load_env_var("GROQ_MODEL", "llama-3.3-70b-versatile")
+    if "openai" in configured_model.lower() or "gpt" in configured_model.lower():
+        configured_model = "llama-3.3-70b-versatile"
 
-    req = urllib.request.Request(
-        "https://api.groq.com/openai/v1/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+    models_to_try = [configured_model]
+    if "llama-3.3-70b-versatile" not in models_to_try:
+        models_to_try.append("llama-3.3-70b-versatile")
+    if "llama-3.1-8b-instant" not in models_to_try:
+        models_to_try.append("llama-3.1-8b-instant")
+
+    for model in models_to_try:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.1,
+            "max_tokens": 4096
         }
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = data.get("choices", [])
-            if choices:
-                content = choices[0].get("message", {}).get("content", "").strip()
-                if content:
-                    print(f"\n⚡ [GROQ ACCELERATED] Response received from {payload['model']}!")
-                    return content
-    except Exception:
-        return None
+        if json_format:
+            payload["response_format"] = {"type": "json_object"}
+
+        req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            }
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                choices = data.get("choices", [])
+                if choices:
+                    content = choices[0].get("message", {}).get("content", "").strip()
+                    if content:
+                        print(f"\n⚡ [GROQ ACCELERATED] Response received from {model}!")
+                        return content
+        except Exception:
+            continue
     return None
 
 

@@ -159,6 +159,20 @@ DENTAL_ASSISTANT_TOOLS = [
             },
             "required": ["patient_name"]
         }
+    },
+    {
+        "name": "conversation",
+        "description": "Handles general clinical questions, dental radiology concepts (e.g. 'what is CBCT?', 'explain caries'), workstation help, capabilities, and conversational dialogue without running database queries.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The clinician's natural question or conversational prompt."
+                }
+            },
+            "required": ["query"]
+        }
     }
 ]
 

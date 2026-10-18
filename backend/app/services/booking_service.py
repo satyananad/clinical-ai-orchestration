@@ -132,8 +132,7 @@ def check_available_slots(modality: str = "Any", preferred_date: Optional[str] =
                 filtered.append(s)
             elif d_lower in s_date or d_lower in s_dt:
                 filtered.append(s)
-        if filtered:
-            available = filtered
+        available = filtered
 
     return available
 

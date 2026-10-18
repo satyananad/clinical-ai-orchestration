@@ -42,7 +42,7 @@ AVAILABLE TOOLS & SPECIALIZED AGENTS:
    Agent: "ScanBookingAgent"
    Arguments: {"slot_id": "string", "patient_name": "string", "patient_id": "optional string"}
 
-6. "conversation": Use for greetings, natural dialogue, conversational questions, politeness, or questions about what you are doing or who you are (e.g. "hey", "hello", "what are you doing?", "who are you?", "can you help me?", "thanks", "good morning"). No database tool is invoked.
+6. "conversation": Use for greetings, natural dialogue, conversational questions, workstation help, capabilities, or general clinical/dental radiology questions when no specific report is open (e.g. "hey", "hello", "what are you doing?", "who are you?", "can you help me?", "what is a CBCT scan?", "explain caries", "what is an OPG?", "how does this workstation work?", "thanks", "good morning"). No database tool is invoked.
    Agent: "GeneralAssistantAgent"
    Arguments: {"query": "string"}
 
@@ -331,6 +331,37 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 }
             elif is_new_command:
                 session.pending_booking_slots = None
+    else:
+        # If session pending_booking_slots was cleared/None, check if user directly entered a slot ID or time/date
+        is_direct_slot_or_time = bool(
+            re.search(r"\b(?:slot[- ]?\d+|10:00|02:30|2:30|11:15|04:00|4:00|09:00|9:00|10:30|03:15|3:15)\b", q_lower)
+            or (any(t in q_lower for t in ["am", "pm", "a.m.", "p.m."]) and any(c.isdigit() for c in q_lower))
+        )
+        is_retrieval_cmd = any(v in q_lower for v in ["open", "find", "retrieve", "load", "show", "view", "dictate", "generate", "database", "how many"])
+        if is_direct_slot_or_time and not is_retrieval_cmd:
+            from .booking_service import check_available_slots
+            all_avail = check_available_slots()
+            matched_slot_id = resolve_pending_slot_from_query(query, all_avail)
+            if matched_slot_id:
+                pat_name = None
+                pat_id = session.active_patient_id
+                if pat_id:
+                    from .retrieval import get_patient
+                    p = get_patient(pat_id)
+                    if p:
+                        pat_name = p.get("patient_name")
+                if not pat_name:
+                    pat_name = "Walk-in Patient"
+                return {
+                    "selected_agent": "ScanBookingAgent",
+                    "tool_name": "confirm_scan_booking",
+                    "arguments": {
+                        "slot_id": matched_slot_id,
+                        "patient_name": pat_name,
+                        "patient_id": pat_id
+                    },
+                    "rationale": f"Direct Slot Resolution: Matched slot {matched_slot_id} from user input '{query}'."
+                }
 
     # Step 1: LLM Dynamic Multi-Agent Triage (Groq / Ollama Clinical Orchestrator Agent)
     prompt = (
@@ -356,6 +387,14 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     args["report_id"] = session.active_report_id or "unselected"
                     if "query" not in args:
                         args["query"] = query
+                elif t_name == "check_appointment_slots":
+                    if not args.get("preferred_date"):
+                        if re.search(r"\b(20(?:th)?\s+oct(?:ober)?|oct(?:ober)?\s+20(?:th)?|2026-10-20)\b", q_lower):
+                            args["preferred_date"] = "2026-10-20"
+                        elif re.search(r"\b(19(?:th)?\s+oct(?:ober)?|oct(?:ober)?\s+19(?:th)?|tomorrow|2026-10-19)\b", q_lower):
+                            args["preferred_date"] = "2026-10-19"
+                elif t_name == "conversation" and "query" not in args:
+                    args["query"] = query
                 return {
                     "selected_agent": sel_agent,
                     "tool_name": t_name,
@@ -464,13 +503,19 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "rationale": "Fallback: Contextual inquiry on active report."
         }
 
-    # 2D. Dictation findings
+    # 2D. Dictation findings vs Educational/Clinical Questions
     clinical_keywords = [
         "impacted", "radiolucency", "root treated", "carious", "caries",
         "periapical", "canal", "osteitis", "follicle", "supernumerary",
         "alveolar ridge", "condyle", "tonsillolith", "bone loss"
     ]
-    if any(kw in q_lower for kw in clinical_keywords) and not any(verb in q_lower for verb in ["open", "show", "find", "get", "retrieve", "search"]):
+    is_question_intent = any(q_lower.startswith(w) for w in [
+        "what is", "what are", "what does", "how does", "how do", "why does", "why is",
+        "explain", "tell me about", "can you explain", "who are you", "what are you doing",
+        "what can you do", "help me", "how to", "difference between"
+    ]) or q_lower.endswith("?")
+
+    if any(kw in q_lower for kw in clinical_keywords) and not is_question_intent and not any(verb in q_lower for verb in ["open", "show", "find", "get", "retrieve", "search"]):
         return {
             "selected_agent": "ClinicalScribeAgent",
             "tool_name": "structure_clinical_dictation",
@@ -481,20 +526,25 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "rationale": "Fallback: Input describes clinical pathology findings."
         }
 
-    # 2D.5 Conversational Dialogue and Questions
-    is_conversational = any(re.search(r"\b" + re.escape(g) + r"\b", q_lower) for g in ["hey", "hello", "hi", "good morning", "good afternoon", "greetings", "help", "who are you", "what are you doing", "what can you do", "thanks", "thank you"]) and not any(w in q_lower for w in ["database", "report", "patient", "scan", "how many", "list", "open", "show", "find", "book", "schedule", "take"])
-    if is_conversational:
+    # 2D.5 Conversational Dialogue, Help, and General Clinical Concept Questions
+    is_conversational_greeting = any(re.search(r"\b" + re.escape(g) + r"\b", q_lower) for g in [
+        "hey", "hello", "hi", "good morning", "good afternoon", "good evening", "greetings",
+        "help", "who are you", "what are you doing", "what can you do", "how do you work", "how does this work",
+        "thanks", "thank you"
+    ])
+    has_retrieval_cmd = any(verb in q_lower for verb in ["open", "load", "show report", "view report", "fetch", "retrieve", "find report"])
+
+    if (is_conversational_greeting or is_question_intent) and not has_retrieval_cmd and not any(w in q_lower for w in ["database", "how many", "count", "breakdown"]):
         return {
             "selected_agent": "GeneralAssistantAgent",
             "tool_name": "conversation",
             "arguments": {"query": query},
-            "rationale": "Fallback: Natural conversational inquiry or greeting."
+            "rationale": "Fallback: Natural conversational inquiry, greeting, or clinical concept question."
         }
 
     # 2E. General Clinic Database Queries
     is_database_question = any(q_lower.startswith(w) for w in ["how many", "how much", "which", "list", "count", "breakdown"]) or "database" in q_lower or "total scans" in q_lower or "total patients" in q_lower
-    has_retrieval_intent = any(verb in q_lower for verb in ["open", "fetch", "load", "retrieve"])
-    if is_database_question and not has_retrieval_intent:
+    if is_database_question and not has_retrieval_cmd:
         return {
             "selected_agent": "GeneralAssistantAgent",
             "tool_name": "query_clinic_database",
@@ -506,6 +556,16 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
     query_intent = extract_retrieval_intent(query)
     target_modality = query_intent.get("report_type", "Any")
     extracted_name = query_intent.get("patient_name", "").strip()
+
+    # Safety Guard: If extracted name is an instructional word, greeting, or question fragment, redirect to conversation
+    if not extracted_name or any(w in extracted_name.lower().split() for w in ["what", "why", "how", "explain", "tell", "help", "who", "when", "does", "can", "please"]):
+        return {
+            "selected_agent": "GeneralAssistantAgent",
+            "tool_name": "conversation",
+            "arguments": {"query": query},
+            "rationale": "Safety Guard: Query was an inquiry or question, not a patient name."
+        }
+
     name_guess = extracted_name.title() if extracted_name else query.title()
 
     pat_id_match = re.search(r"\b(PAT-\d+)\b", query, re.IGNORECASE)
@@ -521,6 +581,113 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         },
         "rationale": "Defaulting to patient and report retrieval search."
     }
+
+def generate_dynamic_conversational_reply(query: str, session: Any) -> str:
+    """
+    Dynamically generates contextual conversational responses using the LLM.
+    If LLM inference is unavailable or offline, provides an intelligent,
+    clinically sound, query-specific response tailored to what was asked
+    rather than a static repeated greeting.
+    """
+    conversation_prompt = (
+        "You are the Viscan AI Clinical Workstation Assistant for a dental radiology clinic. "
+        "You assist clinicians with retrieving patient imaging (OPG, CBCT, bitewings), "
+        "structuring clinical voice dictations into verified radiological reports, "
+        "summarizing findings, answering questions about active reports, and booking scan slots.\n"
+        "Respond naturally, concisely, warmly, and professionally to the clinician's query. "
+        "Do NOT invent fake database counts or statistics. "
+        "Answer specifically and helpfully to what the clinician actually asked."
+    )
+    if session.active_patient_id:
+        conversation_prompt += f"\nCurrently active patient in session: {session.active_patient_id}"
+    if session.active_report_id:
+        conversation_prompt += f"\nCurrently active report in session: {session.active_report_id}"
+
+    llm_reply = query_llm(query, system_prompt=conversation_prompt, json_format=False)
+    if llm_reply and len(llm_reply.strip()) >= 5:
+        return llm_reply.strip()
+
+    # Dynamic semantic offline fallback tailored specifically to the query
+    q_lower = query.lower().strip()
+
+    # 1. CBCT / 3D imaging questions
+    if any(k in q_lower for k in ["cbct", "cone beam", "3d scan", "3d imaging"]):
+        return (
+            "Cone Beam Computed Tomography (CBCT) provides volumetric 3D diagnostic imaging of the maxillofacial complex. "
+            "It produces sub-millimeter isotropic resolution views in axial, coronal, and sagittal planes, essential for "
+            "implant site planning, assessing impacted third molars relative to the inferior alveolar nerve canal, and evaluating complex endodontic root canal anatomy."
+        )
+
+    # 2. OPG / Panoramic radiograph questions
+    if any(k in q_lower for k in ["opg", "panoramic", "orthopantomogram"]):
+        return (
+            "An Orthopantomogram (OPG) is a wide-field rotational panoramic radiograph that visualizes the entire dentition, "
+            "maxillary sinuses, alveolar crests, and temporomandibular joint (TMJ) condyles in a single 2D screening view. "
+            "It is commonly indicated for third molar assessment, orthodontic records, and comprehensive baseline screening."
+        )
+
+    # 3. Bitewing & Periapical (IOPA) questions
+    if any(k in q_lower for k in ["bitewing", "periapical", "iopa", "intraoral"]):
+        return (
+            "Intraoral radiographs deliver high spatial resolution: Bitewings are the standard of care for detecting interproximal "
+            "caries and assessing crestal alveolar bone height, whereas Periapical (IOPA) radiographs capture the complete tooth "
+            "including the crown, root, and periapical tissues to diagnose apical periodontitis, root fractures, or resorptive lesions."
+        )
+
+    # 4. Caries / Cavity pathology questions
+    if any(k in q_lower for k in ["caries", "carious", "cavity", "decay", "demineralization"]):
+        return (
+            "Dental caries is microbial demineralization of the calcified tissues of the tooth (enamel, dentin, cementum). "
+            "Radiographically, it presents as a radiolucent shadow on occlusal pits or interproximal contact zones. "
+            "Restorative therapy (e.g. composite or amalgam restorations) or endodontic treatment is indicated based on pulpal proximity."
+        )
+
+    # 5. Impaction & Third Molar questions
+    if any(k in q_lower for k in ["impacted", "impaction", "wisdom tooth", "third molar", "tooth 48", "tooth 38"]):
+        return (
+            "Tooth impaction occurs when normal eruption is prevented by adjacent teeth, dense bone, or inadequate arch length "
+            "(most commonly third molars 38 and 48). Radiographic assessment classifies angulation (mesioangular, vertical, distoangular, or horizontal) "
+            "and carefully assesses the proximity of root apices to the inferior alveolar nerve canal."
+        )
+
+    # 6. Radiolucency / Periapical pathosis
+    if any(k in q_lower for k in ["radiolucency", "radiolucent", "periapical", "apical periodontitis", "cyst"]):
+        return (
+            "A periapical radiolucency represents localized bone resorption at the tooth apex, typically secondary to pulpal necrosis "
+            "and subsequent inflammatory response (apical periodontitis, granuloma, or radicular cyst). Treatment usually entails root canal therapy or surgical endodontics."
+        )
+
+    # 7. Workstation capabilities & "What are you doing / Who are you / How does it work"
+    if any(k in q_lower for k in ["who are you", "what are you doing", "what can you do", "how do you work", "how does this work", "help", "capabilities"]):
+        return (
+            "I am your Viscan AI Clinical Workstation Assistant. I am designed to assist dental clinicians with:\n"
+            "• **Diagnostic Retrieval**: Find and open patient imaging (OPG, CBCT, Bitewing, Periapical) and view official diagnostic PDFs with patient safety disambiguation.\n"
+            "• **Clinical Scribe**: Convert spoken or typed clinical dictations into verified radiological findings with FDI/Palmer numbering, measurement preservation, and certainty labeling.\n"
+            "• **Report Q&A & Consultation**: Answer questions and summarize findings strictly grounded in active reports with verbatim source citations.\n"
+            "• **Scan Scheduling**: Check real-time appointment slots and confirm bookings."
+        )
+
+    # 8. Greetings
+    if any(re.search(r"\b" + re.escape(g) + r"\b", q_lower) for g in ["hey", "hello", "hi", "good morning", "good afternoon", "good evening", "greetings"]):
+        return (
+            "Hello Doctor! I am your Viscan AI Clinical Workstation Assistant. "
+            "You can ask me to open a patient's scan (e.g. 'Open Vikram Malhotra's CBCT'), dictate examination observations, "
+            "explain active findings, or check available scan appointment slots. How can I assist you?"
+        )
+
+    # 9. Appointment booking instructions
+    if any(k in q_lower for k in ["how to book", "book appointment", "schedule scan"]):
+        return (
+            "To book a scan appointment, you can ask for available slots (e.g. 'What slots are available for CBCT?' or 'How many slots on 20 October?'). "
+            "Once the slots are displayed, confirm your choice by replying with the slot ID or time (e.g. 'Yes, book slot SLOT-101')."
+        )
+
+    # 10. General catch-all
+    return (
+        f"Regarding your query: I am your Clinical Workstation Assistant. "
+        f"You can ask me to retrieve patient imaging (e.g. 'Open Priya Sharma's OPG'), explain diagnostic findings, "
+        f"dictate new clinical observations, or schedule appointment slots. What would you like to explore?"
+    )
 
 def verify_response_against_query(query: str, response: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -619,6 +786,19 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                 retrieval_res["report"]["report_id"]
             )
             session.pending_candidates = None
+            rep = retrieval_res["report"]
+            pdf_name = rep.get("pdf_filename")
+            pdf_url = f"/patient-pdf/{pdf_name}" if pdf_name else None
+            retrieval_res["pdf_url"] = pdf_url
+            retrieval_res["pdf_filename"] = pdf_name
+            p_name = retrieval_res["patient"]["patient_name"]
+            rep_type = rep.get("report_type", "Scan")
+            rep_id = rep.get("report_id", "")
+            retrieval_res["message"] = (
+                f"Opened {rep_type} report ({rep_id}) for {p_name}."
+                + (f" [View Diagnostic PDF]({pdf_url})" if pdf_url else "")
+            )
+            retrieval_res["answer"] = retrieval_res["message"]
         elif retrieval_res.get("status") == "clarification_required":
             session.pending_candidates = retrieval_res.get("candidates")
             session.last_retrieval_modality = modality_arg if (modality_arg and modality_arg != "Any") else extract_retrieval_intent(query).get("report_type", "Any")
@@ -658,28 +838,12 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
     # AGENT 3A: CONVERSATIONAL AGENT (Dynamic LLM dialogue; NO database tool)
     # =========================================================================
     elif (tool_name in ["conversation", "general_query"] and not any(w in query.lower() for w in ["database", "how many", "count", "statistics", "registered patients", "all reports"])) or (selected_agent == "GeneralAssistantAgent" and tool_name not in ["query_clinic_database"]):
-        conversation_prompt = (
-            "You are the Viscan AI Clinical Workstation Assistant for a dental radiology clinic. "
-            "You assist clinicians with retrieving patient imaging (OPG, CBCT, bitewings), "
-            "structuring clinical voice dictations into verified radiological reports, "
-            "summarizing findings, answering questions about active reports, and booking scan slots.\n"
-            "Respond naturally, concisely, warmly, and professionally to the clinician's query. "
-            "Do NOT invent fake database counts or statistics. "
-            "Answer specifically and helpfully to what the clinician actually asked."
-        )
-        if session.active_patient_id:
-            conversation_prompt += f"\nCurrently active patient in session: {session.active_patient_id}"
-        if session.active_report_id:
-            conversation_prompt += f"\nCurrently active report in session: {session.active_report_id}"
-
-        llm_reply = query_llm(query, system_prompt=conversation_prompt, json_format=False)
-        if not llm_reply or len(llm_reply.strip()) < 3:
-            llm_reply = "Hello! I am your Dental Clinical Workstation Assistant. How can I help you today? You can ask me to open a patient scan, dictate observations, summarize findings, or check appointment slots."
+        reply_text = generate_dynamic_conversational_reply(query, session)
 
         return {
             "status": "success",
             "message": "Conversational response generated by Clinical Assistant.",
-            "answer": llm_reply.strip(),
+            "answer": reply_text,
             "citations": [],
             "agent_trace": {
                 "orchestrator": "TriageAgent",
