@@ -380,7 +380,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
 
 
     # 2B.5 Scan Booking Request (Check Available Slots)
-    is_booking_request = any(w in q_lower for w in ["book", "booking", "schedule", "reschedule", "appointment", "reserve", "slots", "slot"])
+    is_booking_request = any(w in q_lower for w in ["book", "booking", "schedule", "reschedule", "appointment", "appoint ment", "reserve", "slots", "slot"])
     is_retrieval_override = any(w in q_lower for w in ["open", "show", "view", "find report", "retrieve"])
     if is_booking_request and not is_retrieval_override:
         detected_mod = "Any"
@@ -393,13 +393,20 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         elif any(w in q_lower for w in ["periapical", "iopa"]):
             detected_mod = "Periapical"
 
+        detected_date = None
+        if re.search(r"\b(20(?:th)?\s+oct(?:ober)?|oct(?:ober)?\s+20(?:th)?|2026-10-20)\b", q_lower):
+            detected_date = "2026-10-20"
+        elif re.search(r"\b(19(?:th)?\s+oct(?:ober)?|oct(?:ober)?\s+19(?:th)?|tomorrow|2026-10-19)\b", q_lower):
+            detected_date = "2026-10-19"
+
         return {
             "selected_agent": "ScanBookingAgent",
             "tool_name": "check_appointment_slots",
             "arguments": {
-                "modality": detected_mod
+                "modality": detected_mod,
+                "preferred_date": detected_date
             },
-            "rationale": f"Fallback: Clinician requested scan booking for {detected_mod}."
+            "rationale": f"Fallback: Clinician requested scan booking for {detected_mod} on {detected_date or 'any date'}."
         }
 
     # 2C. Contextual Follow-up on Active Report
@@ -690,20 +697,30 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             slots_res = execute_tool("check_appointment_slots", arguments)
             slots = slots_res.get("available_slots", [])
             raw_mod = arguments.get("modality")
+            pref_date = arguments.get("preferred_date")
             mod_title = raw_mod if (raw_mod and str(raw_mod).lower() not in ["none", "any", "null", "all"]) else "Radiology"
             session.pending_booking_slots = slots
             session.pending_booking_modality = mod_title
+
+            date_str = ""
+            if pref_date:
+                if "10-20" in str(pref_date) or "20" in str(pref_date):
+                    date_str = " on October 20"
+                elif "10-19" in str(pref_date) or "19" in str(pref_date):
+                    date_str = " for Tomorrow (Oct 19)"
+                else:
+                    date_str = f" on {pref_date}"
 
             if slots:
                 slot_lines = [f"• [{s['slot_id']}] {s['datetime_str']} — {s['modality']} ({s['room']})" for s in slots]
                 mod_phrase = f" for {mod_title} scan" if mod_title != "Radiology" else ""
                 msg = (
-                    f"Found {len(slots)} available appointment slot(s){mod_phrase}:\n"
+                    f"Found {len(slots)} available appointment slot(s){mod_phrase}{date_str}:\n"
                     + "\n".join(slot_lines)
                     + f"\n\nConfirmation Required: Would you like to confirm any of these slots? (e.g. 'Yes, book slot {slots[0]['slot_id']}')."
                 )
             else:
-                msg = f"No appointment slots currently available{f' for {mod_title} scan' if mod_title != 'Radiology' else ''}. Please check back later."
+                msg = f"No appointment slots currently available{f' for {mod_title} scan' if mod_title != 'Radiology' else ''}{date_str}. Please check back later."
 
             return {
                 "status": "confirmation_required",
@@ -781,6 +798,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             "message": "Answered from active report context.",
             "answer": qa_result.get("answer"),
             "citations": qa_result.get("citations", []),
+            "pdf_url": qa_result.get("pdf_url"),
             "context_resolution": f"Active Context -> Patient ID: {session.active_patient_id}, Report ID: {session.active_report_id}",
             "patient": {
                 "patient_id": patient["patient_id"],

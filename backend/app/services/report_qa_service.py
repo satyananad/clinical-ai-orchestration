@@ -100,10 +100,31 @@ def answer_report_question(report_id: str, query: str) -> Dict[str, Any]:
     findings_text = "\n".join([f"- [{f.get('region')}]: {f.get('observation')} (Status: {f.get('certainty', 'Documented')})" for f in findings])
     impression_text = "\n".join([f"- {imp}" for imp in report.get("impression", [])])
     recommendation_text = report.get("recommendation", "None")
+    q_lower = query.lower().strip()
 
-    # If the user is asking for a summary
-    q_lower = query.lower()
-    if any(term in q_lower for term in ["summarize", "summary", "overview"]):
+    # If the user is asking for the PDF file or download
+    if any(term in q_lower for term in ["pdf", "download report", "view pdf", "open pdf", "pdf link", "file link"]):
+        pdf_name = report.get("pdf_filename")
+        if pdf_name:
+            pdf_url = f"/patient-pdf/{pdf_name}"
+            return {
+                "status": "success",
+                "answer": (
+                    f"📄 **PDF Report Available**: [{pdf_name}]({pdf_url})\n\n"
+                    f"• **Patient**: {patient_name} ({patient_id})\n"
+                    f"• **Modality**: {report.get('report_type')} ({report.get('report_id')})\n"
+                    f"• **Date**: {report.get('report_date')}\n"
+                    f"• **Link**: [Open PDF Report]({pdf_url})"
+                ),
+                "citations": [f"Source PDF: {pdf_name}"],
+                "pdf_url": pdf_url,
+                "pdf_filename": pdf_name,
+                "report_id": report["report_id"],
+                "report_date": report.get("report_date")
+            }
+
+    # If the user is asking for a summary or comprehensive explanation
+    if any(term in q_lower for term in ["summarize", "summary", "overview", "explain this", "explain report", "explain her", "explain his", "what does the report show", "what does this report show", "what does the report say", "what are the findings"]):
         return generate_report_summary(report, patient or {})
 
     # Construct Grounded Prompt for LLM (Llama 3.1 / Qwen)

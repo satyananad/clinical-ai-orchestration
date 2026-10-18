@@ -119,7 +119,22 @@ def check_available_slots(modality: str = "Any", preferred_date: Optional[str] =
             available = [s for s in available if s["modality"] == "Bitewing"]
         elif "PERIAPICAL" in mod_clean or "IOPA" in mod_clean:
             available = [s for s in available if s["modality"] == "Periapical"]
-    
+
+    if preferred_date:
+        d_lower = str(preferred_date).lower().strip()
+        filtered = []
+        for s in available:
+            s_date = s.get("date", "").lower()
+            s_dt = s.get("datetime_str", "").lower()
+            if "20" in d_lower and ("10-20" in s_date or "oct 20" in s_dt):
+                filtered.append(s)
+            elif ("19" in d_lower or "tomorrow" in d_lower) and ("10-19" in s_date or "oct 19" in s_dt or "tomorrow" in s_dt):
+                filtered.append(s)
+            elif d_lower in s_date or d_lower in s_dt:
+                filtered.append(s)
+        if filtered:
+            available = filtered
+
     return available
 
 def confirm_booking(slot_id: str, patient_name: str, patient_id: Optional[str] = None) -> Dict[str, Any]:

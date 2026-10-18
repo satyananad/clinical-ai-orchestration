@@ -154,3 +154,49 @@ def test_scan_booking_time_based_confirmation():
     assert "booking_reference" in resp2
     assert "10:00 AM" in resp2["message"]
 
+
+def test_scan_booking_date_based_slot_query():
+    """
+    Verifies that when a clinician asks for slots on a specific date:
+    'how many appoint ment slot have 20 october'
+    The agent filters slots exclusively to October 20 (3 slots: SLOT-105, 106, 107).
+    """
+    session_id = "test_date_slots_session"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    resp = run_multi_agent_pipeline("how many appoint ment slot have 20 october", session_id=session_id)
+    assert resp["status"] == "confirmation_required"
+    assert "available_slots" in resp
+    assert len(resp["available_slots"]) == 3
+    assert all("Oct 20" in s["datetime_str"] for s in resp["available_slots"])
+    assert "October 20" in resp["message"]
+
+
+def test_report_aware_chatbot_pdf_and_explanation():
+    """
+    Verifies that the Report-Aware Chatbot:
+    1. Returns a direct PDF link when requested ('Show me the PDF').
+    2. Explains the report comprehensively when requested ('Explain this report').
+    """
+    session_id = "test_pdf_and_explain_session"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    # Step 1: Open Vikram Malhotra's CBCT
+    r1 = run_multi_agent_pipeline("Open Vikram Malhotra's CBCT report", session_id=session_id)
+    assert r1["status"] == "success"
+
+    # Step 2: Ask for PDF
+    r2 = run_multi_agent_pipeline("Show me the PDF", session_id=session_id)
+    assert r2["status"] == "success"
+    assert "pdf_url" in r2
+    assert "/patient-pdf/RPT-2026_Vikram_Malhotra_CBCT.pdf" in r2["answer"]
+
+    # Step 3: Ask to explain report
+    r3 = run_multi_agent_pipeline("Explain this report", session_id=session_id)
+    assert r3["status"] == "success"
+    assert "Summary for Vikram Malhotra" in r3["answer"]
+    assert "Mandibular Canal & Tooth 48" in r3["answer"]
+
+

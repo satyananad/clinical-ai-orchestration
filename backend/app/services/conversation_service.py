@@ -71,14 +71,17 @@ def is_contextual_query(query: str, has_active_report: bool = False) -> bool:
     if any(re.search(r"\b" + re.escape(p) + r"\b", q_lower) for p in PRONOUN_TRIGGERS):
         return True
     if has_active_report:
+        if any(term in q_lower for term in ["pdf", "download", "link to report", "explain", "why", "tell me about"]):
+            return True
         followup_triggers = [
             "summarize", "summary", "overview", "what did", "what does", "what are", "what is",
             "are there", "is there", "any caries", "caries", "decay", "cavities",
             "tooth", "teeth", "molar", "impaction", "nerve", "canal",
-            "bone loss", "radiolucency", "recommendation", "findings", "finding", "impression"
+            "bone loss", "radiolucency", "recommendation", "findings", "finding", "impression",
+            "explain", "why", "pdf"
         ]
-        has_retrieval_command = any(re.search(r"\b" + re.escape(v) + r"\b", q_lower) for v in ["open", "retrieve", "search", "fetch"])
-        if any(term in q_lower for term in followup_triggers) and not has_retrieval_command:
+        has_new_patient_retrieval = any(re.search(r"\b" + re.escape(v) + r"\b", q_lower) for v in ["open", "retrieve", "search", "fetch"]) and any(w in q_lower for w in ["patient", "mrn", "cbct", "opg", "report for", "scan for"])
+        if any(term in q_lower for term in followup_triggers) and not has_new_patient_retrieval:
             return True
     return False
 
