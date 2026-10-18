@@ -92,7 +92,7 @@ The application strictly decouples probabilistic intelligence from deterministic
 
 #### A. LLM Engine (`backend/app/services/llm_service.py`)
 - **Model Choice:** Connects to local instruction-tuned models via Ollama (`llama3.1:8b`, `qwen2.5:7b`, `mistral`, or OpenAI-compatible backends).
-- **Zero Cloud Leakage:** All inference runs locally on the clinician's machine (`http://localhost:11434/api/generate`), guaranteeing HIPAA and zero PHI egress.
+- **Zero Cloud Leakage:** All inference runs locally on the clinician's machine (`http://localhost:11434/api/generate`), eliminating third-party cloud data egress. Note that while local inference and session isolation prevent data transmission, full production HIPAA/GDPR compliance requires enterprise data encryption at rest, RBAC authentication, and audit logging.
 - **System Prompt Engineering:**
   1. `DICTATION_SYSTEM_PROMPT`: Instructs the LLM to ingest radiologist speech/dictation transcripts and output validated structured JSON (anatomical sites, FDI tooth numbering, observations, certainty ratings).
   2. `RETRIEVAL_SYSTEM_PROMPT`: Extracts patient names, scan modalities (OPG, CBCT, Bitewing), and search intents from free-form spoken queries.
@@ -118,7 +118,8 @@ The application strictly decouples probabilistic intelligence from deterministic
 #### A. Privacy & Data Security (Zero PHI Egress)
 - Clinical imaging and dictated observations contain Protected Health Information (PHI) subject to HIPAA, GDPR, and regional medical privacy statutes.
 - By utilizing a **local LLM (Ollama / Llama-3.1 / Qwen-2.5)** or a zero-dependency deterministic engine, **zero PHI leaves the clinical workstation or local hospital intranet**.
-- No external cloud API calls are required for daily operation.
+- No external cloud API calls are required for daily operation. Synthetic patient datasets are used for local development and demonstration.
+- **Compliance Distinction:** Session isolation alone does not establish HIPAA or GDPR compliance; full clinical deployment mandates enterprise access controls, encryption at rest/transit, comprehensive audit trails, and strict data-retention policies.
 
 #### B. Authorization & Access Control (RBAC)
 - Enforces Role-Based Access Control (RBAC) across three clinical privilege tiers:

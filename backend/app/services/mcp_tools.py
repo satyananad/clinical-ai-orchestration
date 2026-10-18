@@ -118,72 +118,80 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     Executes business logic in response to an LLM Tool Call.
     Separates probabilistic LLM reasoning from deterministic business-rule execution.
     """
-    if tool_name == "search_patient_reports":
-        patient_name = arguments.get("patient_name", "").strip()
-        patient_id = arguments.get("patient_id", "").strip()
-        modality = arguments.get("modality", "Any").strip()
-        if modality.upper() in ["PANORAMIC", "ORTHOPANTOMOGRAM"]:
-            modality = "OPG"
-        elif modality.upper() in ["CONE BEAM", "3D", "3D VOLUME"]:
-            modality = "CBCT"
-        return resolve_report_retrieval(query=patient_id or patient_name, patient_name=patient_name, modality=modality)
+    try:
+        if tool_name == "search_patient_reports":
+            patient_name = arguments.get("patient_name", "").strip()
+            patient_id = arguments.get("patient_id", "").strip()
+            modality = arguments.get("modality", "Any").strip()
+            if modality.upper() in ["PANORAMIC", "ORTHOPANTOMOGRAM"]:
+                modality = "OPG"
+            elif modality.upper() in ["CONE BEAM", "3D", "3D VOLUME"]:
+                modality = "CBCT"
+            return resolve_report_retrieval(query=patient_id or patient_name, patient_name=patient_name, modality=modality)
 
-    elif tool_name == "structure_clinical_dictation":
-        dictation_text = arguments.get("dictation_text", "")
-        parsed = parse_dictation_with_llm(dictation_text)
-        guardrails = verify_anti_hallucination(dictation_text, parsed.get("findings", []))
-        return {
-            "status": "success",
-            "raw_dictation": dictation_text,
-            "anatomical_sites": parsed.get("anatomical_sites", []),
-            "findings": parsed.get("findings", []),
-            "impressions": parsed.get("impressions", []),
-            "recommendations": parsed.get("recommendations", []),
-            "safety_guardrails": guardrails
-        }
+        elif tool_name == "structure_clinical_dictation":
+            dictation_text = arguments.get("dictation_text", "")
+            parsed = parse_dictation_with_llm(dictation_text)
+            guardrails = verify_anti_hallucination(dictation_text, parsed.get("findings", []))
+            return {
+                "status": "success",
+                "raw_dictation": dictation_text,
+                "anatomical_sites": parsed.get("anatomical_sites", []),
+                "findings": parsed.get("findings", []),
+                "impressions": parsed.get("impressions", []),
+                "recommendations": parsed.get("recommendations", []),
+                "safety_guardrails": guardrails
+            }
 
-    elif tool_name == "summarize_active_report":
-        report_id = arguments.get("report_id", "")
-        query = arguments.get("query", "Summarize her report")
-        report = get_report_by_id(report_id)
-        if not report:
-            return {"status": "not_found", "message": f"Report '{report_id}' not found."}
+        elif tool_name == "summarize_active_report":
+            report_id = arguments.get("report_id", "")
+            query = arguments.get("query", "Summarize her report")
+            report = get_report_by_id(report_id)
+            if not report:
+                return {"status": "not_found", "message": f"Report '{report_id}' not found."}
 
-        citations = [
-            f"Findings: {'; '.join(f.get('observation', '') for f in report.get('findings', []))}",
-            f"Impression: {'; '.join(report.get('impression', []))}"
-        ]
-        return {
-            "status": "success",
-            "report_id": report_id,
-            "report_type": report.get("report_type"),
-            "clinical_indication": report.get("clinical_indication"),
-            "findings": report.get("findings"),
-            "impression": report.get("impression"),
-            "citations": citations
-        }
+            citations = [
+                f"Findings: {'; '.join(f.get('observation', '') for f in report.get('findings', []))}",
+                f"Impression: {'; '.join(report.get('impression', []))}"
+            ]
+            return {
+                "status": "success",
+                "report_id": report_id,
+                "report_type": report.get("report_type"),
+                "clinical_indication": report.get("clinical_indication"),
+                "findings": report.get("findings"),
+                "impression": report.get("impression"),
+                "citations": citations
+            }
 
-    elif tool_name == "verify_clinical_claim":
-        from .claim_verification import verify_report_claim
-        report_id = arguments.get("report_id", "")
-        claim_text = arguments.get("claim_text", "")
-        report = get_report_by_id(report_id)
-        if not report:
-            return {"status": "not_found", "message": f"Report '{report_id}' not found."}
+        elif tool_name == "verify_clinical_claim":
+            from .claim_verification import verify_report_claim
+            report_id = arguments.get("report_id", "")
+            claim_text = arguments.get("claim_text", "")
+            report = get_report_by_id(report_id)
+            if not report:
+                return {"status": "not_found", "message": f"Report '{report_id}' not found."}
 
-        verif_res = verify_report_claim(claim_text, report, patient_id=report.get("patient_id"))
-        return {
-            "status": "success",
-            "verification_status": verif_res.status.value,
-            "passed": verif_res.passed,
-            "violations": verif_res.violations,
-            "citations": verif_res.evidence_citations
-        }
+            verif_res = verify_report_claim(claim_text, report, patient_id=report.get("patient_id"))
+            return {
+                "status": "success",
+                "verification_status": verif_res.status.value,
+                "passed": verif_res.passed,
+                "violations": verif_res.violations,
+                "citations": verif_res.evidence_citations
+            }
 
-    else:
+        else:
+            return {
+                "status": "error",
+                "message": f"Unknown tool name: '{tool_name}'",
+                "retry_allowed": False
+            }
+    except Exception as e:
         return {
             "status": "error",
-            "message": f"Unknown tool name: '{tool_name}'"
+            "message": f"Clinical tool '{tool_name}' failed to execute: {str(e)}",
+            "retry_allowed": True
         }
 
 # =====================================================================
@@ -213,6 +221,7 @@ def handle_mcp_jsonrpc_request(rpc_payload: Dict[str, Any]) -> Dict[str, Any]:
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
         exec_result = execute_tool(tool_name, arguments)
+        is_error = exec_result.get("status") in ["error", "not_found"]
         return {
             "jsonrpc": "2.0",
             "id": req_id,
@@ -222,7 +231,8 @@ def handle_mcp_jsonrpc_request(rpc_payload: Dict[str, Any]) -> Dict[str, Any]:
                         "type": "text",
                         "text": json.dumps(exec_result, indent=2)
                     }
-                ]
+                ],
+                "isError": is_error
             }
         }
 
