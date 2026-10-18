@@ -120,7 +120,7 @@ def get_or_create_session(session_id: str) -> SessionState:
 
 # Linguistic trigger patterns for context-dependent follow-up
 PATIENT_PRONOUN_TRIGGERS = [
-    "her", "his", "their", "the patient", "she", "he",
+    "her", "his", "their", "they", "them", "the patient", "she", "he",
     "this report", "the report", "latest one", "the latest",
     "that scan", "her scan", "his scan", "the scan"
 ]
@@ -137,7 +137,8 @@ def is_contextual_query(query: str, has_active_report: bool = False) -> bool:
         if re.search(r"\bit\b", q_lower) or any(term in q_lower for term in ["pdf", "download", "link to report", "explain", "why", "tell me about"]):
             return True
         followup_triggers = [
-            "summarize", "summary", "overview", "what did", "what does", "what are", "what is",
+            "summarize", "summary", "overview", "what did", "what does", "what do", "what are", "what is",
+            "what they", "what she", "what he", "what has", "what have",
             "are there", "is there", "any caries", "caries", "decay", "cavities",
             "tooth", "teeth", "molar", "impaction", "nerve", "canal",
             "bone loss", "radiolucency", "recommendation", "findings", "finding", "impression",
@@ -196,7 +197,7 @@ def handle_assistant_interaction(query: str, session_id: str = "default_session"
 
         return {
             "status": "success",
-            "message": "Answered from active report context.",
+            "message": qa_result.get("answer"),
             "context_resolution": context_resolution_msg,
             "patient": {
                 "patient_id": patient["patient_id"],

@@ -90,3 +90,38 @@ def test_full_user_conversation_turn_by_turn():
     r6 = client.post("/assistant/chat", json={"query": "what does the scan show", "session_id": session_id}).json()
     assert r6["status"] == "success"
     assert any("RPT-2001" in c for c in r6["citations"])
+
+
+def test_what_they_have_pronoun_resolution():
+    """
+    Tests exact clinician sequence:
+    1. open report priya sharma -> 2 candidates
+    2. DOB: 1998 -> opens RPT-2003
+    3. what they have -> summarizes RPT-2003 findings and impressions with citations, NEVER clinic suites!
+    """
+    session_id = "test-what-they-have-session"
+    get_or_create_session(session_id).clear()
+
+    # 1. open report priya sharma
+    r1 = client.post("/assistant/chat", json={"query": "open report priya sharma", "session_id": session_id}).json()
+    assert r1["status"] == "clarification_required"
+    assert len(r1["candidates"]) == 2
+
+    # 2. DOB: 1998
+    r2 = client.post("/assistant/chat", json={"query": "DOB: 1998", "session_id": session_id}).json()
+    assert r2["status"] == "success"
+    assert r2["report"]["report_id"] == "RPT-2003"
+
+    # 3. what they have
+    r3 = client.post("/assistant/chat", json={"query": "what they have", "session_id": session_id}).json()
+    assert r3["status"] == "success"
+    ans = (r3.get("answer") or r3.get("message") or "").lower()
+    # MUST contain actual clinical impressions/findings from RPT-2003
+    assert "caries" in ans or "hypersensitivity" in ans or "tooth 16" in ans or "tooth 25" in ans
+    # MUST NOT contain clinic facility equipment advertisement
+    assert "specialized suites" not in ans
+    assert "suite 1" not in ans
+    assert "intraoral bay 3" not in ans
+    # MUST contain verifiable report evidence citations
+    assert len(r3.get("citations", [])) > 0
+    assert any("RPT-2003" in c for c in r3["citations"])

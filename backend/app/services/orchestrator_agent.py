@@ -821,6 +821,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "caries", "decay", "cavity", "cavities", "pain", "molar", "tooth", "teeth", "bone loss",
                 "nerve", "canal", "impaction", "lesion", "root", "apical", "periapical",
                 "what does she have", "what does he have", "what does it have", "what does patient have",
+                "what they have", "what do they have", "what have they", "what she has", "what he has", "what do they",
                 "explain", "tell me about", "what does it mean", "pdf", "recommendation"
             ])
         )
@@ -1194,7 +1195,11 @@ def generate_dynamic_conversational_reply(query: str, session: Any) -> str:
     rather than a static repeated greeting.
     """
     q_lower = query.lower().strip()
-    if session.active_report_id and any(w in q_lower for w in ["problem", "wrong", "findings", "finding", "diagnos", "impression", "summar", "condition", "issue", "caries", "teeth", "tooth"]):
+    if session.active_report_id and any(w in q_lower for w in [
+        "problem", "wrong", "findings", "finding", "diagnos", "impression", "summar",
+        "condition", "issue", "caries", "teeth", "tooth", "they have", "she have", "he have",
+        "what they", "what do they", "what does", "what is", "report", "scan"
+    ]):
         from .report_qa_service import answer_report_question
         qa = answer_report_question(session.active_report_id, query)
         if qa.get("answer"):
@@ -2045,7 +2050,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
         
         return {
             "status": "success",
-            "message": "Answered from active report context.",
+            "message": qa_result.get("answer"),
             "answer": qa_result.get("answer"),
             "citations": qa_result.get("citations", []),
             "pdf_url": qa_result.get("pdf_url"),

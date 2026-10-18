@@ -130,6 +130,7 @@ def answer_report_question(report_id: str, query: str) -> Dict[str, Any]:
         "what does the report show", "what does this report show", "what does the report say", "what are the findings",
         "what problem", "what problems", "what is the problem", "what's the problem", "what is wrong", "what's wrong",
         "what does she have", "what does he have", "what does it have", "what does patient have",
+        "what they have", "what do they have", "what have they", "what she has", "what he has",
         "what condition", "what issues", "what issue", "what are her issues", "what did you find",
         "diagnose", "diagnosis", "impression", "impressions", "findings"
     ]
