@@ -26,8 +26,10 @@ class FindingModel(BaseModel):
     anatomical_site: str
     category: str
     observation: str
+    source_quote: Optional[str] = None
     certainty: str
     measurements: List[str] = Field(default_factory=list)
+    requires_clarification: bool = False
 
 class DictationDraftReportModel(BaseModel):
     patient_details: Optional[PatientDetailsModel] = None
@@ -101,7 +103,9 @@ CLINICAL RULES FOR ANATOMY & NUMBERING:
 7. MANDATORY CONSERVATISM & ZERO-HALLUCINATION RULES:
    - Output ONLY findings and observations explicitly stated in the transcript.
    - If no recommendations were provided by the clinician, "recommendations" MUST be an empty list [].
-   - If speech transcription is unclear or corrupted, flag as unclear transcription.
+   - If speech transcription is unclear or corrupted, flag as unclear transcription and set requires_clarification: true.
+8. EVIDENCE GROUNDING:
+   - Every finding MUST include "source_quote" with the exact or verbatim span from the clinical transcript supporting that finding.
 
 Output strictly valid JSON matching this schema:
 {
@@ -125,8 +129,10 @@ Output strictly valid JSON matching this schema:
       "anatomical_site": "string",
       "category": "Impaction / Eruption" | "Anatomical Relationships & Proximity" | "Root Pathology & Resorption" | "Endodontic Status" | "Periapical & Osseous Status" | "Sinonasal & Extra-Dental Structures" | "General Observation",
       "observation": "string",
+      "source_quote": "string",
       "certainty": "definite observation" | "definite observation (etiology uncertain)" | "suspected / differential diagnosis" | "negative / normal finding" | "projection limited" | "unclear / clinician review required",
-      "measurements": ["string"]
+      "measurements": ["string"],
+      "requires_clarification": false
     }
   ],
   "impressions": ["string"],
@@ -365,6 +371,68 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
     return result
 
 
+def synthesize_impression_from_findings(findings: List[Dict[str, Any]], artifacts: Optional[List[Dict[str, Any]]] = None) -> List[str]:
+    """
+    Synthesizes impressions dynamically from structured clinical findings without hardcoded disease lists.
+    Groups significant observations, structural dimensions, negative assurances, and speech clarifications.
+    """
+    imp_items = []
+
+    # 1. Significant observations (positive, indeterminate, or differential findings)
+    positive_findings = [
+        f for f in findings
+        if f.get("certainty") in ("definite observation", "definite observation (etiology uncertain)", "suspected / differential diagnosis")
+        and not f.get("requires_clarification")
+    ]
+
+    for f in positive_findings:
+        obs = f.get("observation", "").strip()
+        site = f.get("anatomical_site", "").strip()
+
+        # Clean introductory boilerplate
+        cleaned_obs = re.sub(r"^(?:at\s+(?:the\s+)?[^,]+,\s*|the\s+|there\s+is\s+|there\s+are\s+)", "", obs, flags=re.IGNORECASE).strip()
+        if cleaned_obs:
+            cleaned_obs = cleaned_obs[0].upper() + cleaned_obs[1:]
+
+        # Avoid redundant site name prefix if already in observation
+        site_in_obs = site.lower() in cleaned_obs.lower() if site else False
+        if site and not site_in_obs and site.lower() not in ("dentition", "regional anatomy", "general"):
+            item_text = f"{site}: {cleaned_obs}"
+        else:
+            item_text = cleaned_obs
+
+        # Deduplicate
+        if not any(item_text.lower() == p.lower() for p in imp_items):
+            imp_items.append(item_text)
+
+    # 2. Key negative findings (complications / abnormalities ruled out)
+    neg_findings = [
+        f for f in findings
+        if f.get("certainty") == "negative / normal finding"
+        and not f.get("requires_clarification")
+        and "no other abnormal finding" not in f.get("observation", "").lower()
+    ]
+
+    if neg_findings:
+        neg_descs = [nf.get("observation", "").strip().rstrip(".") for nf in neg_findings]
+        if all(re.match(r"^no\s+", d, re.IGNORECASE) for d in neg_descs):
+            cleaned_phrases = [re.sub(r"^no\s+", "", d, flags=re.IGNORECASE) for d in neg_descs]
+            cleaned_phrases = [re.sub(r"\s+(?:is|are)\s+(?:observed|identified|seen|noted)$", "", cp, flags=re.IGNORECASE) for cp in cleaned_phrases]
+            imp_items.append(f"No {' or '.join(cleaned_phrases)} observed.")
+        else:
+            imp_items.append("; ".join(neg_descs) + ".")
+
+    # 3. Flagged speech transcription artifacts
+    if artifacts:
+        for art in artifacts:
+            imp_items.append(f"Unclear phrase '{art['matched_phrase']}' flagged for clinician clarification.")
+
+    if not imp_items:
+        return ["Radiological assessment completed."]
+
+    return ["; ".join(imp_items)]
+
+
 def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
     """
     Algorithmic clinical entity extraction when external LLM endpoints are offline.
@@ -543,7 +611,9 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
                 "category": art_match.get("category", "Root Pathology & Resorption"),
                 "observation": f"Unclear phrase: '{art_match['matched_phrase']}' (flagged as likely speech transcription error; requires clinician review)",
                 "certainty": "unclear / clinician review required",
-                "measurements": []
+                "measurements": [],
+                "source_quote": s,
+                "requires_clarification": True
             })
             continue
 
@@ -554,7 +624,9 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
                 "category": "General Observation",
                 "observation": f"{s} (dictated clinician statement; not independently verified)",
                 "certainty": "negative / normal finding",
-                "measurements": []
+                "measurements": [],
+                "source_quote": s,
+                "requires_clarification": False
             })
             continue
 
@@ -601,74 +673,14 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             "category": category,
             "observation": s,
             "certainty": certainty,
-            "measurements": meas
+            "measurements": meas,
+            "source_quote": s,
+            "requires_clarification": False
         })
 
-    # Synthesize clean, comprehensive Impressions if not explicitly provided
-    imp_parts = []
-    # 1. Lesion findings (summarizing size, cortical thinning, sinus proximity, etiology)
-    for f in findings:
-        obs = f["observation"].lower()
-        site = f["anatomical_site"]
-        if "lesion" in obs or "radiolucen" in obs:
-            size_str = f"{f['measurements'][0]} " if f.get("measurements") else ""
-            desc = f"{site}: well-defined {size_str}radiolucent lesion"
-            if "cortical thinning" in obs or "thinning" in obs:
-                desc += " with cortical thinning"
-            if "sinus" in obs:
-                desc += " and close proximity to maxillary sinus floor"
-            if "uncertain" in obs:
-                desc += " (etiology is uncertain)"
-            imp_parts.append(desc)
-        elif "fracture" in obs:
-            if "separation" in obs:
-                imp_parts.append(f"{site}: horizontal mid-root fracture with crown-root separation")
-            else:
-                imp_parts.append(f"{site}: root fracture")
-        elif "adenomatoid odontogenic tumor" in obs or "aot" in obs:
-            imp_parts.append(f"Benign odontogenic lesion suggestive of AOT ({site})")
-        elif "horizontally impacted" in obs:
-            imp_parts.append(f"Horizontally impacted {site}")
-        elif "impacted" in obs and not any("impacted" in p for p in imp_parts):
-            imp_parts.append(f"Impacted {site}")
-
-    # 2. Periodontal ligament widening
-    for f in findings:
-        obs = f["observation"].lower()
-        site = f["anatomical_site"]
-        if "periodontal ligament" in obs or "pdl" in obs:
-            imp_parts.append(f"Adjacent {site} demonstrates mild widening of the periodontal ligament")
-
-    # 3. Alveolar ridge dimensions & cortical plate
-    ridge_finding = next((f for f in findings if "alveolar ridge" in f["observation"].lower() and f.get("measurements")), None)
-    plate_finding = next((f for f in findings if "buccal cortical plate" in f["observation"].lower()), None)
-    if ridge_finding:
-        r_site = ridge_finding["anatomical_site"]
-        r_meas = ", ".join(ridge_finding["measurements"])
-        plate_desc = " with intact but thin buccal cortical plate" if plate_finding else ""
-        imp_parts.append(f"Edentulous {r_site} implant site: alveolar ridge dimensions {r_meas}{plate_desc}")
-
-    # 4. Proximity to adjacent teeth & incidental findings
-    if any("second molar" in f["observation"].lower() for f in findings) and not any("second molar" in p for p in imp_parts):
-        imp_parts.append("close proximity to adjacent second molar")
-    if any("tonsillolith" in f["observation"].lower() for f in findings):
-        imp_parts.append("bilateral palatine tonsilloliths noted incidentally")
-
-    # 5. Crucial negative findings in impression
-    has_sinus_comm_neg = any("sinus communication" in f["observation"].lower() for f in findings)
-    has_displaced_frag_neg = any("displaced root" in f["observation"].lower() for f in findings)
-    if has_sinus_comm_neg and has_displaced_frag_neg:
-        imp_parts.append("No definite sinus communication or displaced root fragments observed")
-    elif has_sinus_comm_neg:
-        imp_parts.append("No definite sinus communication observed")
-    elif has_displaced_frag_neg:
-        imp_parts.append("No displaced root fragments observed")
-
+    # Synthesize clean, comprehensive Impressions dynamically from findings without hardcoded disease lists
     if not impressions:
-        base_imp = "; ".join(list(dict.fromkeys(imp_parts))) if imp_parts else "Radiological assessment completed."
-        if artifacts:
-            base_imp += f". Unclear phrase '{artifacts[0]['matched_phrase']}' flagged for clinician clarification."
-        impressions.append(base_imp)
+        impressions = synthesize_impression_from_findings(findings, artifacts)
 
     # Recommendations: Strict zero-hallucination. Only include if explicitly dictated!
     has_explicit_rec = bool(re.search(r"\b(recommend|recommended|recommendation|advise|advised|routine follow-up)\b", dictation_text, re.IGNORECASE))

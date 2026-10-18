@@ -51,8 +51,10 @@ class ClinicalFindingItem(BaseModel):
     anatomical_site: str
     category: str
     observation: str
+    source_quote: Optional[str] = None
     certainty: str
     measurements: Optional[List[str]] = []
+    requires_clarification: bool = False
 
 class SafetyGuardrails(BaseModel):
     status: str

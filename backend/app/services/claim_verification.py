@@ -405,9 +405,11 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
     for f in findings:
         obs = f.get("observation", "")
         certainty = str(f.get("certainty", "")).lower()
+        requires_clarification = f.get("requires_clarification", False)
+        source_quote = f.get("source_quote")
 
         # Acoustic artifact / unclear phrase check
-        if "unclear" in certainty or "unclear phrase" in obs.lower() or "artifact" in obs.lower():
+        if requires_clarification or "unclear" in certainty or "unclear phrase" in obs.lower() or "artifact" in obs.lower():
             unclear_res = {
                 "status": ClaimStatus.INSUFFICIENT_EVIDENCE,
                 "dimension": "acoustic_artifact",
@@ -416,6 +418,18 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
             }
             flagged_unclear_claims.append(unclear_res)
             all_results.append(unclear_res)
+            continue
+
+        # Grounding check via source_quote if provided
+        if source_quote and not (source_quote.lower() in raw_dictation.lower() or re.sub(r"[^\w\s]", "", source_quote.lower()) in re.sub(r"[^\w\s]", "", raw_dictation.lower())):
+            ungrounded_res = {
+                "status": ClaimStatus.INSUFFICIENT_EVIDENCE,
+                "dimension": "source_quote_grounding",
+                "details": f"Source quote '{source_quote}' cannot be grounded in raw clinical dictation transcript.",
+                "claim": obs
+            }
+            unsupported_claims.append(ungrounded_res)
+            all_results.append(ungrounded_res)
             continue
 
         res = verify_single_claim_deterministic(raw_dictation, obs)
