@@ -272,15 +272,39 @@ def run_multi_agent_pipeline(query: str, session_id: str = "default_session") ->
         total_reports = sum(len(p.get("reports", [])) for p in patients)
         patient_names = ", ".join(p.get("patient_name") for p in patients)
 
+        # Build specific patient breakdown if mentioned in query
+        specific_patient_info = ""
+        matched_patient_name = None
+        for p in patients:
+            p_name = p.get("patient_name", "")
+            if p_name.lower() in query.lower() or any(token in query.lower() for token in p_name.lower().split() if len(token) > 3):
+                r_list = [f"{r.get('report_id')} ({r.get('report_type')})" for r in p.get("reports", [])]
+                specific_patient_info += f"\n- {p_name} ({p.get('patient_id')}): {len(r_list)} reports [{', '.join(r_list)}]"
+                matched_patient_name = p_name
+
+        per_patient_summary = ", ".join([f"{p['patient_name']}: {len(p.get('reports', []))}" for p in patients])
+
         system_context = f"""You are the ViScan Dental AI Assistant.
 The clinic diagnostic database currently contains:
 - Total Registered Patients: {total_patients} patients ({patient_names})
-- Total Radiological Reports: {total_reports} diagnostic imaging scans (covering OPG panoramic, CBCT 3D volume, Bitewing, Periapical, and Cephalograms)
+- Total Reports: {total_reports} diagnostic imaging scans
+- Report Counts Per Patient: {per_patient_summary}{specific_patient_info}
 
-Answer the clinician's question helpfully, professionally, and concisely using these facts. If they ask how many reports exist, state that there are {total_reports} reports across {total_patients} patients."""
+Answer the clinician's question accurately, helpfully, and concisely using strictly the real facts above.
+If asked about a specific patient's report count, state the exact number of reports and their types from the facts above."""
 
         llm_reply = query_ollama(f"Clinician Question: {query}", system_prompt=system_context, json_format=False)
-        answer_text = llm_reply.strip() if llm_reply else f"There are currently {total_reports} radiological reports across {total_patients} registered patients in the clinic database (including OPG, CBCT, and Bitewing imaging). You can ask me to open any patient's report (e.g. 'Open Vikram Malhotra's CBCT')."
+        if matched_patient_name:
+            for p in patients:
+                if p.get("patient_name") == matched_patient_name:
+                    p_cnt = len(p.get("reports", []))
+                    r_desc = ", ".join([f"{r.get('report_type')} ({r.get('report_id')})" for r in p.get("reports", [])])
+                    default_answer = f"{matched_patient_name} has {p_cnt} reports in the database: {r_desc}."
+                    break
+        else:
+            default_answer = f"There are currently {total_reports} radiological reports across {total_patients} registered patients in the clinic database. You can ask me to open any patient's report (e.g. 'Open Vikram Malhotra's CBCT')."
+
+        answer_text = llm_reply.strip() if llm_reply else default_answer
 
         return {
             "status": "success",
