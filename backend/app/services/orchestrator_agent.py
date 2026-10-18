@@ -16,7 +16,7 @@ from .mcp_tools import DENTAL_ASSISTANT_TOOLS, get_ollama_tool_definitions, exec
 from .conversation_service import get_or_create_session, is_contextual_query
 from .retrieval import resolve_report_retrieval, extract_retrieval_intent
 from .report_qa_service import answer_report_question
-from .llm_service import query_ollama, query_ollama_chat_tools
+from .llm_service import query_llm, query_ollama, query_ollama_chat_tools
 
 TRIAGE_SYSTEM_PROMPT = """You are the Lead Clinical Triage AI Agent for a dental voice assistant.
 Your job is to analyze the clinician's speech or text input and decide which specialized sub-agent and tool to invoke.
@@ -322,7 +322,40 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             elif is_new_command:
                 session.pending_booking_slots = None
 
-    # Step 1: Native LLM Function / Tool Calling (Direct Ollama / OpenAI Tool Calling Interface)
+    # Step 1: LLM Dynamic Multi-Agent Triage (Groq / Ollama Clinical Orchestrator Agent)
+    prompt = (
+        f"Clinician request: \"{query}\"\n"
+        f"Active Patient in session: {session.active_patient_id or 'None'}\n"
+        f"Active Report in session: {session.active_report_id or 'None'}\n"
+        f"Pending Booking Slots: {'Yes (' + str(len(session.pending_booking_slots)) + ' slots)' if session.pending_booking_slots else 'No'}\n"
+    )
+    if session.history:
+        prompt += "Recent dialogue:\n"
+        for turn in session.history[-2:]:
+            prompt += f"  Clinician: {turn.get('user', '')}\n  Assistant: {turn.get('assistant', '')[:100]}\n"
+
+    raw_triage = query_llm(prompt, system_prompt=TRIAGE_SYSTEM_PROMPT, json_format=True)
+    if raw_triage:
+        try:
+            parsed_triage = json.loads(raw_triage)
+            sel_agent = parsed_triage.get("selected_agent")
+            t_name = parsed_triage.get("tool_name")
+            args = parsed_triage.get("arguments", {})
+            if sel_agent and t_name:
+                if t_name == "summarize_active_report" and args.get("report_id") in ["active", None]:
+                    args["report_id"] = session.active_report_id or "unselected"
+                    if "query" not in args:
+                        args["query"] = query
+                return {
+                    "selected_agent": sel_agent,
+                    "tool_name": t_name,
+                    "arguments": args,
+                    "rationale": f"LLM Multi-Agent Reasoning: {parsed_triage.get('rationale', 'Dynamic triage by Clinical Orchestrator Agent.')}"
+                }
+        except Exception:
+            pass
+
+    # Secondary: Native LLM Tool Calling (Ollama chat tools interface)
     messages = [
         {
             "role": "system",
