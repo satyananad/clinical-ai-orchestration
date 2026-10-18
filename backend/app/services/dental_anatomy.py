@@ -314,7 +314,7 @@ def classify_observation_category(observation: str, site_name: str = "") -> str:
         return "Impaction / Eruption"
 
     # 8. Restorative & Caries Status
-    if any(term in obs_lower for term in ["restored", "filling", "caries", "carious", "amalgam", "composite"]):
+    if any(term in obs_lower for term in ["restored", "restoration", "filling", "caries", "carious", "amalgam", "composite", "crown"]):
         return "Restorative & Caries Status"
 
     # 9. Periapical & Osseous Status

@@ -119,8 +119,8 @@ def classify_clinical_finding_status(text: str) -> Dict[str, str]:
 # =============================================================================
 def extract_patient_demographics(text: str) -> Dict[str, Any]:
     """
-    Extracts age and gender from dictation text.
-    Handles '46-year-old female', 'age 46, female', '57-year-old male', etc.
+    Extracts age, gender, supplied patient name, patient ID, and study type from dictation text.
+    Handles '46-year-old female', 'Patient ID: SYN-014', 'Patient name: Priya Mehta', 'Study: Panoramic radiograph', etc.
     """
     age = None
     gender = None
@@ -146,7 +146,46 @@ def extract_patient_demographics(text: str) -> Dict[str, Any]:
     elif gender:
         summary = gender
 
-    return {"age": age, "gender": gender, "demographics_summary": summary}
+    # Extract supplied patient name
+    patient_name = None
+    name_m = re.search(r"\b(?:patient\s+name|patient|name)\s*[:\-]\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)\b", text, re.IGNORECASE)
+    if name_m:
+        cand_name = name_m.group(1).strip()
+        if cand_name.lower() not in ["is", "has", "was", "reported", "id", "study", "the", "a"]:
+            patient_name = cand_name.title()
+
+    # Extract supplied patient ID
+    patient_id = None
+    id_m = re.search(r"\b(?:patient\s+id|mrn|pt\s*id|id)\s*[:\-]?\s*([A-Za-z0-9_-]+)\b", text, re.IGNORECASE)
+    if id_m:
+        cand_id = id_m.group(1).strip()
+        if cand_id.lower() not in ["name", "study", "the", "a", "is", "was"]:
+            patient_id = cand_id.upper()
+    elif re.search(r"\b(SYN-\d+|PAT-\d+|PT-\d+)\b", text, re.IGNORECASE):
+        patient_id = re.search(r"\b(SYN-\d+|PAT-\d+|PT-\d+)\b", text, re.IGNORECASE).group(1).upper()
+
+    # Extract study type / modality
+    study_type = None
+    study_m = re.search(r"\b(?:study|study\s+type|scan\s+type|modality|examination)\s*[:\-]?\s*([A-Za-z0-9\s]+?)(?:\.|$|\n|patient)", text, re.IGNORECASE)
+    if study_m:
+        study_type = study_m.group(1).strip().title()
+    elif "panoramic" in text.lower() or "opg" in text.lower():
+        study_type = "Panoramic radiograph"
+    elif "cbct" in text.lower() or "cone beam" in text.lower():
+        study_type = "CBCT"
+    elif "bitewing" in text.lower():
+        study_type = "Bitewing Radiographs"
+    elif "periapical" in text.lower() or "iopa" in text.lower():
+        study_type = "Periapical Radiograph"
+
+    return {
+        "age": age,
+        "gender": gender,
+        "demographics_summary": summary,
+        "patient_name": patient_name,
+        "patient_id": patient_id,
+        "study_type": study_type
+    }
 
 
 # =============================================================================
@@ -453,6 +492,58 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
         requires_clarification = f.get("requires_clarification", False)
         source_quote = f.get("source_quote")
 
+        # Check for administrative metadata or study header misclassification
+        obs_l = obs.lower().strip()
+        is_metadata = bool(
+            re.search(r"^(?:patient\s*id|mrn|pt\s*id|id)\s*[:\-]", obs_l) or
+            re.search(r"^(?:patient\s*name|name)\s*[:\-]", obs_l) or
+            re.search(r"^(?:study|study\s*type|scan\s*type|modality|examination)\s*[:\-]", obs_l) or
+            re.search(r"^(?:panoramic\s+radiograph|cone\s+beam\s+ct|cbct|opg|bitewings?|periapical(?:\s+radiograph)?)$", obs_l)
+        )
+        if is_metadata:
+            meta_res = {
+                "status": ClaimStatus.CONTRADICTED,
+                "dimension": "metadata_misclassification",
+                "details": f"Administrative/study metadata ('{obs}') was misclassified as a clinical finding.",
+                "claim": obs
+            }
+            contradicted_claims.append(meta_res)
+            all_results.append(meta_res)
+            continue
+
+        # Check for unsupported anatomical attribution (e.g. forcing tooth 16 on adjacent teeth)
+        f_tooth = f.get("tooth_number")
+        is_adjacent_obs = bool(re.search(r"\b(adjacent\s+teeth|surrounding\s+teeth|adjacent\s+structures|adjacent\s+dentition|surrounding\s+dentition)\b", obs_l))
+        if f_tooth and is_adjacent_obs:
+            attr_res = {
+                "status": ClaimStatus.INSUFFICIENT_EVIDENCE,
+                "dimension": "unsupported_anatomical_attribution",
+                "details": f"Unsupported anatomical attribution: Finding discusses adjacent teeth but was assigned specific tooth {f_tooth}.",
+                "claim": obs
+            }
+            unsupported_claims.append(attr_res)
+            all_results.append(attr_res)
+            continue
+        elif f_tooth and not is_adjacent_obs:
+            try:
+                t_digits = re.sub(r"\D", "", str(f_tooth))
+                if t_digits:
+                    t_int = int(t_digits)
+                    f_context = f"{obs} {source_quote or ''}"
+                    f_context_teeth = extract_tooth_numbers(f_context)
+                    if f_context_teeth and t_int not in f_context_teeth:
+                        attr_res = {
+                            "status": ClaimStatus.CONTRADICTED,
+                            "dimension": "unsupported_anatomical_attribution",
+                            "details": f"Tooth number attribution mismatch: Finding is assigned tooth {f_tooth}, but observation references {f_context_teeth}.",
+                            "claim": obs
+                        }
+                        contradicted_claims.append(attr_res)
+                        all_results.append(attr_res)
+                        continue
+            except Exception:
+                pass
+
         # Acoustic artifact / unclear phrase check
         if requires_clarification or "unclear" in certainty or "unclear phrase" in obs.lower() or "artifact" in obs.lower():
             unclear_res = {
@@ -600,6 +691,15 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
                     "status": ClaimStatus.CONTRADICTED,
                     "dimension": "internal_conflict",
                     "details": f"Clinical Contradiction: Impression asserts '{imp}', but finding documents '{conflict_finding.get('observation')}'.",
+                    "claim": imp
+                })
+
+            # Case B: Impression contains administrative metadata or patient demographics
+            if re.search(r"\b(?:patient\s*id|patient\s*name|mrn)\s*[:\-]", imp_lower):
+                contradicted_claims.append({
+                    "status": ClaimStatus.CONTRADICTED,
+                    "dimension": "impression_metadata_contamination",
+                    "details": f"Impression contains administrative metadata: '{imp}'.",
                     "claim": imp
                 })
 

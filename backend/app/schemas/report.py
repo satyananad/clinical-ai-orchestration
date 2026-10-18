@@ -45,7 +45,7 @@ class AnatomicalSite(BaseModel):
     palmer_notation: Optional[str] = None
     universal_number: Optional[Any] = None
     anatomical_name: str
-    quadrant: str
+    quadrant: Optional[str] = None
 
 from typing import List, Optional, Dict, Any, Union
 

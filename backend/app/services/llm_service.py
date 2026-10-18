@@ -13,6 +13,9 @@ class PatientDetailsModel(BaseModel):
     age: Optional[int] = None
     gender: Optional[str] = None
     demographics_summary: Optional[str] = None
+    patient_name: Optional[str] = None
+    patient_id: Optional[str] = None
+    study_type: Optional[str] = None
 
 class AnatomicalSiteModel(BaseModel):
     site_type: str = "Tooth"
@@ -89,14 +92,19 @@ Rules:
 10. If wording is ambiguous or corrupted by speech recognition, set requires_clarification: true and record clarification_reason instead of guessing.
 11. Include source_quote with exact verbatim transcript evidence for each finding.
 12. Missing information is unknown, not normal.
-13. Return only valid JSON matching the supplied schema.
+14. Separate patient metadata (patient name, patient ID, MRN) and study/examination modality into 'patient_details'. NEVER include administrative metadata or study headers as clinical findings or in impressions.
+15. If a finding discusses adjacent teeth or general surrounding anatomy, do NOT force a specific tooth number onto it.
+16. Return only valid JSON matching the supplied schema.
 
 JSON Schema:
 {
   "patient_details": {
     "age": integer or null,
     "gender": "Female" | "Male" or null,
-    "demographics_summary": "string" or null
+    "demographics_summary": "string" or null,
+    "patient_name": "string" or null,
+    "patient_id": "string" or null,
+    "study_type": "string" or null
   },
   "anatomical_sites": [
     {
@@ -408,9 +416,26 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
     result["anatomical_sites"] = normalized_sites
 
     # Categorize findings: respect LLM classification when specific, fallback to deterministic categorization only if generic
+    valid_findings = []
     for f in result.get("findings", []):
         obs = f.get("observation", "")
+        obs_l = obs.lower().strip()
+        # Filter out administrative metadata or study headers erroneously placed into findings
+        if (
+            re.search(r"^(?:patient\s*id|mrn|pt\s*id|id)\s*[:\-]", obs_l) or
+            re.search(r"^(?:patient\s*name|name)\s*[:\-]", obs_l) or
+            re.search(r"^(?:study|study\s*type|scan\s*type|modality|examination)\s*[:\-]", obs_l) or
+            re.search(r"^(?:panoramic\s+radiograph|cone\s+beam\s+ct|cbct|opg|bitewings?|periapical(?:\s+radiograph)?)$", obs_l)
+        ):
+            continue
+
         site = f.get("anatomical_site", "")
+        # Ensure adjacent teeth findings do not retain an unsupported specific tooth assignment
+        if re.search(r"\b(adjacent\s+teeth|surrounding\s+teeth|adjacent\s+structures|adjacent\s+dentition|surrounding\s+dentition)\b", obs_l):
+            f["tooth_number"] = None
+            if not site or site in ("Dentition", "General Observation"):
+                f["anatomical_site"] = "Adjacent Teeth"
+
         if "unclear phrase" in obs.lower() or f.get("requires_clarification"):
             f["category"] = "Root Pathology & Resorption"
             f["certainty"] = "unclear / clinician review required"
@@ -425,6 +450,20 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
         if not f.get("polarity"):
             f["polarity"] = "absent" if any(re.search(r"\b" + re.escape(w) + r"\b", obs.lower()) for w in ["no", "not", "without", "absence", "none", "negative for"]) else "present"
 
+        valid_findings.append(f)
+    result["findings"] = valid_findings
+
+    # Clean impressions: eliminate metadata contamination
+    clean_imps = []
+    for imp in result.get("impressions", []):
+        parts = [p.strip() for p in re.split(r"(?<=[.;])\s+", imp) if p.strip()]
+        for p in parts:
+            if not re.search(r"\b(?:patient\s*id|patient\s*name|study\s*type|mrn|dob:|scan\s*type:)\b", p, re.I) and len(p) > 3:
+                clean_imps.append(p)
+    if not clean_imps and result["findings"]:
+        clean_imps = synthesize_impression_from_findings(result["findings"], artifacts)
+    result["impressions"] = list(dict.fromkeys(clean_imps))
+
     return result
 
 
@@ -432,6 +471,7 @@ def synthesize_impression_from_findings(findings: List[Dict[str, Any]], artifact
     """
     Synthesizes impressions dynamically from structured clinical findings without hardcoded disease lists.
     Groups significant observations, structural dimensions, negative assurances, and speech clarifications.
+    Excludes administrative metadata and returns distinct, clean clinical summary points.
     """
     imp_items = []
 
@@ -440,6 +480,7 @@ def synthesize_impression_from_findings(findings: List[Dict[str, Any]], artifact
         f for f in findings
         if f.get("certainty") in ("definite observation", "definite observation (etiology uncertain)", "suspected / differential diagnosis")
         and not f.get("requires_clarification")
+        and not re.search(r"^(?:patient\s*id|patient\s*name|study|study\s*type|scan\s*type|mrn|name:|id:)\b", str(f.get("observation", "")).lower().strip())
     ]
 
     for f in positive_findings:
@@ -468,6 +509,7 @@ def synthesize_impression_from_findings(findings: List[Dict[str, Any]], artifact
         if f.get("certainty") == "negative / normal finding"
         and not f.get("requires_clarification")
         and "no other abnormal finding" not in f.get("observation", "").lower()
+        and not re.search(r"^(?:patient\s*id|patient\s*name|study|mrn)\b", str(f.get("observation", "")).lower().strip())
     ]
 
     if neg_findings:
@@ -487,7 +529,7 @@ def synthesize_impression_from_findings(findings: List[Dict[str, Any]], artifact
     if not imp_items:
         return ["Radiological assessment completed."]
 
-    return ["; ".join(imp_items)]
+    return imp_items
 
 
 def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
@@ -670,7 +712,11 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             re.search(r"^(?:dentalscan|office:|report\s+type:|report\s+date:|date\s+of\s+birth:|dob:|study\s+date:|scan\s+type:)\b", s_lower) or
             re.search(r"^(?:patient:|name:)\s+[a-z\s]+$", s_lower) or
             re.search(r"^(?:age:|gender:)\s+[0-9a-z\s]+$", s_lower) or
-            re.search(r"^(?:abbreviations:|dental\s+scan\s+ltd|email:|website:|telephone:|gdc\s+registration)\b", s_lower)
+            re.search(r"^(?:abbreviations:|dental\s+scan\s+ltd|email:|website:|telephone:|gdc\s+registration)\b", s_lower) or
+            re.search(r"^(?:patient\s*id|mrn|pt\s*id|id)\s*[:\-]", s_lower) or
+            re.search(r"^(?:patient\s*name|name)\s*[:\-]", s_lower) or
+            re.search(r"^(?:study|study\s*type|scan\s*type|modality|examination)\s*[:\-]", s_lower) or
+            re.search(r"^(?:panoramic\s+radiograph|cone\s+beam\s+ct|cbct|opg|bitewings?|periapical(?:\s+radiograph)?)$", s_lower)
         ):
             continue
 
@@ -727,68 +773,98 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
 
         # Determine target anatomical site for finding
         target_site = None
-        sent_tooth_match = re.search(r"\b(?:teeth|tooth)\s*#?(\d{1,2})\b", s, re.IGNORECASE)
-        if sent_tooth_match:
-            t_val = int(sent_tooth_match.group(1))
-            target_site = next((st.get("anatomical_name") for st in anatomical_sites if st.get("fdi_number") == t_val or st.get("universal_number") == t_val or f"Tooth {t_val}" in st.get("anatomical_name", "")), None)
+        is_explicit_tooth = False
+        is_adjacent_statement = bool(re.search(r"\b(adjacent\s+teeth|surrounding\s+teeth|adjacent\s+structures|adjacent\s+dentition|surrounding\s+dentition)\b", s_lower))
 
-        # Check for direct Palmer notation in sentence (e.g. LL6, LL5, LR1, UR8, etc.)
-        if not target_site:
-            sent_palmer = re.search(r"\b(UR|UL|LL|LR)[\s_-]*([1-8]|[A-E])\b", s, re.IGNORECASE)
-            if sent_palmer:
-                p_token = f"{sent_palmer.group(1).upper()}{sent_palmer.group(2).upper()}"
-                norm = normalize_dental_site({"anatomical_name": p_token})
-                if norm.get("fdi_number"):
-                    existing = next((st.get("anatomical_name") for st in anatomical_sites if st.get("fdi_number") == norm["fdi_number"]), None)
-                    if not existing:
-                        anatomical_sites.append(norm)
-                        target_site = norm["anatomical_name"]
-                    else:
-                        target_site = existing
+        if is_adjacent_statement:
+            target_site = "Adjacent Teeth"
+            if not any(st.get("anatomical_name") == "Adjacent Teeth" for st in anatomical_sites):
+                anatomical_sites.append({
+                    "site_type": "Regional Anatomy",
+                    "anatomical_name": "Adjacent Teeth",
+                    "quadrant": active_quad,
+                    "fdi_number": None,
+                    "palmer_notation": None,
+                    "universal_number": None
+                })
+        else:
+            sent_tooth_match = re.search(r"\b(?:teeth|tooth)\s*#?(\d{1,2})\b", s, re.IGNORECASE)
+            if sent_tooth_match:
+                t_val = int(sent_tooth_match.group(1))
+                target_site = next((st.get("anatomical_name") for st in anatomical_sites if st.get("fdi_number") == t_val or st.get("universal_number") == t_val or f"Tooth {t_val}" in st.get("anatomical_name", "")), None)
+                if target_site:
+                    is_explicit_tooth = True
 
-        # Check relative tooth positions with sentence-level quadrant context
-        if not target_site:
-            sent_quad = None
-            if re.search(r"\b(maxillary\s+left|upper\s+left|quadrant\s+2|ul)\b", s_lower):
-                sent_quad = "UL"
-            elif re.search(r"\b(maxillary\s+right|upper\s+right|quadrant\s+1|ur)\b", s_lower):
-                sent_quad = "UR"
-            elif re.search(r"\b(mandibular\s+left|lower\s+left|quadrant\s+3|ll)\b", s_lower):
-                sent_quad = "LL"
-            elif re.search(r"\b(mandibular\s+right|lower\s+right|quadrant\s+4|lr)\b", s_lower):
-                sent_quad = "LR"
-            else:
-                sent_quad = active_quad
+            # Check for direct Palmer notation in sentence (e.g. LL6, LL5, LR1, UR8, etc.)
+            if not target_site:
+                sent_palmer = re.search(r"\b(UR|UL|LL|LR)[\s_-]*([1-8]|[A-E])\b", s, re.IGNORECASE)
+                if sent_palmer:
+                    p_token = f"{sent_palmer.group(1).upper()}{sent_palmer.group(2).upper()}"
+                    norm = normalize_dental_site({"anatomical_name": p_token})
+                    if norm.get("fdi_number"):
+                        existing = next((st.get("anatomical_name") for st in anatomical_sites if st.get("fdi_number") == norm["fdi_number"]), None)
+                        if not existing:
+                            anatomical_sites.append(norm)
+                            target_site = norm["anatomical_name"]
+                        else:
+                            target_site = existing
+                        is_explicit_tooth = True
 
-            if "third molar" in s_lower or "wisdom tooth" in s_lower:
-                target_site = next((st.get("anatomical_name") for st in anatomical_sites if "third molar" in st.get("anatomical_name", "").lower()), None)
-            elif "second molar" in s_lower:
-                target_site = next((st.get("anatomical_name") for st in anatomical_sites if "second molar" in st.get("anatomical_name", "").lower()), None)
-            elif "second premolar" in s_lower:
-                target_site = next((st.get("anatomical_name") for st in anatomical_sites if "second premolar" in st.get("anatomical_name", "").lower()), None)
-            elif "first molar" in s_lower or "alveolar ridge" in s_lower or "buccal cortical plate" in s_lower:
-                target_site = implant_site_label or next((st.get("anatomical_name") for st in anatomical_sites if "first molar" in st.get("anatomical_name", "").lower() or "alveolar" in st.get("anatomical_name", "").lower()), None)
+            # Check relative tooth positions with sentence-level quadrant context
+            if not target_site:
+                sent_quad = None
+                if re.search(r"\b(maxillary\s+left|upper\s+left|quadrant\s+2|ul)\b", s_lower):
+                    sent_quad = "UL"
+                elif re.search(r"\b(maxillary\s+right|upper\s+right|quadrant\s+1|ur)\b", s_lower):
+                    sent_quad = "UR"
+                elif re.search(r"\b(mandibular\s+left|lower\s+left|quadrant\s+3|ll)\b", s_lower):
+                    sent_quad = "LL"
+                elif re.search(r"\b(mandibular\s+right|lower\s+right|quadrant\s+4|lr)\b", s_lower):
+                    sent_quad = "LR"
+                else:
+                    sent_quad = active_quad
 
-        if not target_site:
-            for patterns, site_title, _ in extra_sites_map:
-                if any(re.search(r"\b" + p + r"\b", s_lower) for p in patterns):
-                    target_site = site_title
-                    break
+                if "third molar" in s_lower or "wisdom tooth" in s_lower:
+                    target_site = next((st.get("anatomical_name") for st in anatomical_sites if "third molar" in st.get("anatomical_name", "").lower()), None)
+                    if target_site:
+                        is_explicit_tooth = True
+                elif "second molar" in s_lower:
+                    target_site = next((st.get("anatomical_name") for st in anatomical_sites if "second molar" in st.get("anatomical_name", "").lower()), None)
+                    if target_site:
+                        is_explicit_tooth = True
+                elif "second premolar" in s_lower:
+                    target_site = next((st.get("anatomical_name") for st in anatomical_sites if "second premolar" in st.get("anatomical_name", "").lower()), None)
+                    if target_site:
+                        is_explicit_tooth = True
+                elif "first molar" in s_lower or "alveolar ridge" in s_lower or "buccal cortical plate" in s_lower:
+                    target_site = implant_site_label or next((st.get("anatomical_name") for st in anatomical_sites if "first molar" in st.get("anatomical_name", "").lower() or "alveolar" in st.get("anatomical_name", "").lower()), None)
+                    if target_site and "first molar" in s_lower:
+                        is_explicit_tooth = True
 
-        if not target_site:
-            for site in anatomical_sites:
-                p_code = site.get("palmer_notation", "")
-                fdi_code = str(site.get("fdi_number", ""))
-                a_name = site.get("anatomical_name", "")
-                if p_code and re.search(r"\b" + re.escape(p_code) + r"\b", s, re.IGNORECASE):
-                    target_site = a_name
-                    break
-                elif fdi_code and re.search(r"\b" + re.escape(fdi_code) + r"\b", s):
-                    target_site = a_name
-                    break
-                elif a_name and a_name.lower() in s_lower:
-                    target_site = a_name
-                    break
+            if not target_site:
+                for patterns, site_title, _ in extra_sites_map:
+                    if any(re.search(r"\b" + p + r"\b", s_lower) for p in patterns):
+                        target_site = site_title
+                        break
+
+            if not target_site:
+                for site in anatomical_sites:
+                    p_code = site.get("palmer_notation", "")
+                    fdi_code = str(site.get("fdi_number", ""))
+                    a_name = site.get("anatomical_name", "")
+                    if p_code and re.search(r"\b" + re.escape(p_code) + r"\b", s, re.IGNORECASE):
+                        target_site = a_name
+                        is_explicit_tooth = True
+                        break
+                    elif fdi_code and re.search(r"\b" + re.escape(fdi_code) + r"\b", s):
+                        target_site = a_name
+                        is_explicit_tooth = True
+                        break
+                    elif a_name and a_name.lower() in s_lower:
+                        target_site = a_name
+                        if site.get("site_type") == "Tooth":
+                            is_explicit_tooth = True
+                        break
 
         if not target_site:
             target_site = primary_site_label
@@ -804,10 +880,11 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             polarity = "present"
 
         tooth_num = None
-        for st in anatomical_sites:
-            if st.get("anatomical_name") == target_site:
-                tooth_num = str(st.get("fdi_number") or st.get("universal_number") or st.get("palmer_notation") or "")
-                break
+        if is_explicit_tooth and not is_adjacent_statement:
+            for st in anatomical_sites:
+                if st.get("anatomical_name") == target_site and st.get("site_type") == "Tooth":
+                    tooth_num = str(st.get("fdi_number") or st.get("universal_number") or st.get("palmer_notation") or "")
+                    break
 
         findings.append({
             "anatomical_site": target_site,

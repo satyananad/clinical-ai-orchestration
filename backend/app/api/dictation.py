@@ -12,22 +12,38 @@ router = APIRouter(prefix="/dictation", tags=["Dictation"])
 DICTATION_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "dictation_reports")
 os.makedirs(DICTATION_DIR, exist_ok=True)
 
-def compose_narrative(patient_name: str, findings: list, impressions: list, recommendations: list) -> str:
+def compose_narrative(patient_name: str, findings: list, impressions: list, recommendations: list, patient_details: Optional[dict] = None) -> str:
+    details = patient_details or {}
+    supplied_name = details.get("patient_name")
+    supplied_id = details.get("patient_id")
+    study_type = details.get("study_type")
+
     lines = []
     lines.append("=" * 68)
     lines.append("*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***")
     lines.append("=" * 68)
     if "unassigned" in patient_name.lower():
-        lines.append("Patient Name:    Unassigned (Transcript not linked to a registered patient)")
-        lines.append("Patient ID:      None (Requires patient selection before permanent record entry)")
+        if supplied_name or supplied_id:
+            lines.append(f"Patient Name:    Unassigned (Supplied in transcript: {supplied_name or 'N/A'}; ID: {supplied_id or 'N/A'} - Pending Clinician Verification)")
+            lines.append("Patient ID:      None (Requires patient selection before permanent record entry)")
+        else:
+            lines.append("Patient Name:    Unassigned (Transcript not linked to a registered patient)")
+            lines.append("Patient ID:      None (Requires patient selection before permanent record entry)")
     else:
         lines.append(f"Patient Name:    {patient_name}")
+        if supplied_id:
+            lines.append(f"Patient ID:      {supplied_id}")
+    if study_type:
+        lines.append(f"Study Type:      {study_type}")
     lines.append("Status:          DRAFT (AI Dictation Synthesis - Pending Clinician Review)")
     lines.append(f"Date of Draft:   {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
     lines.append("")
     lines.append("DETAILED FINDINGS:")
     for i, f in enumerate(findings, 1):
-        lines.append(f"  {i}. [{f['anatomical_site']}] ({f['category']})")
+        site_str = f"[{f.get('anatomical_site', 'Dentition')}]"
+        if f.get("tooth_number"):
+            site_str += f" (Tooth {f['tooth_number']})"
+        lines.append(f"  {i}. {site_str} • {f.get('category', 'General Observation')}")
         lines.append(f"     Observation: {f['observation']}")
         lines.append(f"     Certainty:   {f['certainty']}")
     lines.append("")
@@ -71,13 +87,22 @@ def wrap_lines(text: str, max_chars: int = 72) -> list:
         lines.append(" ".join(curr))
     return lines
 
-def generate_dictation_pdf(pdf_path: str, patient_name: Optional[str], patient_id: Optional[str], raw_dictation: str, findings: list, impressions: list, recommendations: list):
+def generate_dictation_pdf(pdf_path: str, patient_name: Optional[str], patient_id: Optional[str], raw_dictation: str, findings: list, impressions: list, recommendations: list, patient_details: Optional[dict] = None):
     """
     Generates a clean, professional clinical radiological report with automatic pagination.
     Prevents text collisions and ensures clean hierarchy between findings, impressions, and signature.
     """
+    details = patient_details or {}
+    supplied_name = details.get("patient_name")
+    supplied_id = details.get("patient_id")
+    study_type = details.get("study_type") or "Dictated Radiological Assessment"
+
     p_name = (patient_name or "Unassigned / Pending Patient Selection").upper()
+    if "unassigned" in p_name.lower() and supplied_name:
+        p_name = f"{p_name} ({supplied_name.upper()})"
     p_id = patient_id or "Pending Patient Assignment"
+    if (not patient_id or patient_id == "None") and supplied_id:
+        p_id = f"Supplied: {supplied_id} (Unverified)"
 
     pages_cmds = []
     
@@ -94,7 +119,7 @@ def generate_dictation_pdf(pdf_path: str, patient_name: Optional[str], patient_i
         f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 722 Td ({sanitize_pdf('PATIENT ID: ' + p_id)}) Tj ET",
         f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 706 Td ({sanitize_pdf('STATUS: Draft Pending Attending Clinician Approval')}) Tj ET",
 
-        f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 310 738 Td ({sanitize_pdf('EXAM TYPE: Dictated Radiological Assessment')}) Tj ET",
+        f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 310 738 Td ({sanitize_pdf('EXAM TYPE: ' + study_type)}) Tj ET",
         f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 310 722 Td ({sanitize_pdf('DATE: ' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))}) Tj ET",
         f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 310 706 Td ({sanitize_pdf('VERIFICATION: Guardrail Verification Enforced')}) Tj ET",
 
@@ -257,7 +282,7 @@ def structure_dictation_endpoint(payload: DictationRequest):
     report_status = "DRAFT_PENDING_REVIEW" if findings else "INCOMPLETE_REQUIRES_REVIEW"
 
     # 2. Compose narrative draft
-    narrative = compose_narrative(display_name, findings, impressions, recommendations)
+    narrative = compose_narrative(display_name, findings, impressions, recommendations, patient_details=patient_details)
 
     # 4. Save JSON and PDF reports to dictation_reports/
     clean_name = (patient_name or "Unassigned_Patient").replace(" ", "_")
@@ -272,7 +297,8 @@ def structure_dictation_endpoint(payload: DictationRequest):
 
     structured_data = {
         "report_metadata": {
-            "report_type": "Radiological Dictation Draft",
+            "report_type": patient_details.get("study_type") or "Radiological Dictation Draft",
+            "study_type": patient_details.get("study_type"),
             "status": report_status,
             "extraction_status": tool_res.get("extraction_status", "COMPLETE" if findings else "INCOMPLETE_REQUIRES_REVIEW"),
             "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -286,7 +312,10 @@ def structure_dictation_endpoint(payload: DictationRequest):
             "patient_assigned": bool(patient_name or patient_id),
             "age": age,
             "gender": gender,
-            "demographics_summary": demographics_summary
+            "demographics_summary": demographics_summary,
+            "supplied_patient_name": patient_details.get("patient_name"),
+            "supplied_patient_id": patient_details.get("patient_id"),
+            "study_type": patient_details.get("study_type")
         },
         "raw_dictation": dictation_text,
         "anatomical_sites": sites,
@@ -303,6 +332,6 @@ def structure_dictation_endpoint(payload: DictationRequest):
         json.dump(structured_data, f, indent=2)
 
     # Generate authentic PDF report
-    generate_dictation_pdf(pdf_path, display_name, display_id, dictation_text, findings, impressions, recommendations)
+    generate_dictation_pdf(pdf_path, display_name, display_id, dictation_text, findings, impressions, recommendations, patient_details=patient_details)
 
     return structured_data
