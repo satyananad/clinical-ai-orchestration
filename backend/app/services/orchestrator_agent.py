@@ -111,6 +111,8 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         query_intent = extract_retrieval_intent(query)
         detected_mod = query_intent.get("report_type", "Any")
         effective_mod = detected_mod if detected_mod != "Any" else (session.last_retrieval_modality or "Any")
+
+        # 2B.1 Direct Name or Patient ID match in pending candidates
         for cand in session.pending_candidates:
             c_name = cand["patient_name"].lower()
             c_id = cand["patient_id"].lower()
@@ -123,8 +125,57 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                         "patient_id": cand["patient_id"],
                         "modality": effective_mod
                     },
-                    "rationale": f"Fallback: Matched candidate {cand['patient_name']}."
+                    "rationale": f"Clarification Resolution: Matched candidate {cand['patient_name']} ({cand['patient_id']})."
                 }
+
+        # 2B.2 Ordinal selection (e.g. "Select the second patient", "the 1st one", "option 2")
+        ordinal_map = {
+            "first": 0, "1st": 0,
+            "second": 1, "2nd": 1,
+            "third": 2, "3rd": 2,
+            "fourth": 3, "4th": 3,
+            "fifth": 4, "5th": 4
+        }
+        select_verb = any(v in q_lower for v in ["select", "choose", "pick", "open", "the", "patient"])
+        matched_idx = None
+        for word, idx in ordinal_map.items():
+            pattern = r"\b(?:the\s+)?(?:" + re.escape(word) + r")\s*(?:patient|candidate|one|record)?\b"
+            if re.search(pattern, q_lower) and select_verb:
+                matched_idx = idx
+                break
+
+        if matched_idx is not None:
+            if 0 <= matched_idx < len(session.pending_candidates):
+                chosen = session.pending_candidates[matched_idx]
+                return {
+                    "selected_agent": "RetrievalAgent",
+                    "tool_name": "search_patient_reports",
+                    "arguments": {
+                        "patient_name": chosen["patient_name"],
+                        "patient_id": chosen["patient_id"],
+                        "modality": effective_mod
+                    },
+                    "rationale": f"Clarification Resolution: Selected candidate #{matched_idx + 1} ({chosen['patient_name']})."
+                }
+            else:
+                return {
+                    "selected_agent": "RetrievalAgent",
+                    "tool_name": "invalid_candidate_selection",
+                    "arguments": {
+                        "requested_index": matched_idx + 1,
+                        "total_candidates": len(session.pending_candidates)
+                    },
+                    "rationale": f"Safety Gate: Rejected out-of-range candidate selection #{matched_idx + 1}."
+                }
+
+        # 2B.3 User attempted to select an unlisted candidate
+        if any(v in q_lower for v in ["select", "choose", "pick"]):
+            return {
+                "selected_agent": "RetrievalAgent",
+                "tool_name": "invalid_candidate_selection",
+                "arguments": {"raw_query": query},
+                "rationale": "Safety Gate: Rejected unlisted candidate selection."
+            }
 
     # 2C. Contextual Follow-up on Active Report
     if is_contextual_query(q_lower, has_active_report=bool(session.active_report_id)):
@@ -171,11 +222,16 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
     target_modality = query_intent.get("report_type", "Any")
     clean_query = re.sub(r"\b(open|show|find|get|latest|report|scan|opg|cbct|bitewing|periapical|please)\b", "", q_lower).strip()
     name_guess = clean_query.title() if clean_query else query.title()
+
+    pat_id_match = re.search(r"\b(PAT-\d+)\b", query, re.IGNORECASE)
+    patient_id_found = pat_id_match.group(1).upper() if pat_id_match else None
+
     return {
         "selected_agent": "RetrievalAgent",
         "tool_name": "search_patient_reports",
         "arguments": {
             "patient_name": name_guess,
+            "patient_id": patient_id_found,
             "modality": target_modality
         },
         "rationale": "Defaulting to patient and report retrieval search."
@@ -242,6 +298,23 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
     # AGENT 1: RETRIEVAL AGENT
     # =========================================================================
     if selected_agent == "RetrievalAgent":
+        if tool_name == "invalid_candidate_selection":
+            return {
+                "status": "clarification_required",
+                "message": f"Invalid candidate selection. Please choose a valid candidate from the list (1 to {len(session.pending_candidates or [])}) or provide the Patient ID.",
+                "candidates": session.pending_candidates,
+                "patient": None,
+                "report": None,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "RetrievalAgent",
+                    "tool_called": "reject_invalid_candidate",
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
         corrected_q = arguments.get("corrected_query")
         actual_query = corrected_q or query
         patient_name_arg = arguments.get("patient_name")
