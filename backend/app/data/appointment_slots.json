@@ -6,11 +6,8 @@
     "datetime_str": "Tomorrow, Oct 19 at 10:00 AM",
     "modality": "CBCT",
     "room": "Radiology Suite 1 (3D Scanner)",
-    "status": "booked",
-    "patient_name": "Walk-in Patient",
-    "patient_id": "PAT-1001",
-    "booked_at": "2026-10-18 19:19:43",
-    "booking_reference": "BKG-101-1943"
+    "status": "available",
+    "patient_name": null
   },
   {
     "slot_id": "SLOT-102",
@@ -19,11 +16,8 @@
     "datetime_str": "Tomorrow, Oct 19 at 02:30 PM",
     "modality": "CBCT",
     "room": "Radiology Suite 1 (3D Scanner)",
-    "status": "booked",
-    "patient_name": "Walk-in Patient",
-    "patient_id": "PAT-1001",
-    "booked_at": "2026-10-18 19:20:48",
-    "booking_reference": "BKG-102-2048"
+    "status": "available",
+    "patient_name": null
   },
   {
     "slot_id": "SLOT-103",
@@ -72,10 +66,7 @@
     "datetime_str": "Oct 20 at 03:15 PM",
     "modality": "CBCT",
     "room": "Radiology Suite 1 (3D Scanner)",
-    "status": "booked",
-    "patient_name": "Walk-in Patient",
-    "patient_id": "PAT-1001",
-    "booked_at": "2026-10-18 19:20:51",
-    "booking_reference": "BKG-107-2051"
+    "status": "available",
+    "patient_name": null
   }
 ]

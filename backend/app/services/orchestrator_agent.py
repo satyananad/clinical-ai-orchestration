@@ -297,7 +297,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "tool_name": "structure_clinical_dictation",
             "arguments": {
                 "dictation_text": query,
-                "patient_id": session.active_patient_id or "PAT-1001"
+                "patient_id": session.active_patient_id
             },
             "rationale": "Fallback: Input describes clinical pathology findings."
         }

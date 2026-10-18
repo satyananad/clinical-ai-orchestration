@@ -245,11 +245,26 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
     """
     unsupported_claims = []
     contradicted_claims = []
+    flagged_unclear_claims = []
     verified_count = 0
     all_results = []
 
     for f in findings:
         obs = f.get("observation", "")
+        certainty = str(f.get("certainty", "")).lower()
+
+        # Acoustic artifact / unclear phrase check
+        if "unclear" in certainty or "unclear phrase" in obs.lower() or "artifact" in obs.lower():
+            unclear_res = {
+                "status": ClaimStatus.INSUFFICIENT_EVIDENCE,
+                "dimension": "acoustic_artifact",
+                "details": f"Flagged unclear dictation phrase / speech-to-text artifact requiring clinician verification: '{obs}'",
+                "claim": obs
+            }
+            flagged_unclear_claims.append(unclear_res)
+            all_results.append(unclear_res)
+            continue
+
         res = verify_single_claim_deterministic(raw_dictation, obs)
         all_results.append(res)
 
@@ -290,6 +305,9 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
     if contradicted_claims:
         overall_status = "CONTRADICTED_CLAIMS_DETECTED"
         guarantee = "Contradiction detected: Attending clinician must reconcile conflicting claims before sign-off."
+    elif flagged_unclear_claims:
+        overall_status = "FLAGGED_FOR_REVIEW"
+        guarantee = "Unclear speech transcription artifact flagged; attending clinician review and verification required before final report sign-off."
     elif unsupported_claims:
         overall_status = "FLAGGED_UNSUPPORTED"
         guarantee = "Unsupported findings flagged for clinician review."
@@ -300,7 +318,7 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
         "claims_total": len(findings),
         "supported_claims": verified_count,
         "contradicted_claims": contradicted_claims,
-        "unsupported_findings": [c["claim"] for c in unsupported_claims] + [c["claim"] for c in contradicted_claims],
+        "unsupported_findings": [c["claim"] for c in flagged_unclear_claims] + [c["claim"] for c in unsupported_claims] + [c["claim"] for c in contradicted_claims],
         "detailed_results": all_results,
         "clinician_review_required": True,
         "anti_hallucination_guarantee": guarantee

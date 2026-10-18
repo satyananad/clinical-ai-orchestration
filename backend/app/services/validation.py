@@ -6,7 +6,7 @@ and clinical certainty classification (revised Rule 3).
 Connects directly to claim_verification.py.
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from .claim_verification import (
     classify_clinical_finding_status,
     verify_dictation_against_source,
@@ -33,7 +33,13 @@ def verify_anti_hallucination(raw_dictation: str, structured_findings: List[Dict
     verification = verify_dictation_against_source(raw_dictation, structured_findings, impressions=impressions)
     
     # Map to standard API response fields
-    status = "PASSED" if verification["status"] == "PASSED" else "FLAGGED_UNSUPPORTED"
+    raw_status = verification.get("status", "PASSED")
+    if raw_status == "FLAGGED_FOR_REVIEW":
+        status = "FLAGGED_FOR_REVIEW"
+    elif raw_status == "PASSED":
+        status = "PASSED"
+    else:
+        status = "FLAGGED_UNSUPPORTED"
     unsupported = verification["unsupported_findings"]
 
     return {

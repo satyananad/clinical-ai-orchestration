@@ -99,3 +99,58 @@ def test_unsupported_clinical_claims():
     assert check_fail["status"] == "FLAGGED_UNSUPPORTED"
     assert len(check_fail["unsupported_findings"]) == 1
     assert "Displaced fracture" in check_fail["unsupported_findings"][0]
+
+def test_spoken_dictation_assessment_requirements():
+    """
+    Validates all 7 clinical assessment requirements from clinical dictation:
+    1. Patient context unassigned (no hardcoding of Priya Sharma / PAT-1001)
+    2. Speech transcription error 'root Bridge option' flagged for clinician review
+    3. Palmer quadrant notation uses standard bracket symbol '8 ┐'
+    4. Zero hallucinated recommendations ([] strictly empty)
+    5. Zero invented root bridging or root resorption claims
+    6. Safety status FLAGGED_FOR_REVIEW due to unclear speech artifact
+    7. Overgeneralization disclaimer attached to negative statement
+    """
+    spoken_text = (
+        "hey can you generate the report for the lower right third molar is horizontally impacted "
+        "it is close to the adjacent second molar with no evidence of root Bridge option "
+        "the surrounding bone appear normal no other abnormal finding are noted in the supplied dictation"
+    )
+
+    response = client.post("/dictation/structure", json={"text": spoken_text})
+    assert response.status_code == 200
+    data = response.json()
+
+    # 1. Patient Context Integrity
+    assert data["patient_context"]["patient_name"] == "Unassigned / Pending Patient Selection"
+    assert data["patient_context"]["patient_id"] == "None"
+    assert data["patient_context"]["patient_assigned"] is False
+
+    # 2. Palmer quadrant bracket notation
+    sites = data["anatomical_sites"]
+    assert len(sites) >= 1
+    lr8_site = sites[0]
+    assert lr8_site["palmer_notation"] == "8 ┐"
+    assert lr8_site["fdi_number"] == 48
+
+    # 3. Speech Transcription Error Detection
+    findings = data["findings"]
+    artifact_finding = next((f for f in findings if "root Bridge option" in f["observation"]), None)
+    assert artifact_finding is not None
+    assert artifact_finding["certainty"] == "unclear / clinician review required"
+
+    # 4. Zero Hallucinated Recommendations
+    assert data["recommendations"] == []
+
+    # 5. Overgeneralization statement is qualified
+    general_neg = next((f for f in findings if "no other abnormal finding" in f["observation"].lower()), None)
+    assert general_neg is not None
+    assert "not independently verified" in general_neg["observation"]
+
+    # 6. Safety Guardrail Status
+    guardrails = data["safety_guardrails"]
+    assert guardrails["status"] == "FLAGGED_FOR_REVIEW"
+    assert len(guardrails["unsupported_findings"]) >= 1
+    assert any("root Bridge option" in u for u in guardrails["unsupported_findings"])
+    assert "Unclear speech transcription artifact flagged" in guardrails["anti_hallucination_guarantee"]
+

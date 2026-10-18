@@ -36,8 +36,8 @@ class PatientResponse(BaseModel):
 
 class DictationRequest(BaseModel):
     text: str = Field(..., description="Spoken or typed dictation transcript")
-    patient_id: Optional[str] = "PAT-1001"
-    patient_name: Optional[str] = "Priya Sharma"
+    patient_id: Optional[str] = None
+    patient_name: Optional[str] = None
 
 class AnatomicalSite(BaseModel):
     site_type: str

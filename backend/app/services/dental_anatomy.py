@@ -97,10 +97,33 @@ FDI_TO_DECIDUOUS = {val[0]: (k, val[1], val[2], val[3]) for k, val in DECIDUOUS_
 UNIVERSAL_LETTER_TO_DECIDUOUS = {val[1]: (k, val[0], val[2], val[3]) for k, val in DECIDUOUS_TEETH.items()}
 
 
+def get_standard_palmer_symbol(code: str) -> str:
+    """
+    Converts alphanumeric quadrant code (UR8, UL6, LR8, LL3, UR E)
+    into standard Palmer notation with quadrant bracket symbols:
+    - Upper Right (UR): [tooth] ┘
+    - Upper Left (UL): └ [tooth]
+    - Lower Left (LL): ┌ [tooth]
+    - Lower Right (LR): [tooth] ┐ (or ⏌)
+    """
+    clean = code.replace(" ", "").upper()
+    if len(clean) >= 3:
+        quad = clean[:2]
+        sym = clean[2:]
+        if quad == "UR":
+            return f"{sym} ┘"
+        elif quad == "UL":
+            return f"└ {sym}"
+        elif quad == "LL":
+            return f"┌ {sym}"
+        elif quad == "LR":
+            return f"{sym} ┐"
+    return code
+
 def normalize_dental_site(site_raw: Dict[str, Any]) -> Dict[str, Any]:
     """
     Deterministically normalizes an anatomical site dictionary to enforce 100% correct
-    FDI, Universal, and Palmer notation. Fixes any quadrant inversion or LLM hallucination.
+    FDI, Universal, and standard Palmer notation. Fixes any quadrant inversion or LLM hallucination.
     """
     raw_name = str(site_raw.get("anatomical_name", "")).strip()
     raw_palmer = str(site_raw.get("palmer_notation", "")).strip().upper()
@@ -116,12 +139,13 @@ def normalize_dental_site(site_raw: Dict[str, Any]) -> Dict[str, Any]:
         key = f"{quad} {letter}"
         if key in DECIDUOUS_TEETH:
             fdi, univ_letter, quad_name, anat_name = DECIDUOUS_TEETH[key]
+            palmer_std = get_standard_palmer_symbol(f"{quad}{letter}")
             return {
                 "site_type": "Tooth",
-                "anatomical_name": f"{quad}{letter} ({anat_name})",
+                "anatomical_name": f"{anat_name} ({palmer_std})",
                 "quadrant": quad_name,
                 "fdi_number": fdi,
-                "palmer_notation": f"{quad} {letter}",
+                "palmer_notation": palmer_std,
                 "universal_number": univ_letter
             }
 
@@ -130,12 +154,13 @@ def normalize_dental_site(site_raw: Dict[str, Any]) -> Dict[str, Any]:
     detected_letter = letter_match.group(1).upper() if letter_match else (raw_letter if raw_letter in UNIVERSAL_LETTER_TO_DECIDUOUS else None)
     if detected_letter and detected_letter in UNIVERSAL_LETTER_TO_DECIDUOUS:
         palmer, fdi, quad_name, anat_name = UNIVERSAL_LETTER_TO_DECIDUOUS[detected_letter]
+        palmer_std = get_standard_palmer_symbol(palmer)
         return {
             "site_type": "Tooth",
-            "anatomical_name": f"Tooth {detected_letter} ({palmer} - {anat_name})",
+            "anatomical_name": f"{anat_name} ({palmer_std})",
             "quadrant": quad_name,
             "fdi_number": fdi,
-            "palmer_notation": palmer,
+            "palmer_notation": palmer_std,
             "universal_number": detected_letter
         }
 
@@ -145,34 +170,37 @@ def normalize_dental_site(site_raw: Dict[str, Any]) -> Dict[str, Any]:
         key = f"{palmer_match.group(1)}{palmer_match.group(2)}"
         if key in PERMANENT_TEETH:
             fdi, univ, quad_name, anat_name = PERMANENT_TEETH[key]
+            palmer_std = get_standard_palmer_symbol(key)
             return {
                 "site_type": "Tooth",
-                "anatomical_name": f"{key} ({anat_name})",
+                "anatomical_name": f"{anat_name} ({palmer_std})",
                 "quadrant": quad_name,
                 "fdi_number": fdi,
-                "palmer_notation": key,
+                "palmer_notation": palmer_std,
                 "universal_number": univ
             }
 
     # 3. Detect by explicit FDI Number: 11-48
     if isinstance(raw_fdi, int) and raw_fdi in FDI_TO_PERMANENT:
         palmer, univ, quad_name, anat_name = FDI_TO_PERMANENT[raw_fdi]
+        palmer_std = get_standard_palmer_symbol(palmer)
         return {
             "site_type": "Tooth",
-            "anatomical_name": f"{palmer} ({anat_name})",
+            "anatomical_name": f"{anat_name} ({palmer_std})",
             "quadrant": quad_name,
             "fdi_number": raw_fdi,
-            "palmer_notation": palmer,
+            "palmer_notation": palmer_std,
             "universal_number": univ
         }
     if isinstance(raw_fdi, int) and raw_fdi in FDI_TO_DECIDUOUS:
         palmer, univ_letter, quad_name, anat_name = FDI_TO_DECIDUOUS[raw_fdi]
+        palmer_std = get_standard_palmer_symbol(palmer)
         return {
             "site_type": "Tooth",
-            "anatomical_name": f"{palmer} ({anat_name})",
+            "anatomical_name": f"{anat_name} ({palmer_std})",
             "quadrant": quad_name,
             "fdi_number": raw_fdi,
-            "palmer_notation": palmer,
+            "palmer_notation": palmer_std,
             "universal_number": univ_letter
         }
 
@@ -181,12 +209,13 @@ def normalize_dental_site(site_raw: Dict[str, Any]) -> Dict[str, Any]:
     detected_num = int(num_match.group(1)) if num_match else (raw_univ if isinstance(raw_univ, int) else None)
     if detected_num and detected_num in UNIVERSAL_TO_PERMANENT:
         palmer, fdi, quad_name, anat_name = UNIVERSAL_TO_PERMANENT[detected_num]
+        palmer_std = get_standard_palmer_symbol(palmer)
         return {
             "site_type": "Tooth",
-            "anatomical_name": f"Tooth {detected_num} ({palmer} - {anat_name})",
+            "anatomical_name": f"{anat_name} ({palmer_std})",
             "quadrant": quad_name,
             "fdi_number": fdi,
-            "palmer_notation": palmer,
+            "palmer_notation": palmer_std,
             "universal_number": detected_num
         }
 

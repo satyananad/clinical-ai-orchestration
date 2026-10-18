@@ -142,9 +142,16 @@ def confirm_booking(slot_id: str, patient_name: str, patient_id: Optional[str] =
                 "message": f"Appointment slot '{slot_id}' is no longer available."
             }
 
+    if not patient_id:
+        from .retrieval import get_all_patients
+        for p in get_all_patients():
+            if p.get("patient_name", "").lower() == patient_name.lower():
+                patient_id = p.get("patient_id")
+                break
+
     target["status"] = "booked"
     target["patient_name"] = patient_name
-    target["patient_id"] = patient_id or "PAT-1001"
+    target["patient_id"] = patient_id or "UNREGISTERED"
     target["booked_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     target["booking_reference"] = f"BKG-{target['slot_id'].split('-')[-1]}-{datetime.now().strftime('%M%S')}"
 

@@ -15,6 +15,20 @@ from backend.app.services.llm_service import parse_dictation_with_llm
 
 client = TestClient(app)
 
+import os
+import json
+from backend.app.services.booking_service import BOOKINGS_FILE
+
+@pytest.fixture(autouse=True)
+def reset_slots_state():
+    # Save original
+    with open(BOOKINGS_FILE, "r") as f:
+        original = f.read()
+    yield
+    # Restore
+    with open(BOOKINGS_FILE, "w") as f:
+        f.write(original)
+
 def test_check_synthetic_appointment_slots():
     """Verifies that the scan-booking agent returns available slots for radiological modalities."""
     cbct_slots = check_available_slots("CBCT")

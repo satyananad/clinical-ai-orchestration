@@ -1,6 +1,7 @@
 import os
 import json
 import datetime
+from typing import Optional
 from fastapi import APIRouter
 from ..schemas.report import DictationRequest, DictationReportResponse
 from ..services.llm_service import parse_dictation_with_llm
@@ -16,8 +17,12 @@ def compose_narrative(patient_name: str, findings: list, impressions: list, reco
     lines.append("=" * 68)
     lines.append("*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***")
     lines.append("=" * 68)
-    lines.append(f"Patient Name:    {patient_name}")
-    lines.append(f"Status:          DRAFT (AI Dictation Synthesis)")
+    if "unassigned" in patient_name.lower():
+        lines.append("Patient Name:    Unassigned (Transcript not linked to a registered patient)")
+        lines.append("Patient ID:      None (Requires patient selection before permanent record entry)")
+    else:
+        lines.append(f"Patient Name:    {patient_name}")
+    lines.append("Status:          DRAFT (AI Dictation Synthesis - Pending Clinician Review)")
     lines.append(f"Date of Draft:   {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
     lines.append("")
     lines.append("DETAILED FINDINGS:")
@@ -31,8 +36,11 @@ def compose_narrative(patient_name: str, findings: list, impressions: list, reco
         lines.append(f"  {i}. {imp}")
     lines.append("")
     lines.append("RECOMMENDATIONS & CLINICAL CORRELATION:")
-    for i, rec in enumerate(recommendations, 1):
-        lines.append(f"  {i}. {rec}")
+    if recommendations:
+        for i, rec in enumerate(recommendations, 1):
+            lines.append(f"  {i}. {rec}")
+    else:
+        lines.append("  • None dictated. Attending clinician to determine management following clinical correlation.")
     lines.append("=" * 68)
     return "\n".join(lines)
 
@@ -63,11 +71,14 @@ def wrap_lines(text: str, max_chars: int = 72) -> list:
         lines.append(" ".join(curr))
     return lines
 
-def generate_dictation_pdf(pdf_path: str, patient_name: str, patient_id: str, raw_dictation: str, findings: list, impressions: list, recommendations: list):
+def generate_dictation_pdf(pdf_path: str, patient_name: Optional[str], patient_id: Optional[str], raw_dictation: str, findings: list, impressions: list, recommendations: list):
     """
     Generates a clean, professional clinical radiological report with automatic pagination.
     Prevents text collisions and ensures clean hierarchy between findings, impressions, and signature.
     """
+    p_name = (patient_name or "Unassigned / Pending Patient Selection").upper()
+    p_id = patient_id or "Pending Patient Assignment"
+
     pages_cmds = []
     
     # Page 1 Initial Setup
@@ -79,8 +90,8 @@ def generate_dictation_pdf(pdf_path: str, patient_name: str, patient_id: str, ra
 
         # Patient Info Card
         "0.85 0.85 0.85 RG 1 w 45 685 505 70 re S",
-        f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 55 738 Td ({sanitize_pdf('PATIENT: ' + patient_name.upper())}) Tj ET",
-        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 722 Td ({sanitize_pdf('PATIENT ID: ' + patient_id)}) Tj ET",
+        f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 55 738 Td ({sanitize_pdf('PATIENT: ' + p_name)}) Tj ET",
+        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 722 Td ({sanitize_pdf('PATIENT ID: ' + p_id)}) Tj ET",
         f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 706 Td ({sanitize_pdf('STATUS: Draft Pending Attending Clinician Approval')}) Tj ET",
 
         f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 310 738 Td ({sanitize_pdf('EXAM TYPE: Dictated Radiological Assessment')}) Tj ET",
@@ -212,15 +223,19 @@ def structure_dictation_endpoint(payload: DictationRequest):
     - Anti-hallucination verification.
     - Requires clinician review.
     """
-    patient_id = payload.patient_id or "PAT-1001"
-    patient_name = payload.patient_name or "Priya Sharma"
+    patient_id = payload.patient_id
+    patient_name = payload.patient_name
     dictation_text = payload.text.strip()
+
+    display_name = patient_name if patient_name else "Unassigned / Pending Patient Selection"
+    display_id = patient_id if patient_id else "None"
 
     # 1. Invoke Clinical Scribe Agent via standard MCP tool execution
     from ..services.mcp_tools import execute_tool
     tool_res = execute_tool("structure_clinical_dictation", {
         "dictation_text": dictation_text,
-        "patient_id": patient_id
+        "patient_id": patient_id,
+        "patient_name": patient_name
     })
     sites = tool_res.get("anatomical_sites", [])
     findings = tool_res.get("findings", [])
@@ -229,11 +244,11 @@ def structure_dictation_endpoint(payload: DictationRequest):
     guardrails = tool_res.get("safety_guardrails", {})
 
     # 2. Compose narrative draft
-    narrative = compose_narrative(patient_name, findings, impressions, recommendations)
+    narrative = compose_narrative(display_name, findings, impressions, recommendations)
 
     # 4. Save JSON and PDF reports to dictation_reports/
-    clean_name = patient_name.replace(" ", "_")
-    pid = patient_id.replace(" ", "_")
+    clean_name = (patient_name or "Unassigned_Patient").replace(" ", "_")
+    pid = (patient_id or "UNASSIGNED").replace(" ", "_")
     json_filename = f"{pid}_{clean_name}_Dictation_Report.json"
     pdf_filename = f"{pid}_{clean_name}_Dictation_Report.pdf"
     json_path = os.path.join(DICTATION_DIR, json_filename)
@@ -249,8 +264,9 @@ def structure_dictation_endpoint(payload: DictationRequest):
             "disclaimer": "ATTENTION: This is an unverified AI-generated draft created from clinical dictation. All anatomical findings and impressions must be reviewed and approved by the attending clinician."
         },
         "patient_context": {
-            "patient_name": patient_name,
-            "patient_id": patient_id
+            "patient_name": display_name,
+            "patient_id": display_id,
+            "patient_assigned": bool(patient_name or patient_id)
         },
         "raw_dictation": dictation_text,
         "anatomical_sites": sites,
@@ -267,6 +283,6 @@ def structure_dictation_endpoint(payload: DictationRequest):
         json.dump(structured_data, f, indent=2)
 
     # Generate authentic PDF report
-    generate_dictation_pdf(pdf_path, patient_name, patient_id, dictation_text, findings, impressions, recommendations)
+    generate_dictation_pdf(pdf_path, display_name, display_id, dictation_text, findings, impressions, recommendations)
 
     return structured_data
