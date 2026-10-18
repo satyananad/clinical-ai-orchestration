@@ -1358,7 +1358,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             bookings = res.get("bookings", [])
             p_name = arguments.get("patient_name")
             if bookings:
-                lines = [f"• [{b.get('booking_reference')}] {b.get('patient_name')} — {b.get('modality')} scan on {b.get('datetime_str')} in {b.get('room')} (Slot: {b.get('slot_id')}, Status: Confirmed)" for b in bookings]
+                lines = [f"• [{b.get('booking_reference')}] Token: {b.get('token_number', 'TK-' + b.get('slot_id', '').split('-')[-1])} | {b.get('patient_name')} — {b.get('modality')} scan on {b.get('datetime_str')} in {b.get('room')} (Slot: {b.get('slot_id')}, Status: Confirmed)" for b in bookings]
                 msg = (
                     f"Found {len(bookings)} confirmed appointment booking(s):\n"
                     + "\n".join(lines)

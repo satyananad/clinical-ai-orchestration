@@ -254,13 +254,16 @@ def confirm_booking(
 
     # Commit booking
     now_dt = get_current_datetime()
-    booking_ref = f"BKG-{target['slot_id'].split('-')[-1]}-{now_dt.strftime('%M%S')}"
+    slot_num = target['slot_id'].split('-')[-1]
+    booking_ref = f"BKG-{slot_num}-{now_dt.strftime('%M%S')}"
+    token_no = f"TK-{slot_num}"
 
     target["status"] = "booked"
     target["patient_name"] = clean_p_name
     target["patient_id"] = patient_id or "UNREGISTERED"
     target["booked_at"] = now_dt.strftime("%Y-%m-%d %H:%M:%S")
     target["booking_reference"] = booking_ref
+    target["token_number"] = token_no
     if scan_type:
         target["modality"] = scan_type
 
@@ -269,11 +272,24 @@ def confirm_booking(
 
     decorated_slot = _decorate_slot_datetime(target)
 
+    arrival_msg = (
+        f"Appointment confirmed for {clean_p_name}: {decorated_slot['modality']} scan on {decorated_slot['datetime_str']} in {decorated_slot['room']} (Ref: {booking_ref}).\n\n"
+        f"• Token / Queue #: {token_no}\n"
+        f"• Booking Reference: {booking_ref}\n"
+        f"• Patient: {clean_p_name} ({patient_id or 'UNREGISTERED'})\n\n"
+        f"Hospital Arrival Instructions:\n"
+        f"1. Please arrive at the clinic 15 minutes before your scheduled appointment.\n"
+        f"2. Present Token {token_no} or Booking Ref {booking_ref} at the {decorated_slot['room']} reception desk.\n"
+        f"3. Bring a government photo ID and any clinical referral/prescription.\n"
+        f"4. Remove all metallic items, dental appliances, and jewelry prior to scan."
+    )
+
     return {
         "status": "success",
         "booking_reference": booking_ref,
+        "token_number": token_no,
         "slot": decorated_slot,
-        "message": f"Appointment confirmed for {clean_p_name}: {decorated_slot['modality']} scan on {decorated_slot['datetime_str']} in {decorated_slot['room']} (Ref: {booking_ref})."
+        "message": arrival_msg
     }
 
 

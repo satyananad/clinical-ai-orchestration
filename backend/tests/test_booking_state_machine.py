@@ -263,3 +263,36 @@ def test_dynamic_clock_date_calculation():
     slots_rechecked = check_available_slots(preferred_date="2026-10-19")
     for s in slots_rechecked:
         assert s["datetime_str"].startswith("Today, Oct 19")
+
+
+def test_booking_confirmation_token_and_hospital_instructions():
+    """Verify that confirmed bookings provide a queue token and realistic hospital arrival instructions."""
+    session_id = "test-session-token-instructions"
+    reset_slots()
+
+    # Step 1: Request booking for registered patient
+    res1 = run_multi_agent_pipeline("Book CBCT for patient Arjun Mehta tomorrow", session_id=session_id)
+    assert res1["status"] == "confirmation_required"
+
+    # Step 2: Select slot
+    res2 = run_multi_agent_pipeline("Let's select the 10:00 AM slot", session_id=session_id)
+    assert res2["status"] == "confirmation_required"
+    assert "Arjun Mehta" in res2["message"]
+
+    # Step 3: Explicit confirmation
+    res3 = run_multi_agent_pipeline("Yes, confirm and book it", session_id=session_id)
+    assert res3["status"] == "success"
+
+    # Verify Token number and Hospital Arrival Instructions
+    msg = res3["message"]
+    assert "Token / Queue #" in msg
+    assert "TK-101" in msg
+    assert "Hospital Arrival Instructions" in msg
+    assert "15 minutes" in msg
+    assert "reception" in msg.lower()
+    assert "metal" in msg.lower()
+
+    # Verify lookup also presents the token
+    res_lookup = run_multi_agent_pipeline("Show appointment details for Arjun Mehta", session_id="test-session-lookup-token")
+    assert "TK-101" in res_lookup["message"]
+    assert "Arjun Mehta" in res_lookup["message"]
