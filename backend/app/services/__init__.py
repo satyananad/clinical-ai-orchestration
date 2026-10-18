@@ -15,7 +15,7 @@ from .llm_service import (
     extract_retrieval_intent_with_llm,
     query_ollama,
 )
-from .conversation import (
+from .conversation_service import (
     handle_assistant_interaction,
     get_or_create_session,
     SESSIONS,
