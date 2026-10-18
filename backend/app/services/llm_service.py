@@ -341,19 +341,19 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
     """
     cleaned_text = clean_conversational_dictation(dictation_text)
     
-    # Check if text contains standard sentence punctuation
-    raw_sentences = [s.strip() for s in re.split(r"[.\n;]+", cleaned_text) if len(s.strip()) > 3]
-    if len(raw_sentences) <= 1 and len(cleaned_text.split()) > 7:
-        # Run-on spoken transcript without periods: segment on semantic clause transitions
+    # Segment text into sentences and clauses using standard grammatical punctuation (. ! ? ; \n or ,)
+    sentences = [s.strip() for s in re.split(r"(?:[.\n;?!]+|,\s*)", cleaned_text) if len(s.strip()) > 3]
+    if len(sentences) <= 1 and len(cleaned_text.split()) > 7:
+        # Continuous unpunctuated speech stream: segment on natural syntactic coordinators
         sentences = [
             s.strip() for s in re.split(
-                r"(?<=\S)\s+(?=(?:it\s+is\s+|with\s+no\s+|with\s+|the\s+surrounding\s+|surrounding\s+|no\s+other\s+))",
+                r"\s+(?=(?:and\s+|with\s+|it\s+is\s+|the\s+surrounding\s+|no\s+other\s+))",
                 cleaned_text,
                 flags=re.IGNORECASE
             ) if len(s.strip()) > 3
         ]
-    else:
-        sentences = raw_sentences
+    if not sentences:
+        sentences = [cleaned_text]
 
     anatomical_sites = []
     findings = []
@@ -465,43 +465,13 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             })
             continue
 
-        # Check for surrounding bone observation
-        if "surrounding bone" in s_lower and "alveolar bone" not in s_lower:
-            findings.append({
-                "anatomical_site": primary_site_label,
-                "category": "Periapical & Osseous Status",
-                "observation": "Surrounding bone appears normal",
-                "certainty": "definite observation"
-            })
-            continue
-
         # Check for negative abnormal findings statement
         if "no other abnormal finding" in s_lower:
             findings.append({
                 "anatomical_site": primary_site_label,
                 "category": "General Observation",
-                "observation": "No other abnormal findings noted in supplied dictation (dictated clinician statement; not independently verified)",
+                "observation": f"{s} (dictated clinician statement; not independently verified)",
                 "certainty": "negative / normal finding"
-            })
-            continue
-
-        # Check for proximity to adjacent second molar (specifically second molar)
-        if "second molar" in s_lower:
-            findings.append({
-                "anatomical_site": primary_site_label,
-                "category": "Anatomical Relationships & Proximity",
-                "observation": "Close proximity to adjacent second molar",
-                "certainty": "definite observation"
-            })
-            continue
-
-        # Check for impaction in conversational speech fragments
-        if "horizontally impacted" in s_lower and "tooth" not in s_lower and len(s.split()) <= 8:
-            findings.append({
-                "anatomical_site": primary_site_label,
-                "category": "Impaction / Eruption",
-                "observation": "Horizontally impacted",
-                "certainty": "definite observation"
             })
             continue
 
