@@ -2045,6 +2045,31 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                     }
                 }
 
+            # If patient is selected in session, but no specific report was chosen:
+            from .retrieval import get_patient
+            if session.active_patient_id and not session.active_report_id:
+                p = get_patient(session.active_patient_id)
+                if p:
+                    reps = p.get("reports", [])
+                    if len(reps) == 1:
+                        session.set_active(p["patient_id"], reps[0]["report_id"])
+                    elif len(reps) > 1:
+                        rep_str = " • ".join([f"[{r['report_id']}] {r['report_type']} ({r['report_date']})" for r in reps])
+                        return {
+                            "status": "clarification_required",
+                            "message": f"Patient {p['patient_name']} has {len(reps)} diagnostic reports on file: {rep_str}. Please specify which report to view or summarize (e.g. 'Open her {reps[0]['report_type']}').",
+                            "patient": p,
+                            "candidates": None,
+                            "report": None,
+                            "agent_trace": {
+                                "orchestrator": "TriageAgent",
+                                "active_agent": "ConsultationAgent",
+                                "tool_called": "summarize_active_report",
+                                "arguments": {"patient_id": p["patient_id"]},
+                                "rationale": "Clarification required: multiple reports available for selected patient."
+                            }
+                        }
+
             return {
                 "status": "clarification_required",
                 "message": "No active patient report is currently selected. Please select a patient from the directory above or ask me to open a specific report (e.g. 'Open Vikram Malhotra's CBCT').",

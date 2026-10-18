@@ -83,6 +83,18 @@ class SessionState:
     def pending_booking_modality(self, value: Optional[str]):
         self.booking_state.modality = value
 
+    def set_active_patient(self, patient_id: str):
+        """Updates active patient while keeping report unselected until chosen."""
+        self.active_patient_id = patient_id
+        self.active_report_id = None
+        self.pending_candidates = None
+        self.pending_request = None
+        if self.booking_state.stage == BookingStage.IDLE:
+            self.booking_state.patient_id = patient_id
+            p = get_patient(patient_id)
+            if p:
+                self.booking_state.patient_name = p.get("patient_name")
+
     def set_active(self, patient_id: str, report_id: str):
         """Updates active patient & report ONLY upon verified successful retrieval."""
         self.active_patient_id = patient_id
@@ -162,9 +174,9 @@ def handle_assistant_interaction(query: str, session_id: str = "default_session"
     # =========================================================================
     # CASE 1: CONTEXTUAL FOLLOW-UP ON AN ACTIVE REPORT
     # =========================================================================
-    if is_contextual_query(q_lower, has_active_report=bool(session.active_report_id)):
-        # Rule: If no active report is selected, prompt user to specify which report
-        if not session.active_patient_id or not session.active_report_id:
+    if is_contextual_query(q_lower, has_active_report=bool(session.active_report_id or session.active_patient_id)):
+        # Rule: If no active patient is selected, prompt user to specify which report
+        if not session.active_patient_id:
             return {
                 "status": "clarification_required",
                 "message": "No active patient report is currently selected. Please specify which patient or report you would like to view (e.g., 'Open Priya Sharma's OPG report').",
@@ -173,10 +185,40 @@ def handle_assistant_interaction(query: str, session_id: str = "default_session"
             }
 
         patient = get_patient(session.active_patient_id)
-        report = get_report_by_id(session.active_report_id)
-
-        if not patient or not report:
+        if not patient:
             session.clear()
+            return {
+                "status": "not_found",
+                "message": "The previously selected patient is no longer available. Please request a patient report again.",
+                "candidates": None
+            }
+
+        # If patient is selected but no specific report was opened yet:
+        if not session.active_report_id:
+            reports = patient.get("reports", [])
+            if len(reports) == 1:
+                # Unambiguous: single report
+                session.set_active(patient["patient_id"], reports[0]["report_id"])
+            elif len(reports) > 1:
+                # Ask for clarification only when necessary
+                report_list_str = " • ".join([f"[{r['report_id']}] {r['report_type']} ({r['report_date']})" for r in reports])
+                return {
+                    "status": "clarification_required",
+                    "message": f"Patient {patient['patient_name']} has {len(reports)} diagnostic reports on file: {report_list_str}. Please specify which report to view or summarize (e.g., 'Open her {reports[0]['report_type']}').",
+                    "patient": patient,
+                    "candidates": None,
+                    "report": None
+                }
+            else:
+                return {
+                    "status": "missing_report",
+                    "message": f"No diagnostic reports found on file for {patient['patient_name']}.",
+                    "patient": patient
+                }
+
+        report = get_report_by_id(session.active_report_id)
+        if not report:
+            session.active_report_id = None
             return {
                 "status": "not_found",
                 "message": "The previously selected report is no longer available. Please request a patient report again.",

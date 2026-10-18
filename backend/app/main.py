@@ -125,94 +125,170 @@ def get_dashboard_ui():
         <!-- =================================================================== -->
         <!-- TAB 1: PATIENT RECORDS & RADIOLOGY IMAGING -->
         <!-- =================================================================== -->
-        <div id="tabContent-assistant" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- =================================================================== -->
+        <!-- TAB 1: PATIENT RECORDS & RADIOLOGY IMAGING -->
+        <!-- =================================================================== -->
+        <div id="tabContent-assistant" class="space-y-6">
 
-            <!-- Left 6 Columns: Clinical Assistant & Voice/Text Search -->
-            <div class="lg:col-span-6 flex flex-col space-y-4">
-
-                <!-- Clinical Assistant Terminal Card -->
-                <div class="bg-slate-800 border border-slate-700 rounded-2xl shadow-lg flex flex-col h-[520px]">
-                    <div class="p-3 border-b border-slate-700 bg-slate-800/95 rounded-t-2xl flex items-center justify-between">
-                        <div class="flex items-center space-x-2">
-                            <i class="fa-solid fa-stethoscope text-sky-400 text-sm"></i>
-                            <span class="font-semibold text-xs text-white">Clinical Assistant & Search</span>
+            <!-- 1. CLINIC PATIENT DIRECTORY (Mandatory: Always Visible) -->
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-lg">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-3 border-b border-slate-700/80 gap-2">
+                    <div class="flex items-center space-x-2.5">
+                        <div class="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center text-sm font-bold">
+                            <i class="fa-solid fa-users"></i>
                         </div>
-                        <button onclick="resetSession()" class="text-[11px] text-slate-400 hover:text-rose-400 transition flex items-center">
-                            <i class="fa-solid fa-rotate-left mr-1"></i> Clear Conversation
-                        </button>
-                    </div>
-
-                    <!-- Chat Container -->
-                    <div id="chatMessages" class="flex-1 p-4 overflow-y-auto space-y-3 custom-scroll text-xs">
-                        <!-- Initial Welcome Message -->
-                        <div class="bg-slate-700/50 border border-slate-600/80 rounded-2xl p-3.5 text-slate-200">
-                            <p class="font-bold text-sky-400 text-xs mb-1 flex items-center">
-                                <i class="fa-solid fa-user-doctor mr-1.5"></i> Clinical Assistant Ready
-                            </p>
-                            <p class="mb-2">Welcome Doctor. You can search patient records, ask clinical questions about active reports, or schedule scan appointments:</p>
-                            <div class="flex flex-wrap gap-1.5 pt-1">
-                                <button onclick="sendChat('Open Vikram Malhotra\'s CBCT')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-600 px-2 py-1 rounded-lg transition">
-                                    <i class="fa-solid fa-folder-open mr-1"></i> Open Vikram's CBCT
-                                </button>
-                                <button onclick="sendChat('What are the findings for tooth 48?')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-600 px-2 py-1 rounded-lg transition">
-                                    <i class="fa-solid fa-tooth mr-1"></i> Tooth 48 Findings
-                                </button>
-                                <button onclick="sendChat('Summarize her report')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-600 px-2 py-1 rounded-lg transition">
-                                    <i class="fa-solid fa-file-lines mr-1"></i> Summarize Report
-                                </button>
-                                <button onclick="sendChat('Book a CBCT scan appointment')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-600 px-2 py-1 rounded-lg transition">
-                                    <i class="fa-solid fa-calendar-plus mr-1"></i> Book Scan Appointment
-                                </button>
+                        <div>
+                            <div class="flex items-center space-x-2">
+                                <h2 class="font-bold text-white text-xs sm:text-sm">Clinic Patient Directory</h2>
+                                <span id="patientDirectoryCount" class="text-[10px] bg-slate-700 text-sky-300 px-2 py-0.5 rounded-full font-mono">Loading...</span>
                             </div>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Click any registered patient to load their diagnostic record and view all associated imaging reports.</p>
                         </div>
                     </div>
-
-                    <!-- Input Controls -->
-                    <div class="p-3 border-t border-slate-700 bg-slate-800/95 rounded-b-2xl">
-                        <div class="flex items-center space-x-2">
-                            <input id="chatInput" type="text" placeholder="Search patient by name or ask a question (e.g., 'Open Vikram Malhotra\'s CBCT', 'Summarize findings')..." 
-                                   onkeydown="if(event.key==='Enter') sendChat()"
-                                   class="flex-1 text-xs bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                            <button onclick="toggleVoiceRecord('chatInput', 'voiceBtn')" id="voiceBtn" class="bg-slate-700 hover:bg-slate-600 text-slate-200 w-10 h-10 rounded-xl flex items-center justify-center transition shadow-sm" title="Click to Speak Voice Command">
-                                <i class="fa-solid fa-microphone text-sm"></i>
-                            </button>
-                            <button onclick="sendChat()" class="bg-sky-600 hover:bg-sky-500 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shadow-sky-600/30 transition">
-                                <i class="fa-solid fa-paper-plane text-xs"></i>
-                            </button>
-                        </div>
+                    <div class="relative w-full sm:w-72">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-500"></i>
+                        <input id="patientSearchInput" type="text" placeholder="Search patients by name or ID..."
+                               oninput="filterPatientDirectory(this.value)"
+                               class="w-full text-xs bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 rounded-xl pl-8 pr-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-sky-500">
                     </div>
                 </div>
 
+                <!-- Patient Cards List Container -->
+                <div id="patientDirectoryGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-48 overflow-y-auto custom-scroll pr-1">
+                    <div class="p-3 text-center text-slate-500 text-xs col-span-full">
+                        <i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Loading patient directory...
+                    </div>
+                </div>
             </div>
 
-            <!-- Right 6 Columns: Active Radiology Study Viewer -->
-            <div class="lg:col-span-6 flex flex-col space-y-4">
-                
-                <!-- Report Card -->
-                <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg flex flex-col min-h-[580px]">
-                    <div class="flex items-center justify-between border-b border-slate-700 pb-3 mb-4">
+            <!-- 2. SELECTED PATIENT & ASSOCIATED REPORTS PANEL -->
+            <div id="selectedPatientSection" class="hidden bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-lg space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-700">
+                    <div class="flex items-center space-x-3">
+                        <span class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm">
+                            <i class="fa-solid fa-id-card"></i>
+                        </span>
                         <div>
                             <div class="flex items-center space-x-2">
-                                <span id="reportModalityBadge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">NO STUDY LOADED</span>
-                                <h2 id="reportTitle" class="font-bold text-white text-base">Diagnostic Radiology Report</h2>
+                                <h3 id="selectedPatientName" class="font-bold text-white text-base">Patient Name</h3>
+                                <span id="selectedPatientIdBadge" class="text-[11px] bg-emerald-500/10 text-emerald-300 font-mono px-2.5 py-0.5 rounded-lg border border-emerald-500/20">PAT-XXXX</span>
+                                <span id="selectedPatientRecordBadge" class="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded">MRN</span>
                             </div>
-                            <p id="reportPatientMeta" class="text-xs text-slate-400 mt-1">Patient: None selected • Study ID: -</p>
+                            <p id="selectedPatientDemographics" class="text-xs text-slate-400 mt-0.5">DOB: - • Gender: - • Status: Active</p>
                         </div>
-                        <div id="pdfDownloadContainer" class="hidden">
-                            <a id="pdfDownloadBtn" href="#" target="_blank" class="inline-flex items-center text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white px-3.5 py-2 rounded-xl transition shadow-lg shadow-rose-600/20">
-                                <i class="fa-solid fa-file-pdf mr-1.5 text-sm"></i> Open PDF Study
-                            </a>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span id="selectedPatientReportCount" class="text-xs bg-slate-900 text-slate-300 px-3 py-1.5 rounded-xl border border-slate-700">
+                            0 Reports Available
+                        </span>
+                        <button onclick="clearPatientSelection()" class="text-xs text-slate-400 hover:text-rose-400 px-2 py-1 rounded transition" title="Deselect Patient">
+                            <i class="fa-solid fa-xmark mr-1"></i> Deselect
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Associated Reports Grid (Report Cards) -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center">
+                            <i class="fa-solid fa-folder-tree mr-1.5 text-sky-400"></i> Associated Diagnostic Reports (Select to Open):
+                        </h4>
+                        <span class="text-[10px] text-slate-500">Patient selection kept separate from report selection</span>
+                    </div>
+                    <div id="associatedReportsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <!-- Populated dynamically with Report Cards -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. SPLIT WORKSPACE: Assistant Console & Active Study Viewer -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+                <!-- Left 5 Columns: Clinical Assistant & Voice/Text Search -->
+                <div class="lg:col-span-5 flex flex-col space-y-4">
+
+                    <!-- Clinical Assistant Terminal Card -->
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl shadow-lg flex flex-col h-[540px]">
+                        <div class="p-3 border-b border-slate-700 bg-slate-800/95 rounded-t-2xl flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                                <i class="fa-solid fa-stethoscope text-sky-400 text-sm"></i>
+                                <span class="font-semibold text-xs text-white">Clinical Assistant Console</span>
+                            </div>
+                            <button onclick="resetSession()" class="text-[11px] text-slate-400 hover:text-rose-400 transition flex items-center">
+                                <i class="fa-solid fa-rotate-left mr-1"></i> Reset
+                            </button>
+                        </div>
+
+                        <!-- Chat Container -->
+                        <div id="chatMessages" class="flex-1 p-3.5 overflow-y-auto space-y-2.5 custom-scroll text-xs">
+                            <!-- Initial Welcome Message -->
+                            <div class="bg-slate-700/50 border border-slate-600/80 rounded-2xl p-3 text-slate-200">
+                                <p class="font-bold text-sky-400 text-xs mb-1 flex items-center">
+                                    <i class="fa-solid fa-user-doctor mr-1.5"></i> Clinical Assistant Ready
+                                </p>
+                                <p class="mb-2 text-[11px]">Select a patient above, click a report card, or ask natural language clinical questions:</p>
+                                <div class="flex flex-wrap gap-1 pt-1">
+                                    <button onclick="sendChat('Open Vikram Malhotra\'s CBCT')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-600 px-2 py-0.5 rounded transition">
+                                        Open Vikram's CBCT
+                                    </button>
+                                    <button onclick="sendChat('Summarize her report')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-600 px-2 py-0.5 rounded transition">
+                                        Summarize Report
+                                    </button>
+                                    <button onclick="sendChat('What are the findings for tooth 48?')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-600 px-2 py-0.5 rounded transition">
+                                        Tooth 48 Findings
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Input Controls -->
+                        <div class="p-3 border-t border-slate-700 bg-slate-800/95 rounded-b-2xl">
+                            <div class="flex items-center space-x-2">
+                                <input id="chatInput" type="text" placeholder="Type query or question (e.g. 'Summarize her report')..." 
+                                       onkeydown="if(event.key==='Enter') sendChat()"
+                                       class="flex-1 text-xs bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                                <button onclick="toggleVoiceRecord('chatInput', 'voiceBtn')" id="voiceBtn" class="bg-slate-700 hover:bg-slate-600 text-slate-200 w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm" title="Click to Speak Voice Command">
+                                    <i class="fa-solid fa-microphone text-xs"></i>
+                                </button>
+                                <button onclick="sendChat()" class="bg-sky-600 hover:bg-sky-500 text-white w-9 h-9 rounded-xl flex items-center justify-center shadow-lg shadow-sky-600/30 transition">
+                                    <i class="fa-solid fa-paper-plane text-xs"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Dynamic Report Content -->
-                    <div id="reportContent" class="flex-1 space-y-4 text-xs text-slate-200">
-                        <div class="p-8 bg-slate-900/60 border border-dashed border-slate-700 rounded-2xl text-center text-slate-400">
-                            <i class="fa-solid fa-file-waveform text-4xl mb-3 text-slate-600"></i>
-                            <p class="font-medium text-slate-300">No diagnostic imaging study currently active.</p>
-                            <p class="text-[11px] text-slate-500 mt-1">Search or speak a patient's name to view their imaging findings (e.g. <code class="text-sky-400 bg-slate-800 px-1 py-0.5 rounded">"Open Vikram Malhotra's CBCT"</code>).</p>
+                </div>
+
+                <!-- Right 7 Columns: Active Radiology Study Viewer -->
+                <div class="lg:col-span-7 flex flex-col space-y-4">
+                    
+                    <!-- Report Card -->
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg flex flex-col min-h-[540px]">
+                        <div class="flex items-center justify-between border-b border-slate-700 pb-3 mb-4">
+                            <div>
+                                <div class="flex items-center space-x-2">
+                                    <span id="reportModalityBadge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">NO STUDY LOADED</span>
+                                    <h2 id="reportTitle" class="font-bold text-white text-base">Diagnostic Radiology Report</h2>
+                                </div>
+                                <p id="reportPatientMeta" class="text-xs text-slate-400 mt-1">Patient: None selected • Study ID: -</p>
+                            </div>
+                            <div id="pdfDownloadContainer" class="hidden">
+                                <a id="pdfDownloadBtn" href="#" target="_blank" class="inline-flex items-center text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white px-3.5 py-2 rounded-xl transition shadow-lg shadow-rose-600/20">
+                                    <i class="fa-solid fa-file-pdf mr-1.5 text-sm"></i> View Diagnostic PDF
+                                </a>
+                            </div>
+                        </div>
+
+                        <!-- Dynamic Report Content -->
+                        <div id="reportContent" class="flex-1 space-y-4 text-xs text-slate-200">
+                            <div class="p-8 bg-slate-900/60 border border-dashed border-slate-700 rounded-2xl text-center text-slate-400">
+                                <i class="fa-solid fa-file-waveform text-4xl mb-3 text-slate-600"></i>
+                                <p class="font-medium text-slate-300">No diagnostic imaging study currently active.</p>
+                                <p class="text-[11px] text-slate-500 mt-1">Select a patient above and click <code class="text-sky-400 bg-slate-800 px-1 py-0.5 rounded">"Open Report"</code>, or ask the assistant.</p>
+                            </div>
                         </div>
                     </div>
+
                 </div>
 
             </div>
@@ -308,13 +384,214 @@ def get_dashboard_ui():
         const API_BASE = "";
         let currentSessionId = "viscan_ui_session";
 
-        function switchTab(tabId) {
-            ['assistant', 'dictation'].forEach(t => {
-                document.getElementById(`tabContent-${t}`).classList.add('hidden');
-                document.getElementById(`tabBtn-${t}`).className = "px-4 py-3 text-xs sm:text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center transition";
-            });
-            document.getElementById(`tabContent-${tabId}`).classList.remove('hidden');
-            document.getElementById(`tabBtn-${tabId}`).className = "px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 border-sky-500 text-sky-400 flex items-center transition";
+        let allClinicPatients = [];
+        let activeSelectedPatient = null;
+        let activeSelectedReport = null;
+
+        async function loadPatientDirectory() {
+            const grid = document.getElementById("patientDirectoryGrid");
+            const countBadge = document.getElementById("patientDirectoryCount");
+            try {
+                const resp = await fetch(`${API_BASE}/patients`);
+                allClinicPatients = await resp.json();
+                if (countBadge) countBadge.innerText = `${allClinicPatients.length} Patients Registered`;
+                renderPatientDirectory(allClinicPatients);
+            } catch (err) {
+                console.error("Failed to load patient directory:", err);
+                if (grid) grid.innerHTML = `<div class="p-3 text-center text-rose-400 text-xs col-span-full">Unable to load patient directory.</div>`;
+            }
+        }
+
+        function filterPatientDirectory(query) {
+            const q = (query || "").trim().toLowerCase();
+            if (!q) {
+                renderPatientDirectory(allClinicPatients);
+                return;
+            }
+            const filtered = allClinicPatients.filter(p => 
+                p.patient_name.toLowerCase().includes(q) || 
+                p.patient_id.toLowerCase().includes(q) ||
+                (p.date_of_birth && p.date_of_birth.includes(q))
+            );
+            renderPatientDirectory(filtered);
+        }
+
+        function renderPatientDirectory(patients) {
+            const grid = document.getElementById("patientDirectoryGrid");
+            if (!grid) return;
+            if (!patients || patients.length === 0) {
+                grid.innerHTML = `<div class="p-3 text-center text-slate-500 text-xs col-span-full">No matching patients found in clinic records.</div>`;
+                return;
+            }
+            grid.innerHTML = patients.map(p => {
+                const isSelected = activeSelectedPatient && activeSelectedPatient.patient_id === p.patient_id;
+                const reportCount = (p.reports || []).length;
+                return `
+                    <div onclick="selectPatientById('${p.patient_id}')" 
+                         class="p-2.5 rounded-xl border cursor-pointer transition flex items-center justify-between ${isSelected ? 'bg-sky-950/60 border-sky-500 shadow-md shadow-sky-500/10' : 'bg-slate-900/80 hover:bg-slate-700/70 border-slate-700/80'}">
+                        <div class="flex items-center space-x-2.5 overflow-hidden">
+                            <div class="w-7 h-7 rounded-lg ${isSelected ? 'bg-sky-500 text-white' : 'bg-slate-800 text-slate-300'} flex-shrink-0 flex items-center justify-center font-bold text-xs">
+                                ${p.patient_name.split(' ').map(n=>n[0]).join('').substring(0,2)}
+                            </div>
+                            <div class="truncate">
+                                <div class="font-bold text-xs text-white truncate flex items-center space-x-1">
+                                    <span>${p.patient_name}</span>
+                                </div>
+                                <div class="text-[10px] text-slate-400 font-mono mt-0.5">${p.patient_id} • ${p.date_of_birth || '-'}</div>
+                            </div>
+                        </div>
+                        <div class="text-right flex-shrink-0 ml-2">
+                            <span class="text-[10px] font-semibold ${isSelected ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'} px-2 py-0.5 rounded-full">
+                                ${reportCount} ${reportCount === 1 ? 'report' : 'reports'}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function selectPatientById(patientId, autoOpenReportId = null, shouldLogToChat = true) {
+            try {
+                const resp = await fetch(`${API_BASE}/sessions/${currentSessionId}/select-patient`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ patient_id: patientId })
+                });
+                const data = await resp.json();
+                if (data.status === "success" && data.patient) {
+                    activeSelectedPatient = data.patient;
+                    renderPatientDirectory(allClinicPatients);
+                    renderSelectedPatientSection(data.patient, data.reports || []);
+
+                    if (!autoOpenReportId) {
+                        updateContextBanner(data.patient, null);
+                        if (shouldLogToChat) {
+                            appendCustomMessage("assistant", `
+                                <div class="text-xs text-slate-200">
+                                    <div class="font-bold text-sky-400 flex items-center mb-1">
+                                        <i class="fa-solid fa-user-check mr-1.5"></i> Patient Selected: ${data.patient.patient_name} (${data.patient.patient_id})
+                                    </div>
+                                    <p class="text-[11px] text-slate-300">Displaying ${data.reports.length} associated diagnostic reports on file. Click <strong>"Open Report"</strong> on any report card to load its radiological findings, or request via chat (e.g. <em>"Open her OPG"</em>).</p>
+                                </div>
+                            `, "bg-slate-700/60 border border-sky-500/40");
+                        }
+                    } else {
+                        await openReportById(patientId, autoOpenReportId, false);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to select patient:", err);
+            }
+        }
+
+        function clearPatientSelection() {
+            activeSelectedPatient = null;
+            activeSelectedReport = null;
+            const sec = document.getElementById("selectedPatientSection");
+            if (sec) sec.classList.add("hidden");
+            renderPatientDirectory(allClinicPatients);
+            updateContextBanner(null, null);
+            document.getElementById("reportModalityBadge").innerText = "NO STUDY LOADED";
+            document.getElementById("reportTitle").innerText = "Diagnostic Radiology Report";
+            document.getElementById("reportPatientMeta").innerText = "Patient: None selected • Study ID: -";
+            document.getElementById("reportContent").innerHTML = `
+                <div class="p-8 bg-slate-900/60 border border-dashed border-slate-700 rounded-2xl text-center text-slate-400">
+                    <i class="fa-solid fa-file-waveform text-4xl mb-3 text-slate-600"></i>
+                    <p class="font-medium text-slate-300">No diagnostic imaging study currently active.</p>
+                    <p class="text-[11px] text-slate-500 mt-1">Select a patient above and click <code class="text-sky-400 bg-slate-800 px-1 py-0.5 rounded">"Open Report"</code>, or ask the assistant.</p>
+                </div>
+            `;
+            document.getElementById("pdfDownloadContainer").classList.add("hidden");
+        }
+
+        function renderSelectedPatientSection(patient, reports) {
+            const section = document.getElementById("selectedPatientSection");
+            if (!section) return;
+            section.classList.remove("hidden");
+            document.getElementById("selectedPatientName").innerText = patient.patient_name;
+            document.getElementById("selectedPatientIdBadge").innerText = patient.patient_id;
+            document.getElementById("selectedPatientRecordBadge").innerText = patient.record_number || "MRN-ACTIVE";
+            document.getElementById("selectedPatientDemographics").innerText = `DOB: ${patient.date_of_birth || '-'} • Gender: ${patient.sex || '-'} • Status: ${patient.status || 'Active'}`;
+            document.getElementById("selectedPatientReportCount").innerText = `${reports.length} ${reports.length === 1 ? 'Report Available' : 'Reports Available'}`;
+
+            const reportsGrid = document.getElementById("associatedReportsGrid");
+            if (!reports || reports.length === 0) {
+                reportsGrid.innerHTML = `<div class="p-3 text-slate-500 text-xs col-span-full">No diagnostic reports on file for this patient.</div>`;
+                return;
+            }
+
+            reportsGrid.innerHTML = reports.map(r => {
+                const isOpen = activeSelectedReport && activeSelectedReport.report_id === r.report_id;
+                const badgeColor = r.report_type === 'CBCT' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' :
+                                   r.report_type === 'OPG' ? 'bg-sky-500/20 text-sky-300 border-sky-500/30' :
+                                   r.report_type === 'Dental Examination' ? 'bg-teal-500/20 text-teal-300 border-teal-500/30' :
+                                   'bg-amber-500/20 text-amber-300 border-amber-500/30';
+                return `
+                    <div class="bg-slate-900 border ${isOpen ? 'border-sky-500 ring-1 ring-sky-500/40 bg-sky-950/30' : 'border-slate-700/80 hover:border-slate-600'} rounded-xl p-3.5 flex flex-col justify-between shadow-sm transition">
+                        <div>
+                            <div class="flex items-center justify-between pb-1.5 mb-2 border-b border-slate-800">
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeColor}">
+                                    ${r.report_type}
+                                </span>
+                                <span class="text-[10px] font-mono text-slate-400">
+                                    <i class="fa-regular fa-calendar mr-1"></i>${r.report_date}
+                                </span>
+                            </div>
+                            <div class="font-bold text-xs text-white mb-1 flex items-center justify-between">
+                                <span>${r.report_id}</span>
+                                <span class="text-[10px] text-emerald-400 font-semibold">${r.report_status || 'Final'}</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400 line-clamp-2 leading-relaxed mb-3">
+                                ${r.clinical_indication || 'Clinical radiological evaluation.'}
+                            </p>
+                        </div>
+                        <div class="flex items-center space-x-2 pt-2 border-t border-slate-800/80">
+                            <button onclick="openReportById('${patient.patient_id}', '${r.report_id}')"
+                                    class="flex-1 text-[11px] font-bold ${isOpen ? 'bg-sky-500 text-white' : 'bg-sky-600 hover:bg-sky-500 text-white'} py-1.5 px-2.5 rounded-lg transition shadow-sm flex items-center justify-center">
+                                <i class="fa-solid fa-folder-open mr-1.5"></i> ${isOpen ? 'Currently Open' : 'Open Report'}
+                            </button>
+                            ${r.pdf_filename ? `
+                                <a href="/patient-pdf/${r.pdf_filename}" target="_blank"
+                                   class="text-[11px] bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 font-semibold py-1.5 px-2.5 rounded-lg transition flex items-center" title="View Diagnostic PDF">
+                                    <i class="fa-solid fa-file-pdf"></i>
+                                </a>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function openReportById(patientId, reportId, shouldLogToChat = true) {
+            try {
+                const resp = await fetch(`${API_BASE}/sessions/${currentSessionId}/select-report`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ patient_id: patientId, report_id: reportId })
+                });
+                const data = await resp.json();
+                if (data.status === "success" && data.report) {
+                    activeSelectedReport = data.report;
+                    activeSelectedPatient = data.patient;
+                    renderReport(data.report, data.patient);
+                    updateContextBanner(data.patient, data.report);
+                    renderSelectedPatientSection(data.patient, data.patient.reports || []);
+                    renderPatientDirectory(allClinicPatients);
+
+                    if (shouldLogToChat) {
+                        appendCustomMessage("assistant", `
+                            <div class="text-xs text-slate-200">
+                                <div class="font-bold text-emerald-400 flex items-center mb-1">
+                                    <i class="fa-solid fa-folder-open mr-1.5"></i> Opened ${data.report.report_type} Report (${data.report.report_id})
+                                </div>
+                                <p class="text-[11px] text-slate-300">Active study loaded for <strong>${data.patient.patient_name}</strong> (${data.patient.patient_id}). You can ask clinical follow-up questions (e.g. <em>"Summarize her report"</em> or <em>"What did the radiologist note about tooth findings?"</em>).</p>
+                            </div>
+                        `, "bg-slate-700/60 border border-emerald-500/40");
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to open report:", err);
+            }
         }
 
 
@@ -430,6 +707,9 @@ def get_dashboard_ui():
                 if (data.status === "success" && data.report) {
                     renderReport(data.report, data.patient);
                     updateContextBanner(data.patient, data.report);
+                    if (data.patient && data.patient.patient_id) {
+                        selectPatientById(data.patient.patient_id, data.report.report_id, false);
+                    }
                     let html = `${agentBadgeHtml}<p class="text-xs text-emerald-300 font-medium"><i class="fa-solid fa-circle-check mr-1 text-emerald-400"></i> ${data.message}</p>`;
                     appendCustomMessage("assistant", html, "bg-slate-700/60 border border-emerald-500/40");
                     return;
@@ -685,6 +965,9 @@ def get_dashboard_ui():
                 btn.classList.remove("bg-rose-600", "text-white", "animate-pulse");
             }
         }
+
+        // Initialize Patient Directory on Load
+        window.addEventListener('DOMContentLoaded', loadPatientDirectory);
     </script>
 </body>
 </html>
