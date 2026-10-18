@@ -24,13 +24,13 @@ def label_diagnostic_certainty(sentence: str) -> str:
     res = classify_clinical_finding_status(sentence)
     return res["legacy_label"]
 
-def verify_anti_hallucination(raw_dictation: str, structured_findings: List[Dict[str, Any]]) -> Dict[str, Any]:
+def verify_anti_hallucination(raw_dictation: str, structured_findings: List[Dict[str, Any]], impressions: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Anti-Hallucination & Clinical Claim Verification (Revised Rule 2):
-    Checks tooth numbers, negation flipping, laterality, measurements, and word grounding.
-    Rejects or flags fabricated claims.
+    Checks tooth numbers, negation flipping, laterality, measurements, word grounding,
+    and cross-checks impressions against findings for clinical contradictions.
     """
-    verification = verify_dictation_against_source(raw_dictation, structured_findings)
+    verification = verify_dictation_against_source(raw_dictation, structured_findings, impressions=impressions)
     
     # Map to standard API response fields
     status = "PASSED" if verification["status"] == "PASSED" else "FLAGGED_UNSUPPORTED"
@@ -41,5 +41,5 @@ def verify_anti_hallucination(raw_dictation: str, structured_findings: List[Dict
         "grounded_ratio": verification["verified_count"],
         "unsupported_findings": unsupported,
         "contradicted_claims": verification.get("contradicted_claims", []),
-        "anti_hallucination_guarantee": "Zero ungrounded or contradicted findings admitted to final report."
+        "anti_hallucination_guarantee": verification.get("anti_hallucination_guarantee", "Zero ungrounded or contradicted findings admitted to final report.")
     }

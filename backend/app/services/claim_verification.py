@@ -234,13 +234,14 @@ def verify_single_claim_deterministic(source_text: str, claim_text: str) -> Dict
 # =============================================================================
 # MULTI-CLAIM VERIFICATION GATE & DICTATION VERIFICATION
 # =============================================================================
-def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str, Any]]) -> Dict[str, Any]:
+def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str, Any]], impressions: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Verifies clinical dictation transcript preservation:
     - Traceability of findings to audio transcript
     - Tooth numbers and anatomical sites preserved
     - Negation and diagnostic uncertainty preserved
     - Measurements and units preserved
+    - Cross-checks Impressions against Findings for internal clinical contradictions
     """
     unsupported_claims = []
     contradicted_claims = []
@@ -259,11 +260,39 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
         else:
             verified_count += 1
 
+    # Cross-Check: Findings vs Impressions for Clinical Contradictions
+    if impressions:
+        for imp in impressions:
+            imp_lower = imp.lower()
+            # Case A: Impression asserts absence of resorption while findings document root resorption
+            has_resorption_finding = any(
+                "resorption" in str(f.get("observation", "")).lower() and
+                not any(nw in str(f.get("observation", "")).lower() for nw in ["no root resorption", "no resorption", "without resorption"])
+                for f in findings
+            )
+            imp_denies_resorption = any(neg in imp_lower for neg in ["no resorption", "without resorption", "no root resorption"])
+
+            if has_resorption_finding and imp_denies_resorption:
+                conflict_finding = next(
+                    f for f in findings
+                    if "resorption" in str(f.get("observation", "")).lower() and
+                    not any(nw in str(f.get("observation", "")).lower() for nw in ["no root resorption", "no resorption", "without resorption"])
+                )
+                contradicted_claims.append({
+                    "status": ClaimStatus.CONTRADICTED,
+                    "dimension": "internal_conflict",
+                    "details": f"Clinical Contradiction: Impression asserts '{imp}', but finding documents '{conflict_finding.get('observation')}'.",
+                    "claim": imp
+                })
+
     overall_status = "PASSED"
+    guarantee = "Zero ungrounded or contradicted claims admitted to final report."
     if contradicted_claims:
         overall_status = "CONTRADICTED_CLAIMS_DETECTED"
+        guarantee = "Contradiction detected: Attending clinician must reconcile conflicting claims before sign-off."
     elif unsupported_claims:
         overall_status = "FLAGGED_UNSUPPORTED"
+        guarantee = "Unsupported findings flagged for clinician review."
 
     return {
         "status": overall_status,
@@ -274,7 +303,7 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
         "unsupported_findings": [c["claim"] for c in unsupported_claims] + [c["claim"] for c in contradicted_claims],
         "detailed_results": all_results,
         "clinician_review_required": True,
-        "anti_hallucination_guarantee": "Zero ungrounded or contradicted claims admitted to final report."
+        "anti_hallucination_guarantee": guarantee
     }
 
 def verify_report_answer_claim(report: Dict[str, Any], answer: str, expected_patient_id: Optional[str] = None) -> Dict[str, Any]:

@@ -247,7 +247,7 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         elif tool_name == "structure_clinical_dictation":
             dictation_text = arguments.get("dictation_text", "")
             parsed = parse_dictation_with_llm(dictation_text)
-            guardrails = verify_anti_hallucination(dictation_text, parsed.get("findings", []))
+            guardrails = verify_anti_hallucination(dictation_text, parsed.get("findings", []), impressions=parsed.get("impressions", []))
             return {
                 "status": "success",
                 "raw_dictation": dictation_text,

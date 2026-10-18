@@ -43,7 +43,7 @@ class AnatomicalSite(BaseModel):
     site_type: str
     fdi_number: Optional[int] = None
     palmer_notation: Optional[str] = None
-    universal_number: Optional[int] = None
+    universal_number: Optional[Any] = None
     anatomical_name: str
     quadrant: str
 
