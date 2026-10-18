@@ -91,7 +91,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             }
 
     # Step 2: Fallback routing (When local LLM is offline or initializing)
-    # 2A. Speech repair check on prior search (e.g. "not pineapple, I said panoramic")
+    # 2A. Speech repair fallback when clinician corrects a misheard term
     if session.last_retrieval_query and any(w in q_lower for w in ["not", "saying", "meant"]):
         for part in q_lower.split():
             if part in ["panoramic", "opg", "cbct", "bitewing", "periapical"]:
