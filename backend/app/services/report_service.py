@@ -92,7 +92,9 @@ def synthesize_impression_from_findings(
             cleaned_obs = cleaned_obs[0].upper() + cleaned_obs[1:]
 
         # Avoid redundant site name prefix if already in observation or tooth/quadrant is named
-        site_in_obs = site.lower() in cleaned_obs.lower() if site else False
+        norm_site = re.sub(r"[&,]", " and ", site.lower()).strip() if site else ""
+        norm_obs = re.sub(r"[&,]", " and ", cleaned_obs.lower()).strip()
+        site_in_obs = (norm_site in norm_obs) or any(w in norm_obs for w in norm_site.split() if len(w) > 4) if site else False
         has_tooth_in_obs = bool(re.search(r"\b(?:tooth|teeth|#\d+|UR|UL|LL|LR|molar|premolar|incisor|canine)\b", cleaned_obs, re.I))
         if site and not site_in_obs and not has_tooth_in_obs and site.lower() not in ("dentition", "regional anatomy", "general", "soft tissue", "multiple teeth", "general observation"):
             item_text = f"{site}: {cleaned_obs}"
@@ -116,8 +118,11 @@ def synthesize_impression_from_findings(
         neg_descs = [nf.get("observation", "").strip().rstrip(".") for nf in neg_findings]
         if all(re.match(r"^no\s+", d, re.IGNORECASE) for d in neg_descs):
             cleaned_phrases = [re.sub(r"^no\s+", "", d, flags=re.IGNORECASE) for d in neg_descs]
-            cleaned_phrases = [re.sub(r"\s+(?:is|are)\s+(?:observed|identified|seen|noted)$", "", cp, flags=re.IGNORECASE) for cp in cleaned_phrases]
-            imp_items.append(f"No {' or '.join(cleaned_phrases)} observed.")
+            if any(re.search(r"\b(?:is|are)\s+(?:observed|identified|seen|noted)\b", cp, re.I) for cp in cleaned_phrases):
+                imp_items.append("; ".join(f"No {cp.strip().rstrip('.')}" for cp in cleaned_phrases) + ".")
+            else:
+                cleaned_phrases = [re.sub(r"\s+(?:is|are)\s+(?:observed|identified|seen|noted)$", "", cp, flags=re.IGNORECASE) for cp in cleaned_phrases]
+                imp_items.append(f"No {' or '.join(cleaned_phrases)} observed.")
         else:
             imp_items.append("; ".join(neg_descs) + ".")
 

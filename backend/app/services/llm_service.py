@@ -546,7 +546,13 @@ def analyze_sentence_anatomy(sentence: str, anatomical_sites: List[Dict[str, Any
     # 2. Regional non-dental structures
     if re.search(r"\b(?:inferior\s+alveolar\s+(?:nerve\s+)?canal|ianc|mandibular\s+canal)\b", s_l):
         return "Inferior Alveolar Canal & Alveolar Crest", None, []
-    if re.search(r"\b(?:temporomandibular|tmj|condyle|airway|cervical\s+spine|paranasal\s+sinuses?|maxillary\s+sinuses?)\b", s_l):
+    if re.search(r"\b(?:temporomandibular|tmj)\b", s_l) and re.search(r"\b(?:sinus|sinuses)\b", s_l):
+        return "Temporomandibular Joints & Paranasal Sinuses", None, []
+    if re.search(r"\b(?:temporomandibular|tmj|condyle)\b", s_l):
+        return "Temporomandibular Joints", None, []
+    if re.search(r"\b(?:paranasal\s+sinuses?|maxillary\s+sinuses?|sinuses?)\b", s_l):
+        return "Maxillary & Paranasal Sinuses", None, []
+    if re.search(r"\b(?:airway|cervical\s+spine)\b", s_l):
         return "Regional Anatomy", None, []
     if re.search(r"\b(?:calcifications?|tonsilloliths?)\b", s_l):
         return "Soft Tissue", None, []
