@@ -187,6 +187,18 @@ DENTAL_ASSISTANT_TOOLS = [
         }
     },
     {
+        "name": "reschedule_scan_booking",
+        "description": "Reschedules an existing confirmed appointment booking to a new available slot.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "booking_identifier": {"type": "string", "description": "Existing booking reference or slot ID to reschedule."},
+                "new_slot_id": {"type": "string", "description": "New target slot ID (e.g. 'SLOT-103')."}
+            },
+            "required": ["booking_identifier", "new_slot_id"]
+        }
+    },
+    {
         "name": "conversation",
         "description": "Handles general clinical questions, dental radiology concepts (e.g. 'what is CBCT?', 'explain caries'), workstation help, capabilities, and conversational dialogue without running database queries.",
         "inputSchema": {
@@ -435,6 +447,12 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             ident = arguments.get("booking_identifier", "")
             reason = arguments.get("reason")
             return cancel_booking(ident, reason=reason)
+
+        elif tool_name == "reschedule_scan_booking":
+            from .booking_service import reschedule_booking
+            ident = arguments.get("booking_identifier", "")
+            new_slot_id = arguments.get("new_slot_id", "")
+            return reschedule_booking(ident, new_slot_id=new_slot_id)
 
         else:
             return {
