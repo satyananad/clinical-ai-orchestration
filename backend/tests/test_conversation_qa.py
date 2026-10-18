@@ -31,7 +31,7 @@ def test_session_isolation_between_clinicians():
     session_b = "session_doctor_b"
 
     # Doctor A opens Priya Sharma's OPG
-    handle_assistant_interaction("Open Priya Sharma's latest OPG report", session_id=session_a)
+    handle_assistant_interaction("Open report PAT-1001", session_id=session_a)
     s_a = get_or_create_session(session_a)
     assert s_a.active_patient_id == "PAT-1001"
 
@@ -49,7 +49,7 @@ def test_conversational_follow_up_and_report_qa_workflow():
     session_id = "test_full_qa_session"
 
     # 1. Open report
-    r1 = handle_assistant_interaction("Open Priya Sharma's latest OPG report", session_id=session_id)
+    r1 = handle_assistant_interaction("Open PAT-1001's OPG report", session_id=session_id)
     assert r1["status"] == "success"
     assert r1["report"]["report_id"] == "RPT-2001"
 
@@ -85,8 +85,8 @@ def test_full_name_with_speech_artifact_and_contextual_follow_up():
     session = get_or_create_session(session_id)
     session.clear()
 
-    # 1. Spoken input with speech artifact: 'can you open Priya Sharma OPG pineapple report'
-    res1 = run_multi_agent_pipeline("can you open Priya Sharma OPG pineapple report", session_id=session_id)
+    # 1. Spoken input with speech artifact: 'can you open report PAT-1001 OPG pineapple report'
+    res1 = run_multi_agent_pipeline("can you open report PAT-1001 OPG pineapple report", session_id=session_id)
     assert res1["status"] == "success"
     assert res1["patient"]["patient_name"] == "Priya Sharma"
     assert res1["report"]["report_id"] == "RPT-2001"
@@ -118,7 +118,8 @@ def test_speech_correction_repair_turn():
     res2 = run_multi_agent_pipeline("not pineapple I am saying panoramic", session_id=session_id)
     assert res2["status"] == "clarification_required"
 
-    # Clinician clarifies candidate
-    res3 = run_multi_agent_pipeline("Priya Sharma", session_id=session_id)
+    # Clinician clarifies candidate with specific Patient ID
+    res3 = run_multi_agent_pipeline("PAT-1001", session_id=session_id)
     assert res3["status"] == "success"
     assert res3["patient"]["patient_name"] == "Priya Sharma"
+    assert res3["patient"]["patient_id"] == "PAT-1001"

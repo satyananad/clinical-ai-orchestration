@@ -17,8 +17,8 @@ def test_successful_patient_search():
     assert "Vikram Malhotra" in patients[0]["patient_name"]
 
 def test_successful_report_retrieval():
-    # Retrieve report for Priya Sharma via assistant endpoint
-    response = client.post("/assistant/chat", json={"query": "Open Priya Sharma's latest OPG report"})
+    # Retrieve report for Priya Sharma via disambiguating identifier
+    response = client.post("/assistant/chat", json={"query": "Open Priya Sharma (PAT-1001)'s latest OPG report"})
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "success"
@@ -28,8 +28,8 @@ def test_successful_report_retrieval():
     assert data["report"]["report_type"] == "OPG"
 
 def test_missing_report_handling():
-    # Request a Cephalogram for Priya Sharma who only has OPG, Periapical, and Dental Exam
-    response = client.post("/assistant/chat", json={"query": "Open Priya Sharma's latest Cephalogram report"})
+    # Request a Cephalogram for Priya Sharma (PAT-1001) who only has OPG, Periapical, and Dental Exam
+    response = client.post("/assistant/chat", json={"query": "Open Priya Sharma (PAT-1001)'s latest Cephalogram report"})
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "missing_report"

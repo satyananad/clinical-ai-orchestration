@@ -141,7 +141,12 @@ def execute_clinic_database_query(question: str, patient_name: Optional[str] = N
     patients = get_all_patients()
     total_patients = len(patients)
     total_reports = sum(len(p.get("reports", [])) for p in patients)
-    patient_names = [p.get("patient_name") for p in patients]
+    patient_names = [
+        f"{p.get('patient_name')} ({p.get('patient_id')})"
+        if any(other['patient_name'] == p['patient_name'] and other['patient_id'] != p['patient_id'] for other in patients)
+        else p.get("patient_name")
+        for p in patients
+    ]
 
     # Modality aggregation
     modality_to_patients = {}

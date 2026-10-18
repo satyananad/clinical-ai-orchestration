@@ -42,7 +42,7 @@ def test_conversational_follow_up_and_grounding():
 
     # Step 1: Open Priya Sharma's OPG report
     r1 = client.post("/assistant/chat", json={
-        "query": "Open Priya Sharma's latest OPG report",
+        "query": "Open PAT-1001's OPG report",
         "session_id": session_id
     })
     assert r1.status_code == 200

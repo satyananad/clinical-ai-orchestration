@@ -112,21 +112,46 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         detected_mod = query_intent.get("report_type", "Any")
         effective_mod = detected_mod if detected_mod != "Any" else (session.last_retrieval_modality or "Any")
 
-        # 2B.1 Direct Name or Patient ID match in pending candidates
-        for cand in session.pending_candidates:
-            c_name = cand["patient_name"].lower()
-            c_id = cand["patient_id"].lower()
-            if c_name in q_lower or c_id in q_lower:
-                return {
-                    "selected_agent": "RetrievalAgent",
-                    "tool_name": "search_patient_reports",
-                    "arguments": {
-                        "patient_name": cand["patient_name"],
-                        "patient_id": cand["patient_id"],
-                        "modality": effective_mod
-                    },
-                    "rationale": f"Clarification Resolution: Matched candidate {cand['patient_name']} ({cand['patient_id']})."
-                }
+        # 2B.1 Patient ID direct match in pending candidates (Unambiguous)
+        id_matches = [cand for cand in session.pending_candidates if cand["patient_id"].lower() in q_lower]
+        if len(id_matches) == 1:
+            cand = id_matches[0]
+            session.pending_candidates = None
+            return {
+                "selected_agent": "RetrievalAgent",
+                "tool_name": "search_patient_reports",
+                "arguments": {
+                    "patient_name": cand["patient_name"],
+                    "patient_id": cand["patient_id"],
+                    "modality": effective_mod
+                },
+                "rationale": f"Clarification Resolution: Matched unique candidate ID {cand['patient_id']}."
+            }
+
+        # 2B.2 Unique Name match in pending candidates
+        # Must only resolve if EXACTLY ONE candidate matches that name (avoids identical namesakes)
+        name_matches = [
+            cand for cand in session.pending_candidates
+            if cand["patient_name"].lower() in q_lower
+        ]
+        if len(name_matches) == 1:
+            cand = name_matches[0]
+            session.pending_candidates = None
+            return {
+                "selected_agent": "RetrievalAgent",
+                "tool_name": "search_patient_reports",
+                "arguments": {
+                    "patient_name": cand["patient_name"],
+                    "patient_id": cand["patient_id"],
+                    "modality": effective_mod
+                },
+                "rationale": f"Clarification Resolution: Matched unique candidate name {cand['patient_name']} ({cand['patient_id']})."
+            }
+        elif len(name_matches) > 1:
+            # Both candidates share this name (e.g. two Priya Sharmas).
+            # Clarification must continue with only the matching subset.
+            session.pending_candidates = name_matches
+            # Fall through to general retrieval or clarification below
 
         # 2B.2 Ordinal selection (e.g. "Select the second patient", "the 1st one", "option 2")
         ordinal_map = {
@@ -333,6 +358,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                 retrieval_res["patient"]["patient_id"],
                 retrieval_res["report"]["report_id"]
             )
+            session.pending_candidates = None
         elif retrieval_res.get("status") == "clarification_required":
             session.pending_candidates = retrieval_res.get("candidates")
             session.last_retrieval_modality = modality_arg if (modality_arg and modality_arg != "Any") else extract_retrieval_intent(query).get("report_type", "Any")

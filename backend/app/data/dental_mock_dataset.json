@@ -1122,5 +1122,75 @@
         "sex": "Male"
       }
     ]
+  },
+  {
+    "patient_id": "PAT-1012",
+    "patient_name": "Priya Sharma",
+    "date_of_birth": "1985-02-14",
+    "sex": "Female",
+    "record_number": "MRN-DEMO-1012",
+    "status": "active",
+    "reports": [
+      {
+        "report_id": "RPT-2034",
+        "report_date": "2025-11-20",
+        "report_type": "OPG",
+        "modality": "Digital Panoramic Radiograph",
+        "clinical_indication": "Orthodontic evaluation and third molar assessment.",
+        "comparison": "No prior imaging on record.",
+        "technique": "Standard single-rotation panoramic radiograph.",
+        "findings": [
+          {
+            "region": "Tooth 38 and 48",
+            "observation": "Both mandibular third molars are fully erupted with physiological vertical alignment. No impaction.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Maxillary Sinuses",
+            "observation": "Both maxillary antra are pneumatized, clear, and symmetric.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Fully erupted third molars without impaction.",
+          "Clear paranasal sinuses."
+        ],
+        "recommendation": "Routine 6-month hygiene recall.",
+        "report_status": "Finalized",
+        "report_text": "Digital panoramic radiograph demonstrates fully erupted third molars and clear maxillary antra.",
+        "pdf_filename": "RPT-2034_Priya_Sharma_OPG.pdf",
+        "patient_id": "PAT-1012",
+        "patient_name": "Priya Sharma",
+        "date_of_birth": "1985-02-14",
+        "sex": "Female"
+      },
+      {
+        "report_id": "RPT-2035",
+        "report_date": "2026-01-18",
+        "report_type": "Bitewing Radiographs",
+        "modality": "Bitewing Radiographs",
+        "clinical_indication": "Interproximal caries assessment.",
+        "comparison": "OPG RPT-2034",
+        "technique": "Bilateral bitewing radiographs.",
+        "findings": [
+          {
+            "region": "Interproximal enamel",
+            "observation": "No interproximal radiolucency. Intact alveolar crestal bone height.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Normal interproximal contacts with no carious lesions."
+        ],
+        "recommendation": "Maintain preventive oral care.",
+        "report_status": "Finalized",
+        "report_text": "Bitewings show healthy interproximal bone levels and no caries.",
+        "pdf_filename": "RPT-2035_Priya_Sharma_Bitewing.pdf",
+        "patient_id": "PAT-1012",
+        "patient_name": "Priya Sharma",
+        "date_of_birth": "1985-02-14",
+        "sex": "Female"
+      }
+    ]
   }
 ]
