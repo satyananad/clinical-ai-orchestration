@@ -82,12 +82,24 @@ def _generate_reportlab_pdf(
     supplied_id = details.get("patient_id")
     study_type = details.get("study_type") or "Dictated Radiological Assessment"
 
-    p_name = (patient_name or "Unassigned / Pending Patient Selection").upper()
-    if "unassigned" in p_name.lower() and supplied_name:
-        p_name = f"{p_name} ({supplied_name.upper()})"
-    p_id = patient_id or "Pending Patient Assignment"
-    if (not patient_id or patient_id == "None") and supplied_id:
-        p_id = f"Supplied: {supplied_id} (Unverified)"
+    resolved_name = patient_name or supplied_name or "Unassigned / Pending Patient Selection"
+    if ("unassigned" in resolved_name.lower() or "pending" in resolved_name.lower()) and supplied_name:
+        resolved_name = supplied_name
+    p_name = resolved_name.upper()
+
+    p_id = patient_id or supplied_id or "Pending Patient Assignment"
+    if str(p_id).strip() in ("None", "null", ""):
+        p_id = f"Supplied: {supplied_id}" if supplied_id else "Pending Patient Assignment"
+
+    # Demographics tag
+    demo_tags = []
+    if details.get("age"):
+        demo_tags.append(f"Age: {details['age']}")
+    if details.get("gender"):
+        demo_tags.append(str(details['gender']))
+    if details.get("date_of_birth"):
+        demo_tags.append(f"DOB: {details['date_of_birth']}")
+    p_name_display = f"{p_name} ({', '.join(demo_tags)})" if demo_tags else p_name
 
     doc = SimpleDocTemplate(
         pdf_path,
@@ -187,9 +199,9 @@ def _generate_reportlab_pdf(
 
     # 1. Header Banner Table
     banner_cell = [
-        Paragraph("CLINICAL RADIOLOGY REPORT (DICTATION DRAFT)", header_title_style),
+        Paragraph("RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF", header_title_style),
         Spacer(1, 2),
-        Paragraph("Dental Radiography & Clinical AI Scribe Network • Review Copy", header_sub_style)
+        Paragraph("Dental Radiography & Clinical AI Scribe Network • Official Review Copy", header_sub_style)
     ]
     banner_table = Table([[banner_cell]], colWidths=[540])
     banner_table.setStyle(TableStyle([
@@ -200,12 +212,36 @@ def _generate_reportlab_pdf(
         ("RIGHTPADDING", (0, 0), (-1, -1), 12),
     ]))
     story.append(banner_table)
+    story.append(Spacer(1, 4))
+
+    # Amber Alert Banner for Draft Status
+    alert_style = ParagraphStyle(
+        "DraftAlert",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#78350f")
+    )
+    alert_cell = [
+        Paragraph("<b>*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***</b><br/><font size=7 color='#92400e'>Unverified AI synthesis from voice dictation. All anatomical findings and impressions must be verified by attending clinician.</font>", alert_style)
+    ]
+    alert_table = Table([[alert_cell]], colWidths=[540])
+    alert_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fef3c7")),
+        ("BOX", (0, 0), (-1, -1), 0.75, colors.HexColor("#f59e0b")),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    story.append(alert_table)
     story.append(Spacer(1, 6))
 
     # 2. Patient Information Card (2-column structured table)
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     col1 = [
-        Paragraph(f"<b>PATIENT:</b> {p_name}", card_label_bold),
+        Paragraph(f"<b>PATIENT:</b> {p_name_display}", card_label_bold),
         Paragraph(f"<b>PATIENT ID:</b> {p_id}", card_text_dim),
         Paragraph("<b>STATUS:</b> Draft Pending Attending Clinician Approval", card_text_dim)
     ]
@@ -323,12 +359,23 @@ def _generate_manual_canvas_pdf(
     supplied_id = details.get("patient_id")
     study_type = details.get("study_type") or "Dictated Radiological Assessment"
 
-    p_name = (patient_name or "Unassigned / Pending Patient Selection").upper()
-    if "unassigned" in p_name.lower() and supplied_name:
-        p_name = f"{p_name} ({supplied_name.upper()})"
-    p_id = patient_id or "Pending Patient Assignment"
-    if (not patient_id or patient_id == "None") and supplied_id:
-        p_id = f"Supplied: {supplied_id} (Unverified)"
+    resolved_name = patient_name or supplied_name or "Unassigned / Pending Patient Selection"
+    if ("unassigned" in resolved_name.lower() or "pending" in resolved_name.lower()) and supplied_name:
+        resolved_name = supplied_name
+    p_name = resolved_name.upper()
+
+    p_id = patient_id or supplied_id or "Pending Patient Assignment"
+    if str(p_id).strip() in ("None", "null", ""):
+        p_id = f"Supplied: {supplied_id}" if supplied_id else "Pending Patient Assignment"
+
+    demo_tags = []
+    if details.get("age"):
+        demo_tags.append(f"Age: {details['age']}")
+    if details.get("gender"):
+        demo_tags.append(str(details['gender']))
+    if details.get("date_of_birth"):
+        demo_tags.append(f"DOB: {details['date_of_birth']}")
+    p_name_display = f"{p_name} ({', '.join(demo_tags)})" if demo_tags else p_name
 
     pages_cmds = []
 
@@ -336,17 +383,22 @@ def _generate_manual_canvas_pdf(
     curr_cmds = [
         # Navy Header Banner
         "0.12 0.23 0.45 rg 45 765 505 45 re f",
-        f"BT /F1 13 Tf 1 1 1 rg 55 790 Td ({sanitize_pdf('CLINICAL RADIOLOGY REPORT (DICTATION DRAFT)')}) Tj ET",
-        f"BT /F3 8.5 Tf 1 1 1 rg 55 776 Td ({sanitize_pdf('Dental Radiography & Clinical AI Scribe Network • Review Copy')}) Tj ET",
+        f"BT /F1 11.5 Tf 1 1 1 rg 55 790 Td ({sanitize_pdf('RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF')}) Tj ET",
+        f"BT /F3 8 Tf 1 1 1 rg 55 776 Td ({sanitize_pdf('Dental Radiography & Clinical AI Scribe Network • Review Copy')}) Tj ET",
+
+        # Amber Alert Banner
+        "0.99 0.95 0.78 rg 45 745 505 16 re f",
+        "0.96 0.62 0.04 RG 0.75 w 45 745 505 16 re S",
+        f"BT /F1 7.5 Tf 0.47 0.21 0.06 rg 55 749 Td ({sanitize_pdf('*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***')}) Tj ET",
 
         # Patient Info Card
-        "0.85 0.85 0.85 RG 1 w 45 685 505 70 re S",
-        f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 55 738 Td ({sanitize_pdf('PATIENT: ' + p_name[:35])}) Tj ET",
-        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 722 Td ({sanitize_pdf('PATIENT ID: ' + p_id[:35])}) Tj ET",
-        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 706 Td ({sanitize_pdf('STATUS: Draft Pending Attending Clinician Approval')}) Tj ET",
+        "0.85 0.85 0.85 RG 1 w 45 665 505 70 re S",
+        f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 55 718 Td ({sanitize_pdf('PATIENT: ' + p_name_display[:45])}) Tj ET",
+        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 702 Td ({sanitize_pdf('PATIENT ID: ' + p_id[:35])}) Tj ET",
+        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 686 Td ({sanitize_pdf('STATUS: Draft Pending Attending Clinician Approval')}) Tj ET",
 
-        f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 310 738 Td ({sanitize_pdf('EXAM TYPE: ' + study_type[:30])}) Tj ET",
-        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 310 722 Td ({sanitize_pdf('DATE: ' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))}) Tj ET",
+        f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 310 718 Td ({sanitize_pdf('EXAM TYPE: ' + study_type[:30])}) Tj ET",
+        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 310 702 Td ({sanitize_pdf('DATE: ' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))}) Tj ET",
         f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 310 706 Td ({sanitize_pdf('VERIFICATION: Guardrail Verification Enforced')}) Tj ET",
 
         # Section 1 Header

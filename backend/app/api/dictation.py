@@ -73,9 +73,20 @@ def structure_dictation_endpoint(payload: DictationRequest):
     age = patient_details.get("age")
     gender = patient_details.get("gender")
     demographics_summary = patient_details.get("demographics_summary")
+    extracted_name = patient_details.get("patient_name")
+    extracted_id = patient_details.get("patient_id")
+
+    # Clinical assignment governance:
+    # patient_assigned is True ONLY if explicitly linked via payload or confirmed record.
+    # If name/id was only spoken in transcript, preserve in supplied_patient_name/id.
+    is_assigned = bool(patient_name or patient_id)
+    final_pname = patient_name if patient_name else "Unassigned / Pending Patient Selection"
+    final_pid = patient_id if patient_id else "None"
+    display_pname = final_pname
+    display_pid = final_pid
 
     # [DIAGNOSTIC] Checkpoint 1: Immediately after parser returns
-    print(f"\n[DIAGNOSTIC] Checkpoint 1 (Extraction): findings={len(findings)}, impressions={len(impressions)}, recommendations={len(recommendations)}, sites={len(sites)}")
+    print(f"\n[DIAGNOSTIC] Checkpoint 1 (Extraction): patient={display_pname} (supplied={extracted_name}), findings={len(findings)}, impressions={len(impressions)}, recommendations={len(recommendations)}, sites={len(sites)}")
 
     # [DIAGNOSTIC] Checkpoint 2: Immediately after verification runs
     print(f"[DIAGNOSTIC] Checkpoint 2 (Verification): status={guardrails.get('status')}, grounded_ratio={guardrails.get('grounded_ratio')}, claim_support={guardrails.get('claim_support_ratio')}, meas_preservation={guardrails.get('measurement_preservation')}")
@@ -84,13 +95,13 @@ def structure_dictation_endpoint(payload: DictationRequest):
     report_status = "DRAFT_PENDING_REVIEW" if findings else "INCOMPLETE_REQUIRES_REVIEW"
 
     # 2. Compose narrative draft
-    narrative = compose_narrative(display_name, findings, impressions, recommendations, patient_details=patient_details)
+    narrative = compose_narrative(display_pname, findings, impressions, recommendations, patient_details=patient_details)
 
     # 4. Save JSON and PDF reports to dictation_reports/
-    clean_name = (patient_name or "Unassigned_Patient").replace(" ", "_")
-    pid = (patient_id or "UNASSIGNED").replace(" ", "_")
-    json_filename = f"{pid}_{clean_name}_Dictation_Report.json"
-    pdf_filename = f"{pid}_{clean_name}_Dictation_Report.pdf"
+    file_patient_label = (patient_name or extracted_name or "Unassigned_Patient").replace(" ", "_").replace("/", "_")
+    pid = (patient_id or extracted_id or "UNASSIGNED").replace(" ", "_")
+    json_filename = f"{pid}_{file_patient_label}_Dictation_Report.json"
+    pdf_filename = f"{pid}_{file_patient_label}_Dictation_Report.pdf"
     json_path = os.path.join(DICTATION_DIR, json_filename)
     pdf_path = os.path.join(DICTATION_DIR, pdf_filename)
 
@@ -115,15 +126,15 @@ def structure_dictation_endpoint(payload: DictationRequest):
             "disclaimer": "ATTENTION: This is an unverified AI-generated draft created from clinical dictation. All anatomical findings and impressions must be reviewed and approved by the attending clinician."
         },
         "patient_context": {
-            "patient_name": display_name,
-            "patient_id": display_id,
-            "patient_assigned": bool(patient_name or patient_id),
+            "patient_name": final_pname,
+            "patient_id": final_pid,
+            "patient_assigned": is_assigned,
             "age": age,
             "gender": gender,
             "date_of_birth": patient_details.get("date_of_birth"),
             "demographics_summary": demographics_summary,
-            "supplied_patient_name": patient_details.get("patient_name"),
-            "supplied_patient_id": patient_details.get("patient_id"),
+            "supplied_patient_name": extracted_name,
+            "supplied_patient_id": extracted_id,
             "study_type": patient_details.get("study_type")
         },
         "raw_dictation": dictation_text,
@@ -141,7 +152,7 @@ def structure_dictation_endpoint(payload: DictationRequest):
         json.dump(structured_data, f, indent=2)
 
     # Generate authentic PDF report
-    generate_dictation_pdf(pdf_path, display_name, display_id, dictation_text, findings, impressions, recommendations, patient_details=patient_details)
+    generate_dictation_pdf(pdf_path, final_pname, final_pid, dictation_text, findings, impressions, recommendations, patient_details=patient_details)
 
     return structured_data
 
