@@ -1,0 +1,71 @@
+{
+  "report_metadata": {
+    "report_type": "Radiological Draft Assessment",
+    "status": "DRAFT_PENDING_REVIEW",
+    "generated_at": "2026-10-18 00:48:07",
+    "source_type": "Voice Dictation / Speech-to-Text Transcript",
+    "clinician_review_required": true,
+    "disclaimer": "ATTENTION: This is an unverified AI-generated draft created from clinical dictation. All anatomical findings, measurements, and impressions must be reviewed, edited, and approved by the attending clinician prior to clinical use."
+  },
+  "patient_context": {
+    "patient_name": "Marcus Vance",
+    "patient_id": "PAT-1003"
+  },
+  "raw_dictation": "Tooth #29 shows apical rarefying and sclerosing osteitis. TMJs show bilateral condylar flattening consistent with degenerative joint changes. Left palatine tonsillolith noted incidentally.",
+  "anatomical_sites": [
+    {
+      "site_type": "Tooth",
+      "fdi_number": 45,
+      "palmer_notation": "LR5",
+      "universal_number": 29,
+      "anatomical_name": "Mandibular right second premolar",
+      "quadrant": "Mandibular right"
+    },
+    {
+      "site_type": "Extra-dental / Regional Anatomy",
+      "fdi_number": null,
+      "palmer_notation": null,
+      "universal_number": null,
+      "anatomical_name": "Tonsillolith",
+      "quadrant": "Regional maxillofacial structure"
+    }
+  ],
+  "findings": [
+    {
+      "anatomical_site": "Tooth 45 (Mandibular right second premolar)",
+      "category": "Periapical / Osseous Pathology",
+      "observation": "Tooth #29 shows apical rarefying and sclerosing osteitis",
+      "certainty": "definite observation"
+    },
+    {
+      "anatomical_site": "TMJ",
+      "category": "Temporomandibular Joint",
+      "observation": "TMJs show bilateral condylar flattening consistent with degenerative joint changes",
+      "certainty": "suspected / differential diagnosis"
+    },
+    {
+      "anatomical_site": "Tonsillolith",
+      "category": "Sinonasal & Soft Tissue",
+      "observation": "Left palatine tonsillolith noted incidentally",
+      "certainty": "definite observation"
+    }
+  ],
+  "impressions": [
+    "Tooth 45 (Mandibular right second premolar): Tooth #29 shows apical rarefying and sclerosing osteitis. Findings suggestive of periapical rarefying lesion.",
+    "TMJ: Degenerative osseous changes / remodeling.",
+    "Tonsillolith: Incidental soft tissue finding."
+  ],
+  "recommendations": [
+    "Correlate with dental pulp vitality testing, percussion sensitivity, and clinical symptom history.",
+    "Clinical correlation with jaw mobility, joint noises (crepitus/clicking), and pain symptoms.",
+    "No acute surgical intervention required on imaging alone; monitor during routine reviews.",
+    "MANDATORY CLINICIAN ACTION: Attending dentist/radiologist must review and verify all anatomical labels and findings before clinical utilization."
+  ],
+  "narrative_draft": "====================================================================\n*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***\n====================================================================\nPatient Name:    Marcus Vance\nStatus:          DRAFT (AI Dictation Synthesis)\nDate of Draft:   2026-10-18 00:48\n\nDETAILED FINDINGS:\n  1. [Tooth 45 (Mandibular right second premolar)] (Periapical / Osseous Pathology)\n     Observation: Tooth #29 shows apical rarefying and sclerosing osteitis\n     Certainty:   definite observation\n  2. [TMJ] (Temporomandibular Joint)\n     Observation: TMJs show bilateral condylar flattening consistent with degenerative joint changes\n     Certainty:   suspected / differential diagnosis\n  3. [Tonsillolith] (Sinonasal & Soft Tissue)\n     Observation: Left palatine tonsillolith noted incidentally\n     Certainty:   definite observation\n\nIMPRESSION:\n  1. Tooth 45 (Mandibular right second premolar): Tooth #29 shows apical rarefying and sclerosing osteitis. Findings suggestive of periapical rarefying lesion.\n  2. TMJ: Degenerative osseous changes / remodeling.\n  3. Tonsillolith: Incidental soft tissue finding.\n\nRECOMMENDATIONS & CLINICAL CORRELATION:\n  1. Correlate with dental pulp vitality testing, percussion sensitivity, and clinical symptom history.\n  2. Clinical correlation with jaw mobility, joint noises (crepitus/clicking), and pain symptoms.\n  3. No acute surgical intervention required on imaging alone; monitor during routine reviews.\n  4. MANDATORY CLINICIAN ACTION: Attending dentist/radiologist must review and verify all anatomical labels and findings before clinical utilization.\n\nCLINICAL SAFETY DISCLAIMER:\n  This document is an unverified draft generated from spoken clinical dictation.\n  It does not constitute a final diagnosis. The treating clinician must review,\n  edit, and physically sign off on this report prior to clinical treatment planning.\n====================================================================",
+  "safety_guardrails": {
+    "status": "PASSED",
+    "grounded_ratio": "3/3",
+    "unsupported_findings": [],
+    "anti_hallucination_guarantee": "Zero ungrounded findings admitted to final report."
+  }
+}

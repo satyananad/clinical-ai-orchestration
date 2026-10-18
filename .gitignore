@@ -1,0 +1,20 @@
+# Python virtual environment
+venv/
+.venv/
+env/
+.env
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node / Frontend build artifacts (if any)
+node_modules/
+dist/
+build/

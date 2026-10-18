@@ -1,0 +1,73 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R /F3 7 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 2858 >>
+stream
+0.85 0.45 0.1 rg 45 760 505 48 re f
+BT /F1 13 Tf 1 1 1 rg 55 785 Td (CLINICAL DICTATION DRAFT - MANDATORY CLINICIAN REVIEW) Tj ET
+BT /F3 8.5 Tf 1 1 1 rg 55 771 Td (ViScan AI Scribe Network - Generated from Radiologist Speech / Dictation) Tj ET
+0.82 0.82 0.82 RG 1 w 45 675 505 75 re S
+BT /F1 9.5 Tf 0 0 0 rg 55 732 Td (PATIENT: PRIYA SHARMA) Tj ET
+BT /F2 8.5 Tf 0.25 0.25 0.25 rg 55 715 Td (PATIENT ID: PAT-1001) Tj ET
+BT /F2 8.5 Tf 0.25 0.25 0.25 rg 55 698 Td (STATUS: Unverified AI Synthesis \(Pending Attending Sign-Off\)) Tj ET
+BT /F1 9.5 Tf 0 0 0 rg 310 732 Td (REPORT TYPE: Dictation Draft) Tj ET
+BT /F2 8.5 Tf 0.25 0.25 0.25 rg 310 715 Td (DATE: 2026-10-18 15:37) Tj ET
+BT /F2 8.5 Tf 0.25 0.25 0.25 rg 310 698 Td (AI ENGINE: Llama-3.1 / Medical LLM) Tj ET
+BT /F1 10 Tf 0.12 0.23 0.45 rg 50 655 Td (VERBATIM DICTATION AUDIO TRANSCRIPT) Tj ET
+BT /F3 8.5 Tf 0.3 0.3 0.3 rg 60 642 Td ("Lower right third molar is horizontally impacted. Also evaluate UR5 and tooth) Tj ET
+BT /F3 8.5 Tf 0.3 0.3 0.3 rg 60 631 Td (#29.") Tj ET
+BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 612 Td (STRUCTURED FINDINGS & CERTAINTY) Tj ET
+BT /F1 8.5 Tf 0.1 0.1 0.1 rg 60 598 Td (- [Maxillary right tooth 5 \(UR5\)] \(Impaction / Eruption\):) Tj ET
+BT /F2 8.5 Tf 0.25 0.25 0.25 rg 72 587 Td (Lower right third molar is horizontally impacted) Tj ET
+BT /F3 8 Tf 0.4 0.4 0.4 rg 72 576 Td (Diagnostic Certainty: definite observation) Tj ET
+BT /F1 8.5 Tf 0.1 0.1 0.1 rg 60 563 Td (- [Maxillary right tooth 5 \(UR5\)] \(General Observation\):) Tj ET
+BT /F2 8.5 Tf 0.25 0.25 0.25 rg 72 552 Td (Also evaluate UR5 and tooth #29) Tj ET
+BT /F3 8 Tf 0.4 0.4 0.4 rg 72 541 Td (Diagnostic Certainty: definite observation) Tj ET
+BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 524 Td (SYNTHESIZED IMPRESSION) Tj ET
+BT /F1 8.5 Tf 0.65 0.1 0.1 rg 60 511 Td (- Maxillary right tooth 5 \(UR5\): Lower right third molar is horizontally) Tj ET
+BT /F1 8.5 Tf 0.65 0.1 0.1 rg 60 500 Td (- impacted. \(Certainty: definite observation\)) Tj ET
+BT /F1 8.5 Tf 0.65 0.1 0.1 rg 60 489 Td (- Maxillary right tooth 5 \(UR5\): Also evaluate UR5 and tooth #29.) Tj ET
+BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 474 Td (RECOMMENDATIONS & REQUIRED ACTION) Tj ET
+BT /F2 8.5 Tf 0 0 0 rg 60 461 Td (Consider targeted CBCT prior to surgical intervention for 3D canal) Tj ET
+BT /F2 8.5 Tf 0 0 0 rg 60 450 Td (visualization.) Tj ET
+BT /F2 8.5 Tf 0 0 0 rg 60 439 Td (MANDATORY CLINICIAN ACTION: Attending dentist/radiologist must review and verify) Tj ET
+BT /F2 8.5 Tf 0 0 0 rg 60 428 Td (all findings.) Tj ET
+0.85 0.85 0.85 RG 1 w 45 105 505 0 m 550 105 l S
+BT /F1 9 Tf 0 0 0 rg 50 85 Td (Attending Clinician Approval: ___________________________) Tj 230 0 Td (Sign-Off Date: _________________) Tj ET
+BT /F3 8 Tf 0.4 0.4 0.4 rg 50 68 Td (ViScan Dental Assistant - Draft Document - Not Approved for Medical Records Without Clinician Signature) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+7 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000121 00000 n 
+0000000267 00000 n 
+0000003177 00000 n 
+0000003252 00000 n 
+0000003322 00000 n 
+trailer
+<< /Size 8
+/Root 1 0 R >>
+startxref
+3400
+%%EOF

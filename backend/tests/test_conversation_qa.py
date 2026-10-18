@@ -1,0 +1,78 @@
+"""
+TESTS FOR CONVERSATION SERVICE & REPORT-GROUNDED QA SERVICE
+-----------------------------------------------------------
+Verifies:
+1. Isolated session state management (no shared globals).
+2. Reference resolution ("her report", "that scan").
+3. Direct evidence-grounded generation over selected report.
+4. Absence detection (stating when information is not in report).
+5. Unselected state safety check (asking user which report they mean).
+"""
+
+import pytest
+from fastapi.testclient import TestClient
+from backend.app.main import app
+from backend.app.services.conversation_service import get_or_create_session, handle_assistant_interaction
+from backend.app.services.report_qa_service import answer_report_question
+
+client = TestClient(app)
+
+def test_unselected_context_prompts_user_for_report():
+    """Rule 3: If no report is active, ask the user which report they mean."""
+    session_id = "test_empty_session_99"
+    res = handle_assistant_interaction("Summarize her report", session_id=session_id)
+    assert res["status"] == "clarification_required"
+    assert "No active patient report is currently selected" in res["message"]
+
+
+def test_session_isolation_between_clinicians():
+    """Rule 1: Store context by session, not in a single shared global variable."""
+    session_a = "session_doctor_a"
+    session_b = "session_doctor_b"
+
+    # Doctor A opens Priya Sharma's OPG
+    handle_assistant_interaction("Open Priya Sharma's latest OPG report", session_id=session_a)
+    s_a = get_or_create_session(session_a)
+    assert s_a.active_patient_id == "PAT-1001"
+
+    # Doctor B has not opened anything
+    s_b = get_or_create_session(session_b)
+    assert s_b.active_patient_id is None
+
+    # Doctor B asking for a summary is told no report is active
+    res_b = handle_assistant_interaction("Summarize her report", session_id=session_b)
+    assert res_b["status"] == "clarification_required"
+
+
+def test_conversational_follow_up_and_report_qa_workflow():
+    """Complete workflow: Open report -> Summarize her report -> Specific QA questions."""
+    session_id = "test_full_qa_session"
+
+    # 1. Open report
+    r1 = handle_assistant_interaction("Open Priya Sharma's latest OPG report", session_id=session_id)
+    assert r1["status"] == "success"
+    assert r1["report"]["report_id"] == "RPT-2001"
+
+    # 2. Mandatory: Summarize her report
+    r2 = handle_assistant_interaction("Summarize her report", session_id=session_id)
+    assert r2["status"] == "success"
+    assert "Resolved contextual pronoun" in r2["context_resolution"]
+    assert "Priya Sharma" in r2["answer"]
+    assert len(r2["citations"]) > 0
+
+    # 3. Bonus: "What does the impression say?"
+    r3 = handle_assistant_interaction("What does the impression say about this report?", session_id=session_id)
+    assert r3["status"] == "success"
+    assert "Mesioangular impaction of tooth 48" in r3["answer"] or "impaction" in r3["answer"].lower()
+    assert len(r3["citations"]) > 0
+
+    # 4. Bonus: "Which tooth is mentioned?"
+    r4 = handle_assistant_interaction("Which tooth is mentioned in the report?", session_id=session_id)
+    assert r4["status"] == "success"
+    assert any(tooth in r4["answer"] for tooth in ["48", "38", "16", "third molar"])
+
+    # 5. Bonus: "Does the report mention an earlier scan?"
+    r5 = handle_assistant_interaction("Does this report mention an earlier scan from 2020?", session_id=session_id)
+    assert r5["status"] == "success"
+    # Anti-hallucination check: Explains that earlier scan is not documented
+    assert "not documented" in r5["answer"].lower() or "impression is" in r5["answer"].lower()

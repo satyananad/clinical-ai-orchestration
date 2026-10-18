@@ -1,0 +1,65 @@
+{
+  "report_metadata": {
+    "status": "DRAFT_PENDING_REVIEW",
+    "clinician_review_required": true
+  },
+  "patient": "Priya Sharmila (PAT-1002)",
+  "raw_dictation": "UR5 is root treated with a unilocular well defined apical radiolucency 8 by 7 by 6 mm. UR4 is root treated with an apical radiolucency 1 to 2 mm wide. Distal to UR8 is an unerupted supernumerary tooth with an enlarged follicle space, possibly a dentigerous cyst.",
+  "anatomical_sites": [
+    {
+      "site_type": "Tooth",
+      "anatomical_name": "Maxillary right tooth 5 (UR5)",
+      "quadrant": "Maxillary right",
+      "fdi_number": 15,
+      "palmer_notation": "UR5",
+      "universal_number": null
+    },
+    {
+      "site_type": "Tooth",
+      "anatomical_name": "Maxillary right tooth 4 (UR4)",
+      "quadrant": "Maxillary right",
+      "fdi_number": 14,
+      "palmer_notation": "UR4",
+      "universal_number": null
+    },
+    {
+      "site_type": "Tooth",
+      "anatomical_name": "Maxillary right tooth 8 (UR8)",
+      "quadrant": "Maxillary right",
+      "fdi_number": 18,
+      "palmer_notation": "UR8",
+      "universal_number": null
+    }
+  ],
+  "findings": [
+    {
+      "anatomical_site": "Maxillary right tooth 5 (UR5)",
+      "category": "Periapical / Osseous Pathology",
+      "observation": "UR5 is root treated with a unilocular well defined apical radiolucency 8 by 7 by 6 mm",
+      "certainty": "definite observation"
+    },
+    {
+      "anatomical_site": "Maxillary right tooth 5 (UR5)",
+      "category": "Periapical / Osseous Pathology",
+      "observation": "UR4 is root treated with an apical radiolucency 1 to 2 mm wide",
+      "certainty": "definite observation"
+    },
+    {
+      "anatomical_site": "Maxillary right tooth 5 (UR5)",
+      "category": "Impaction / Eruption",
+      "observation": "Distal to UR8 is an unerupted supernumerary tooth with an enlarged follicle space, possibly a dentigerous cyst",
+      "certainty": "suspected / differential diagnosis"
+    }
+  ],
+  "impressions": [
+    "Maxillary right tooth 5 (UR5): UR5 is root treated with a unilocular well defined apical radiolucency 8 by 7 by 6 mm. Suggestive of periapical involvement.",
+    "Maxillary right tooth 5 (UR5): UR4 is root treated with an apical radiolucency 1 to 2 mm wide. Suggestive of periapical involvement.",
+    "Maxillary right tooth 5 (UR5): Distal to UR8 is an unerupted supernumerary tooth with an enlarged follicle space, possibly a dentigerous cyst. (Certainty: suspected / differential diagnosis)"
+  ],
+  "safety_guardrails": {
+    "status": "PASSED",
+    "grounded_ratio": "3/3",
+    "unsupported_findings": [],
+    "anti_hallucination_guarantee": "Zero ungrounded findings admitted to final report."
+  }
+}

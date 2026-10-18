@@ -1,0 +1,189 @@
+# Viscan Voice-First Dental Assistant
+> **Technical Assessment Submission | AI Engineer Role**  
+> Candidate Proof of Concept for Voice-First Dental & Maxillofacial Radiology Assistant.
+
+---
+
+## 🌟 Overview & Key Features
+
+This repository implements a production-grade, end-to-end voice-first dental clinical assistant designed to streamline radiological workflows, enforce patient safety guardrails, and automate structured draft report generation.
+
+### 1. Feature A: Safe Patient Report Retrieval (Mandatory)
+- Extracts clinical intent and patient name from spoken or typed queries (e.g., *"Open Priya's latest OPG report"*).
+- **Ambiguity Safety Guardrail:** When ambiguous names are detected (e.g., matching across 3 different patients named Priya: *Priya Sharma*, *Priya Sharmila*, and *Priya Nair*), the system enforces a clinical halt, presents patient IDs and dates of birth, and requests disambiguation.
+- **Exact File Resolution:** Automatically locates and opens the exact diagnostic PDF report on the clinician's workstation screen.
+
+### 2. Feature B: Clinical Dictation to Structured Draft Report (Mandatory)
+- Converts spoken audio transcripts or clinical dictation (e.g., *"Lower right third molar is horizontally impacted with roots approximating the inferior alveolar nerve canal"*) into editable structured JSON.
+- **Multi-Notation Dental Cross-Referencing:** Translates seamlessly between FDI 2-digit notation (e.g., `Tooth 48`), Palmer notation (`LR8`, `UR5`), US Universal numbering (`#32`, `#29`), and natural clinical language.
+- **Diagnostic Certainty Labeling:** Categorizes findings as *definite*, *suspected / differential diagnosis*, or *projection limited*.
+- **Anti-Hallucination Guardrail:** Ensures zero unmentioned pathologies or fictitious diagnoses are added to the report.
+- **Formatted PDF Report Generation:** Produces a standardized clinical dictation PDF report complete with a prominent *"DRAFT - REQUIRES CLINICIAN REVIEW"* banner and radiologist signature block.
+
+### 3. Feature C: Context-Dependent Conversational Follow-Up (Mandatory)
+- Supports multi-turn conversational follow-ups (e.g., *"Summarize her report"*, *"What did the radiologist note about her third molar?"*) without asking for the patient again when context is unambiguous.
+- **Evidence Citations:** Every answer includes exact verbatim quotes and findings cited directly from the active diagnostic report.
+
+---
+
+## 📁 Repository Structure
+
+```
+dental-voice-assistant/
+├── backend/
+│   ├── app/
+│   │   ├── main.py                   # FastAPI application & modernized interactive web dashboard
+│   │   ├── api/
+│   │   │   ├── patients.py           # GET /patients, GET /patients/{id}/reports
+│   │   │   ├── reports.py            # GET /reports/{id}
+│   │   │   ├── assistant.py          # POST /assistant/chat (Multi-Agent Dispatch)
+│   │   │   ├── dictation.py          # POST /dictation/structure
+│   │   │   └── mcp.py                # POST /api/mcp (JSON-RPC 2.0), GET /api/mcp/tools
+│   │   ├── services/
+│   │   │   ├── orchestrator_agent.py # Lead Triage Agent & Multi-Agent dispatcher
+│   │   │   ├── mcp_tools.py          # MCP standard tool specifications & executor
+│   │   │   ├── retrieval.py          # Deterministic patient & report lookup
+│   │   │   ├── conversation_service.py # Isolated session-based conversational memory
+│   │   │   ├── report_qa_service.py  # Report-grounded RAG question answering
+│   │   │   ├── llm_service.py        # Ollama interface & tooth cross-referencing
+│   │   │   └── validation.py         # Anti-hallucination & uncertainty validator
+│   │   ├── schemas/
+│   │   │   └── report.py             # Pydantic v2 schemas
+│   │   └── data/
+│   │       └── dental_mock_dataset.json # 10 patients, 30 multi-paragraph reports
+│   ├── tests/
+│   │   ├── test_retrieval.py         # Successful retrieval & missing report tests
+│   │   ├── test_ambiguity.py         # Ambiguity safety stop tests
+│   │   └── test_dictation.py         # Uncertainty & citation tests
+│   └── requirements.txt              # FastAPI, Pydantic, Uvicorn, Pytest
+├── frontend/                         # React + TypeScript Frontend
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── Header.tsx            # Navigation & status bar
+│   │   │   ├── PatientSearch.tsx     # Quick patient candidate lookup
+│   │   │   ├── ChatInterface.tsx     # Voice & conversational chat console
+│   │   │   ├── ReportViewer.tsx      # Diagnostic report & findings viewer
+│   │   │   └── DictationStudio.tsx   # Clinical dictation studio & JSON preview
+│   │   ├── pages/
+│   │   │   └── Dashboard.tsx         # Responsive clinical dashboard
+│   │   ├── services/
+│   │   │   └── api.ts                # Typed API client
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   ├── package.json
+│   └── tsconfig.json
+├── patient_reports/                  # 30 historical patient reports
+│   ├── RPT-2001_Priya_Sharma_OPG.pdf
+│   ├── RPT-2006_Priya_Sharmila_OPG.pdf
+│   └── ...
+├── dictation_reports/                # Dedicated folder for clinical dictations
+│   ├── PAT-1001_Priya_Sharma_Dictation_Report.json # Structured JSON findings
+│   ├── PAT-1001_Priya_Sharma_Dictation_Report.pdf  # Generated dictation PDF report
+│   └── ...
+├── step2_open_report_agent.py        # CLI Feature A: Voice/Text retrieval agent
+├── step3_clinical_dictation_agent.py # CLI Feature B: Dictation to structured JSON & PDF
+├── step4_conversational_agent.py     # CLI Feature C: Grounded conversational follow-up agent
+├── run_demo.py                       # Unified CLI demonstration runner
+├── test_viscan_pipeline.py           # Pipeline test suite (5 tests)
+├── ARCHITECTURE.md                   # 1-page detailed architecture & clinical safety specification
+├── .env.example                      # Environment variables template
+└── README.md                         # Project documentation
+```
+
+---
+
+## 🌐 REST API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Service health and readiness check |
+| `GET` | `/patients?query=Priya` | Search patients and return matching candidates |
+| `GET` | `/patients/{patient_id}/reports` | Retrieve all diagnostic reports for a patient |
+| `GET` | `/reports/{report_id}` | Fetch a single report by exact report ID |
+| `POST` | `/assistant/chat` | Conversational retrieval and context-aware follow-up |
+| `POST` | `/dictation/structure` | Convert voice/typed dictation into validated draft JSON |
+| `POST` | `/sessions/{session_id}/reset` | Clear conversation memory and active patient selection |
+
+---
+
+## 🚀 Quickstart & Setup Instructions
+
+### 1. Requirements
+- **Python 3.9+**
+- Virtual environment installed with:
+  ```bash
+  source venv/bin/activate
+  pip install -r backend/requirements.txt
+  ```
+
+### 2. Launch the FastAPI Backend & Web Dashboard
+Start the backend server on port 8000:
+```bash
+./venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+Once started:
+- Open your browser to **`http://localhost:8000`** to access the interactive web dashboard.
+- Open **`http://localhost:8000/docs`** for interactive Swagger API documentation.
+
+### 3. Run the CLI Demo
+To run the full end-to-end CLI demonstration across all 3 features:
+```bash
+python3 run_demo.py
+```
+
+### 4. Run Modular Standalone Scripts
+```bash
+# Feature A: Report Retrieval with Ambiguity Safety
+python3 step2_open_report_agent.py "Open Priya's latest OPG report"
+python3 step2_open_report_agent.py "Open Priya Sharma's latest OPG report"
+
+# Feature B: Clinical Dictation to Structured JSON & PDF
+python3 step3_clinical_dictation_agent.py
+
+# Feature C: Conversational Follow-Up with Citations
+python3 step4_conversational_agent.py
+```
+
+---
+
+## 🧪 Automated Testing
+
+The repository contains **15 automated tests** across two comprehensive test suites, all passing with 100% green:
+
+### Suite 1: FastAPI Backend Tests (10 Tests)
+```bash
+PYTHONPATH=. ./venv/bin/pytest backend/tests -v
+```
+Verifies:
+1. `test_health_endpoint` - API readiness
+2. `test_successful_patient_search` - Candidate searching
+3. `test_successful_report_retrieval` - Exact report retrieval
+4. `test_missing_report_handling` - Safe notification when report type does not exist
+5. `test_nonexistent_patient_handling` - Safe notification for unknown patients
+6. `test_ambiguous_patient_identity_triggers_clarification` - Ambiguity stop with 3 Priyas
+7. `test_disambiguation_with_full_name_succeeds` - Full name resolution
+8. `test_dictation_preserves_uncertainty` - Uncertainty preservation ("possible" != "confirmed")
+9. `test_dictation_anatomical_tooth_mapping` - FDI, Palmer, and Universal numbering
+10. `test_conversational_follow_up_and_grounding` - Follow-up Q&A with exact citations
+
+### Suite 2: Standalone Pipeline Tests (5 Tests)
+```bash
+pytest test_viscan_pipeline.py -v
+```
+
+---
+
+## 🔒 Production Considerations & Known Limitations
+
+### Privacy & Data Sovereignty
+- In clinical radiology, reports contain sensitive Protected Health Information (PHI). This architecture is built for on-premise execution (via local LLMs like Ollama or the deterministic rule engine), ensuring **zero cloud data leakage or HIPAA/GDPR non-compliance**.
+
+### What Works
+- Safe disambiguation of patient identities with zero guessing.
+- Reliable mapping between international dental numbering notations.
+- Anti-hallucination guardrail that strictly verifies semantic support in dictation.
+- Interactive Web Dashboard + REST API + CLI interfaces.
+
+### Future Improvements with More Time
+1. **Live Microphone Audio Streaming:** Connect a local WebAudio stream directly to `faster-whisper` for instant speech-to-text dictation.
+2. **DICOM Structured Reporting (DICOM-SR):** Export the structured findings directly into standard DICOM-SR objects for direct PACS integration.

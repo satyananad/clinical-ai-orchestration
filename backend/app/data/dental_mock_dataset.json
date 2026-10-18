@@ -1,0 +1,909 @@
+[
+  {
+    "patient_id": "PAT-1001",
+    "patient_name": "Priya Sharma",
+    "date_of_birth": "1998-04-12",
+    "sex": "Female",
+    "record_number": "MRN-DEMO-1001",
+    "status": "active",
+    "reports": [
+      {
+        "report_id": "RPT-2001",
+        "report_date": "2026-06-12",
+        "report_type": "OPG",
+        "modality": "Digital Panoramic Radiograph",
+        "clinical_indication": "Pre-treatment evaluation of third molars and baseline dental screening.",
+        "comparison": "No previous panoramic imaging available for comparison.",
+        "technique": "Standard single-rotation panoramic digital radiograph with Frankfurt horizontal alignment. Bilateral posterior regions clearly visualized.",
+        "findings": [
+          {
+            "region": "Tooth 48 (Mandibular right third molar)",
+            "observation": "Partially erupted presenting with mesioangular impaction. Root apices lie within 1.5 mm of the superior border of the inferior alveolar nerve canal.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Tooth 38 (Mandibular left third molar)",
+            "observation": "Partially erupted with vertical orientation; slight superimposition of distal ramus cortical margin.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Teeth 16 and 46",
+            "observation": "Coronal radiolucency noted on the occlusal surface of tooth 16 extending into mid-dentin without periapical rarefaction.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Alveolar Crestal Bone",
+            "observation": "Generalized physiological bone height maintained within normal clinical limits (less than 1.5 mm from CEJ).",
+            "certainty": "Descriptive"
+          }
+        ],
+        "impression": [
+          "Mesioangular impaction of tooth 48 in close proximity to the mandibular canal.",
+          "Partially erupted tooth 38.",
+          "Moderate occlusal dental caries on tooth 16."
+        ],
+        "recommendation": "Clinical correlation recommended. Consider CBCT cross-sectional nerve localization prior to any surgical extraction of tooth 48. Operative restoration advised for tooth 16.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Priya Sharma | ID: PAT-1001 | EXAM: OPG (2026-06-12)\nCLINICAL INDICATION: Pre-treatment evaluation of third molars and baseline dental screening.\nTECHNIQUE: Standard digital panoramic radiograph.\nFINDINGS: Tooth 48 is partially erupted with mesioangular impaction; root apices are located approximately 1.5 mm from the superior cortical margin of the inferior alveolar nerve canal. Tooth 38 is partially erupted with vertical alignment. Coronal radiolucency is noted on the occlusal surface of tooth 16 penetrating into mid-dentin. No periapical radiolucencies are observed. Alveolar bone crest heights are preserved bilaterally. Both maxillary sinuses are clear.\nIMPRESSION: Mesioangular impaction of tooth 48; partially erupted tooth 38; coronal caries tooth 16.\nRECOMMENDATION: Restorative therapy for tooth 16. CBCT imaging advised prior to surgical removal of tooth 48 to assess nerve relationship.",
+        "pdf_filename": "RPT-2001_Priya_Sharma_OPG.pdf"
+      },
+      {
+        "report_id": "RPT-2002",
+        "report_date": "2026-08-04",
+        "report_type": "Periapical Radiograph",
+        "modality": "Digital Intraoral Periapical (IOPA)",
+        "clinical_indication": "Targeted evaluation of upper left premolar quadrant following intermittent cold sensitivity.",
+        "comparison": "Prior OPG report RPT-2001.",
+        "technique": "Paralleling technique utilizing digital phosphor plate sensor centered on tooth 25.",
+        "findings": [
+          {
+            "region": "Tooth 25 (Maxillary left second premolar)",
+            "observation": "Intact enamel and dentinal contours. No coronal radiolucency or deep fissure defect identified.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Periapical Region & Lamina Dura",
+            "observation": "Lamina dura is continuous and uniform around the root apex. Periodontal ligament space width is physiological with no widening.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Interproximal Contacts",
+            "observation": "Slight horizontal overlap at the mesial contact with tooth 24 limits complete interproximal enamel assessment.",
+            "certainty": "Limited by projection"
+          }
+        ],
+        "impression": [
+          "No radiographic evidence of periapical pathosis or gross dental caries associated with tooth 25."
+        ],
+        "recommendation": "Perform clinical thermal sensibility and electric pulp testing. Check for cervical abrasion or exposed root dentin.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Priya Sharma | ID: PAT-1001 | EXAM: Periapical Radiograph (2026-08-04)\nCLINICAL INDICATION: Targeted evaluation of upper left premolar quadrant following intermittent cold sensitivity.\nFINDINGS: Tooth 25 demonstrates normal coronal anatomy without evident carious radiolucencies. The periodontal ligament space is intact and uniform throughout the root length, with intact surrounding lamina dura. No periapical radiolucency or osseous defect detected.\nIMPRESSION: Radiographically unremarkable periapical status tooth 25.\nRECOMMENDATION: Correlate with clinical vitality tests and check for cervical dentin hypersensitivity.",
+        "pdf_filename": "RPT-2002_Priya_Sharma_Periapical_Radiograph.pdf"
+      },
+      {
+        "report_id": "RPT-2003",
+        "report_date": "2026-10-03",
+        "report_type": "Dental Examination",
+        "modality": "Clinical Intraoral Examination",
+        "clinical_indication": "Follow-up consultation regarding tooth 25 sensitivity and general periodontal status.",
+        "comparison": "Periapical radiograph RPT-2002.",
+        "technique": "Comprehensive intraoral visual and tactile examination with dental mirror, periodontal probe, and cold thermal test.",
+        "findings": [
+          {
+            "region": "Tooth 25 Cervical Margin",
+            "observation": "Exposed cervical root dentin with mild non-carious cervical loss (abfraction). Thermal cold test elicits immediate sharp response resolving within 2 seconds (reversible pulpitis).",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Tooth 16 Occlusal Surface",
+            "observation": "Carious catch with dental explorer; soft dentin present within occlusal pits.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Periodontium",
+            "observation": "Localized mild marginal gingival inflammation and plaque accumulation at lower lingual anterior segment.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Dentin hypersensitivity secondary to cervical exposure on tooth 25.",
+          "Active primary occlusal caries on tooth 16 requiring restoration.",
+          "Localized plaque-induced gingivitis."
+        ],
+        "recommendation": "Apply desensitizing topical varnish to tooth 25. Schedule composite resin restoration for tooth 16. Oral hygiene instruction and ultrasonic scaling advised.",
+        "report_status": "Draft",
+        "report_text": "PATIENT: Priya Sharma | ID: PAT-1001 | EXAM: Dental Examination (2026-10-03)\nCLINICAL INDICATION: Routine review of intermittent tooth sensitivity and caries review.\nFINDINGS: Clinical evaluation demonstrates cervical root exposure with mild abfraction at the buccal margin of tooth 25. Cold vitality testing confirms immediate, non-lingering response consistent with reversible hypersensitivity. Occlusal fissure caries confirmed on tooth 16. Mild marginal gingivitis observed along lower incisors.\nIMPRESSION: Reversible dentin hypersensitivity tooth 25; active caries tooth 16; mild gingivitis.\nRECOMMENDATION: Composite restorative treatment for tooth 16. Topical fluoride/desensitizing agent application to tooth 25. Oral prophylaxis.",
+        "pdf_filename": "RPT-2003_Priya_Sharma_Dental_Examination.pdf"
+      }
+    ]
+  },
+  {
+    "patient_id": "PAT-1002",
+    "patient_name": "Priya Sharmila",
+    "date_of_birth": "1996-09-23",
+    "sex": "Female",
+    "record_number": "MRN-DEMO-1002",
+    "status": "active",
+    "reports": [
+      {
+        "report_id": "RPT-2004",
+        "report_date": "2026-05-21",
+        "report_type": "OPG",
+        "modality": "Digital Panoramic Radiograph",
+        "clinical_indication": "Evaluation of recurrent swelling and severe discomfort in the lower right retromolar region.",
+        "comparison": "No prior radiological studies available.",
+        "technique": "Digital panoramic radiograph. Optimal focal trough positioning with clear bilateral mandibular coverage.",
+        "findings": [
+          {
+            "region": "Tooth 48 (Mandibular right third molar)",
+            "observation": "Horizontally impacted with crown directly abutted against the distal root cervical contour of tooth 47. Substantial bone coverage occlusally and distally.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Tooth 47 (Mandibular right second molar)",
+            "observation": "Distal root surface demonstrates superimposition of third molar crown; localized periodontal ligament widening at the distal aspect.",
+            "certainty": "Descriptive"
+          },
+          {
+            "region": "Inferior Alveolar Canal",
+            "observation": "Canal cortical roof is superimposed directly over the mid-apical third of tooth 48 roots with apparent radiolucent band across the roots.",
+            "certainty": "Uncertain - Requires 3D validation"
+          }
+        ],
+        "impression": [
+          "Complete horizontal impaction of tooth 48 with high risk of distal external root resorption on tooth 47.",
+          "Intimate anatomical proximity to the inferior alveolar nerve canal."
+        ],
+        "recommendation": "Urgent maxillofacial surgical consultation for surgical extraction/coronectomy of tooth 48. High-resolution 3D CBCT is strongly indicated to evaluate buccal-lingual nerve positioning.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Priya Sharmila | ID: PAT-1002 | EXAM: OPG (2026-05-21)\nCLINICAL INDICATION: Investigation of chronic pain and recurrent swelling in lower right jaw.\nFINDINGS: Tooth 48 is horizontally impacted with its occlusal crown wedged firmly against the distal cervical neck of tooth 47. There is distinct superimposition of the inferior alveolar nerve canal across the third molar root apices, accompanied by loss of the superior canal cortical line.\nIMPRESSION: Complete horizontal impaction of tooth 48 with intimate radiographic relationship to inferior alveolar canal.\nRECOMMENDATION: CBCT scan recommended to rule out nerve entrapment prior to surgical odontectomy.",
+        "pdf_filename": "RPT-2004_Priya_Sharmila_OPG.pdf"
+      },
+      {
+        "report_id": "RPT-2005",
+        "report_date": "2026-06-02",
+        "report_type": "Dental Examination",
+        "modality": "Clinical Intraoral Examination",
+        "clinical_indication": "Clinical assessment of pericoronal operculum and tissue inflammation over tooth 48.",
+        "comparison": "Panoramic radiograph RPT-2004.",
+        "technique": "Direct intraoral clinical inspection, periodontal probing, and tissue palpation.",
+        "findings": [
+          {
+            "region": "Retromolar Pad & Operculum (Tooth 48)",
+            "observation": "Erythematous, edematous pericoronal tissue operculum partially covering the distal cusp. Marked tenderness on palpation with serous exudate.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Trismus & Lymphadenopathy",
+            "observation": "Mouth opening restricted to 28 mm (mild trismus). Right submandibular lymph node palpable, tender, and mobile.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Acute pericoronitis associated with partially erupted/impacted tooth 48 with regional lymphadenitis."
+        ],
+        "recommendation": "Local debridement and irrigation with warm chlorhexidine 0.2%. Prescribe systemic antibiotic regimen (Amoxicillin 500mg tid + Metronidazole 400mg tid for 5 days) and NSAID analgesics. Schedule definitive surgical management once acute phase subsides.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Priya Sharmila | ID: PAT-1002 | EXAM: Clinical Dental Examination (2026-06-02)\nCLINICAL INDICATION: Acute retromolar pain and limited mouth opening.\nFINDINGS: Clinical examination reveals an inflamed, tender pericoronal operculum over the partially exposed crown of tooth 48. Mild trismus present with maximum opening of 28 mm. Tender right submandibular lymphadenopathy present.\nIMPRESSION: Acute pericoronitis tooth 48 with regional lymphadenitis.\nRECOMMENDATION: Local chlorhexidine irrigation. 5-day course of systemic antimicrobials and analgesics. Plan surgical extraction following resolution of acute inflammation.",
+        "pdf_filename": "RPT-2005_Priya_Sharmila_Dental_Examination.pdf"
+      },
+      {
+        "report_id": "RPT-2006",
+        "report_date": "2026-08-19",
+        "report_type": "OPG",
+        "modality": "Digital Panoramic Radiograph",
+        "clinical_indication": "Follow-up panoramic assessment post-acute infection prior to surgical intervention.",
+        "comparison": "Baseline OPG RPT-2004 (2026-05-21).",
+        "technique": "Digital panoramic survey under identical geometric exposure parameters.",
+        "findings": [
+          {
+            "region": "Tooth 48",
+            "observation": "Persistent horizontal impaction unchanged from previous baseline. Distal bone troughing noted with slight pericoronal radiolucency suggestive of chronic follicular enlargement.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Tooth 47 Distal Aspect",
+            "observation": "No definitive progressive external root resorption defect detected on this 2D projection, though distal alveolar bone height is compromised.",
+            "certainty": "Descriptive"
+          },
+          {
+            "region": "Mandibular Canal Relationship",
+            "observation": "Persistent overlapping of the inferior alveolar nerve canal with narrowing of the radiolucent canal lumen at the root apex.",
+            "certainty": "High suspicion of direct contact"
+          }
+        ],
+        "impression": [
+          "Stable horizontal impaction of tooth 48 with radiographic indicators of direct nerve contact.",
+          "Chronic pericoronal bone saucerization."
+        ],
+        "recommendation": "Proceed with planned CBCT scan or coronectomy to eliminate risk of permanent inferior alveolar nerve paresthesia.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Priya Sharmila | ID: PAT-1002 | EXAM: Follow-up OPG (2026-08-19)\nCLINICAL INDICATION: Pre-surgical reassessment of impacted tooth 48.\nFINDINGS: Comparison with study of 2026-05-21 demonstrates stable horizontal impaction of tooth 48. Radiographic signs of nerve proximity persist, including narrowing of the inferior alveolar canal lumen where it traverses the root apices. Distal bone saucerization consistent with past pericoronal inflammation.\nIMPRESSION: Horizontally impacted tooth 48 with high suspicion of direct nerve involvement.\nRECOMMENDATION: Recommend coronectomy or CBCT-guided surgical excision.",
+        "pdf_filename": "RPT-2006_Priya_Sharmila_OPG.pdf"
+      }
+    ]
+  },
+  {
+    "patient_id": "PAT-1003",
+    "patient_name": "Rahul Verma",
+    "date_of_birth": "1994-02-08",
+    "sex": "Male",
+    "record_number": "MRN-DEMO-1003",
+    "status": "active",
+    "reports": [
+      {
+        "report_id": "RPT-2007",
+        "report_date": "2026-04-09",
+        "report_type": "Bitewing Radiographs",
+        "modality": "Digital Posterior Bitewings",
+        "clinical_indication": "Routine bilateral posterior interproximal dental screening.",
+        "comparison": "No prior bitewings available.",
+        "technique": "Bilateral horizontal digital bitewing projections using Rinn alignment ring.",
+        "findings": [
+          {
+            "region": "Tooth 36 Distal Surface",
+            "observation": "Well-demarcated triangular radiolucency in outer third of dentin on distal surface below the contact point, consistent with interproximal dental caries.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Alveolar Crests",
+            "observation": "Normal horizontal crestal bone height bilaterally. Intact cortical crestal lamina dura.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Class II interproximal dental caries on distal of tooth 36.",
+          "No evidence of periodontal bone resorption."
+        ],
+        "recommendation": "Conservative Class II composite restoration advised for tooth 36.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Rahul Verma | ID: PAT-1003 | EXAM: Bitewing Radiographs (2026-04-09)\nFINDINGS: Digital bitewings demonstrate an interproximal carious lesion penetrating into the outer dentin on the distal surface of tooth 36. Remaining posterior tooth surfaces, contacts, and restorations appear intact without recurrent decay. Normal alveolar crest height.\nIMPRESSION: Interproximal dental caries distal tooth 36.\nRECOMMENDATION: Conservative composite restoration tooth 36.",
+        "pdf_filename": "RPT-2007_Rahul_Verma_Bitewing_Radiographs.pdf"
+      },
+      {
+        "report_id": "RPT-2008",
+        "report_date": "2026-07-09",
+        "report_type": "Dental Examination",
+        "modality": "Clinical Intraoral Examination",
+        "clinical_indication": "Operative restorative appointment for tooth 36.",
+        "comparison": "Bitewing radiographs RPT-2007.",
+        "technique": "Caries excavation under rubber dam isolation.",
+        "findings": [
+          {
+            "region": "Tooth 36",
+            "observation": "Complete excavation of demineralized dentin on distal surface. Pulpal floor firm and hard. Direct composite restoration placed and polished.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Successful Class II direct resin restoration tooth 36."
+        ],
+        "recommendation": "Post-operative symptom review in 6 months during routine checkup.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Rahul Verma | ID: PAT-1003 | EXAM: Operative Treatment Record (2026-07-09)\nFINDINGS: Tooth 36 treated under rubber dam isolation. Distal carious dentin excavated. Base placed and tooth restored with incremental hybrid composite. Occlusion adjusted and verified.\nIMPRESSION: Restored tooth 36.\nRECOMMENDATION: Routine 6-month preventive recall.",
+        "pdf_filename": "RPT-2008_Rahul_Verma_Dental_Examination.pdf"
+      },
+      {
+        "report_id": "RPT-2009",
+        "report_date": "2026-10-01",
+        "report_type": "Dental Examination",
+        "modality": "Clinical Recall Examination",
+        "clinical_indication": "Routine post-restorative follow-up and scaling.",
+        "comparison": "Operative encounter RPT-2008.",
+        "technique": "Clinical inspection, margin checking with explorer, and vitality check.",
+        "findings": [
+          {
+            "region": "Tooth 36 Restoration",
+            "observation": "Restoration intact with smooth margins and no microleakage. Normal response to cold sensibility test.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Healthy functioning restoration on tooth 36."
+        ],
+        "recommendation": "Continue standard preventive dental care.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Rahul Verma | ID: PAT-1003 | EXAM: Clinical Recall (2026-10-01)\nFINDINGS: Tooth 36 restoration evaluated; margins are flush, intact, and well-sealed. Vitality testing normal. Gingival tissues healthy.\nIMPRESSION: Stable post-treatment status.\nRECOMMENDATION: Maintain routine annual review.",
+        "pdf_filename": "RPT-2009_Rahul_Verma_Dental_Examination.pdf"
+      }
+    ]
+  },
+  {
+    "patient_id": "PAT-1004",
+    "patient_name": "Ananya Patel",
+    "date_of_birth": "2000-11-17",
+    "sex": "Female",
+    "record_number": "MRN-DEMO-1004",
+    "status": "active",
+    "reports": [
+      {
+        "report_id": "RPT-2010",
+        "report_date": "2026-05-15",
+        "report_type": "OPG",
+        "modality": "Digital Panoramic Radiograph",
+        "clinical_indication": "Baseline comprehensive examination and orthodontic consultation.",
+        "comparison": "None.",
+        "technique": "Single panoramic exposure on digital CCD system.",
+        "findings": [
+          {
+            "region": "Dentition Survey",
+            "observation": "Complete adult dentition present from 18 to 48. All third molars erupted in functional occlusion.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Osseous Structures & TMJ",
+            "observation": "Normal condylar head morphology. Symmetrical mandibular angles. No bony radiolucency.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Normal panoramic dental survey with no overt radiographic pathology."
+        ],
+        "recommendation": "Standard oral hygiene maintenance and routine dental checkups.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Ananya Patel | ID: PAT-1004 | EXAM: OPG (2026-05-15)\nFINDINGS: Full panoramic radiographic survey reveals 32 permanent teeth erupted in favorable alignment. No interproximal or periapical osseous lesions identified. Maxillary antra aerated. TMJs within normal limits.\nIMPRESSION: Healthy adult radiographic survey.\nRECOMMENDATION: Routine recall.",
+        "pdf_filename": "RPT-2010_Ananya_Patel_OPG.pdf"
+      },
+      {
+        "report_id": "RPT-2011",
+        "report_date": "2026-07-20",
+        "report_type": "Dental Examination",
+        "modality": "Clinical Intraoral Examination",
+        "clinical_indication": "Review of localized gingival bleeding during brushing.",
+        "comparison": "Panoramic survey RPT-2010.",
+        "technique": "BPE (Basic Periodontal Examination) periodontal screening.",
+        "findings": [
+          {
+            "region": "Marginal Gingiva",
+            "observation": "BPE score 2 across anterior sextants with localized calculus deposits and marginal bleeding on probing.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Plaque-induced localized marginal gingivitis."
+        ],
+        "recommendation": "Full-mouth ultrasonic debridement and plaque-control instruction.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Ananya Patel | ID: PAT-1004 | EXAM: Periodontal Assessment (2026-07-20)\nFINDINGS: Gingival examination shows localized marginal redness and bleeding upon probing in lower anterior region. Supragingival calculus noted on lingual surfaces of 31-41.\nIMPRESSION: Plaque-induced gingivitis.\nRECOMMENDATION: Professional scaling and oral hygiene coaching.",
+        "pdf_filename": "RPT-2011_Ananya_Patel_Dental_Examination.pdf"
+      },
+      {
+        "report_id": "RPT-2012",
+        "report_date": "2026-09-27",
+        "report_type": "Dental Examination",
+        "modality": "Clinical Post-Prophylaxis Review",
+        "clinical_indication": "Periodontal re-evaluation following oral prophylaxis.",
+        "comparison": "Prior examination RPT-2011.",
+        "technique": "Periodontal re-probing of anterior sextants.",
+        "findings": [
+          {
+            "region": "Gingival Tissues",
+            "observation": "Significant resolution of gingival erythema. Bleeding on probing reduced to 0%. Tissues firm and pink.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Resolved gingivitis; stabilized periodontal health."
+        ],
+        "recommendation": "Maintain regular 6-month maintenance intervals.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Ananya Patel | ID: PAT-1004 | EXAM: Periodontal Re-evaluation (2026-09-27)\nFINDINGS: Marked clinical improvement observed. Complete cessation of gingival bleeding upon probing. Patient demonstrates excellent compliance with interdental cleaning.\nIMPRESSION: Excellent gingival health.\nRECOMMENDATION: 6-month preventive maintenance.",
+        "pdf_filename": "RPT-2012_Ananya_Patel_Dental_Examination.pdf"
+      }
+    ]
+  },
+  {
+    "patient_id": "PAT-1005",
+    "patient_name": "Arjun Mehta",
+    "date_of_birth": "1992-06-30",
+    "sex": "Male",
+    "record_number": "MRN-DEMO-1005",
+    "status": "active",
+    "reports": [
+      {
+        "report_id": "RPT-2013",
+        "report_date": "2026-04-22",
+        "report_type": "Periapical Radiograph",
+        "modality": "Digital Intraoral Periapical",
+        "clinical_indication": "Post-endodontic evaluation of tooth 25.",
+        "comparison": "Pre-operative digital images from referring clinic.",
+        "technique": "Bisecting-angle periapical projection of upper left premolar segment.",
+        "findings": [
+          {
+            "region": "Tooth 25 Root Canal",
+            "observation": "Dense, well-condensed gutta-percha obturation terminating 0.5 mm short of the radiographic apex. No periapical radiolucency.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Satisfactory endodontic obturation of tooth 25 with normal periapical bone architecture."
+        ],
+        "recommendation": "Full coronal coverage restoration (cuspal-coverage crown) recommended to protect against fracture.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Arjun Mehta | ID: PAT-1005 | EXAM: Periapical Radiograph (2026-04-22)\nFINDINGS: Tooth 25 demonstrates an adequate, homogenous endodontic fill extending to the working length. Normal periodontal ligament contour around the root apex without radiolucent changes.\nIMPRESSION: Successful root canal treatment tooth 25.\nRECOMMENDATION: Crown placement indicated.",
+        "pdf_filename": "RPT-2013_Arjun_Mehta_Periapical_Radiograph.pdf"
+      },
+      {
+        "report_id": "RPT-2014",
+        "report_date": "2026-06-11",
+        "report_type": "Dental Examination",
+        "modality": "Clinical Prosthodontic Assessment",
+        "clinical_indication": "Tooth preparation and impression for tooth 25 crown.",
+        "comparison": "Periapical radiograph RPT-2013.",
+        "technique": "Cuspal reduction and margin definition for zirconia ceramic crown.",
+        "findings": [
+          {
+            "region": "Tooth 25 Core & Margins",
+            "observation": "Resin composite core sound. Circumferential 1.0 mm deep chamfer margin prepared supragingivally. Digital intraoral scan taken.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Tooth 25 prepared successfully for indirect crown restoration."
+        ],
+        "recommendation": "Provisional crown placed. Permanent crown delivery in 2 weeks.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Arjun Mehta | ID: PAT-1005 | EXAM: Crown Preparation (2026-06-11)\nFINDINGS: Tooth 25 prepared with adequate occlusal clearance. Digital optical scan captured. Temporary acrylic crown cemented with temporary luting agent.\nIMPRESSION: Crown preparation completed.\nRECOMMENDATION: Delivery of final restoration.",
+        "pdf_filename": "RPT-2014_Arjun_Mehta_Dental_Examination.pdf"
+      },
+      {
+        "report_id": "RPT-2015",
+        "report_date": "2026-08-30",
+        "report_type": "Bitewing Radiographs",
+        "modality": "Digital Posterior Bitewings",
+        "clinical_indication": "Verification of crown margin seating on tooth 25 and routine screening.",
+        "comparison": "None.",
+        "technique": "Bilateral bitewing radiographs.",
+        "findings": [
+          {
+            "region": "Tooth 25 Crown Margin",
+            "observation": "Crown seated with flush, sealed margins on both mesial and distal surfaces without excess cement overhang.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Accurate marginal adaptation of tooth 25 zirconia crown."
+        ],
+        "recommendation": "Annual clinical and radiographic monitoring.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Arjun Mehta | ID: PAT-1005 | EXAM: Bitewing Radiographs (2026-08-30)\nFINDINGS: Bitewing evaluation confirms ideal seating of the new indirect crown on tooth 25 with no overhangs or marginal gaps.\nIMPRESSION: Well-fitted crown tooth 25.\nRECOMMENDATION: Routine follow-up.",
+        "pdf_filename": "RPT-2015_Arjun_Mehta_Bitewing_Radiographs.pdf"
+      }
+    ]
+  },
+  {
+    "patient_id": "PAT-1006",
+    "patient_name": "Amit Kumar",
+    "date_of_birth": "1979-08-19",
+    "sex": "Male",
+    "record_number": "MRN-DEMO-1006",
+    "status": "active",
+    "reports": [
+      {
+        "report_id": "RPT-2016",
+        "report_date": "2026-05-12",
+        "report_type": "OPG",
+        "modality": "Digital Panoramic Radiograph",
+        "clinical_indication": "Investigation of generalized tooth mobility and missing posterior teeth.",
+        "comparison": "No previous records.",
+        "technique": "Digital panoramic survey.",
+        "findings": [
+          {
+            "region": "Tooth 36 (Mandibular Left First Molar)",
+            "observation": "Severe vertical angular bone defect involving distal and furcation surfaces (Grade II furcation defect). Approximately 60% root bone loss.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Tooth 18 Region",
+            "observation": "Retained fractured residual root apex submerged in bone without sinus communication.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Missing Dentition",
+            "observation": "Absence of teeth 14, 24, 28, 46, and 48.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Stage III Periodontitis localized to tooth 36 with furcation involvement.",
+          "Retained root fragment tooth 18.",
+          "Partial edentulism."
+        ],
+        "recommendation": "Comprehensive periodontal therapy. Surgical retrieval of root fragment 18. Multidisciplinary implant/prosthodontic consult.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Amit Kumar | ID: PAT-1006 | EXAM: OPG (2026-05-12)\nFINDINGS: Panoramic evaluation reveals severe angular vertical bone loss surrounding tooth 36 with Grade II furcation involvement. Retained root fragment identified in the tooth 18 alveolar ridge. Multiple missing teeth noted.\nIMPRESSION: Localized advanced periodontitis tooth 36; retained root 18; partial edentulism.\nRECOMMENDATION: Periodontal consultation and extraction of residual root.",
+        "pdf_filename": "RPT-2016_Amit_Kumar_OPG.pdf"
+      },
+      {
+        "report_id": "RPT-2017",
+        "report_date": "2026-06-18",
+        "report_type": "IOPA Radiograph",
+        "modality": "Digital Intraoral Periapical",
+        "clinical_indication": "Focused examination of tooth 36 furcation and periapical area.",
+        "comparison": "Panoramic radiograph RPT-2016.",
+        "technique": "Long-cone paralleling periapical radiograph centered on tooth 36.",
+        "findings": [
+          {
+            "region": "Tooth 36 Roots & Furcation",
+            "observation": "Deep vertical infrabony pocket on distal root extending to apical third. Radiolucency in the interradicular bifurcation confirms furcation involvement.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Combined endo-perio lesion with Grade II furcation involvement on tooth 36."
+        ],
+        "recommendation": "Endodontic testing. Periodontal flap debridement vs extraction and replacement.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Amit Kumar | ID: PAT-1006 | EXAM: Periapical Radiograph (2026-06-18)\nFINDINGS: High-detail periapical view of tooth 36 shows deep angular bone loss on distal root reaching apical third. Furcation radiolucency present.\nIMPRESSION: Advanced localized periodontal bone loss tooth 36.\nRECOMMENDATION: Flap debridement or extraction.",
+        "pdf_filename": "RPT-2017_Amit_Kumar_IOPA_Radiograph.pdf"
+      },
+      {
+        "report_id": "RPT-2018",
+        "report_date": "2026-09-04",
+        "report_type": "Dental Examination",
+        "modality": "Clinical Periodontal Examination",
+        "clinical_indication": "Re-evaluation post deep root surface debridement.",
+        "comparison": "Periapical radiograph RPT-2017.",
+        "technique": "Periodontal probing depth and mobility measurement.",
+        "findings": [
+          {
+            "region": "Tooth 36 Periodontal Status",
+            "observation": "Probing depths reduced from 8mm to 5mm distally. Grade I mobility remains. Tissue inflammation significantly reduced.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Positive clinical response following non-surgical periodontal therapy."
+        ],
+        "recommendation": "Continue 3-month supportive periodontal therapy recall.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Amit Kumar | ID: PAT-1006 | EXAM: Periodontal Review (2026-09-04)\nFINDINGS: Clinical re-evaluation of tooth 36 reveals marked healing of pocket depths and reduced bleeding on probing. Stable periodontal condition.\nIMPRESSION: Improved periodontal stability.\nRECOMMENDATION: 3-month periodontal maintenance.",
+        "pdf_filename": "RPT-2018_Amit_Kumar_Dental_Examination.pdf"
+      }
+    ]
+  },
+  {
+    "patient_id": "PAT-1007",
+    "patient_name": "Sneha Reddy",
+    "date_of_birth": "2001-07-04",
+    "sex": "Female",
+    "record_number": "MRN-DEMO-1007",
+    "status": "active",
+    "reports": [
+      {
+        "report_id": "RPT-2019",
+        "report_date": "2026-05-18",
+        "report_type": "OPG",
+        "modality": "Digital Panoramic Radiograph",
+        "clinical_indication": "Comprehensive assessment for missing anterior teeth and impacted molars.",
+        "comparison": "None.",
+        "technique": "Digital panoramic survey.",
+        "findings": [
+          {
+            "region": "Maxillary Anterior Teeth (12 and 22)",
+            "observation": "Congenitally absent permanent maxillary lateral incisors (teeth 12 and 22). Deciduous teeth 52 and 62 retained with moderate root resorption.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Third Molars (28, 38, 48)",
+            "observation": "Teeth 28, 38, and 48 impacted in bone. Tooth 18 is absent.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Bilateral hypodontia (congenitally missing maxillary lateral incisors).",
+          "Multiple impacted third molars (28, 38, 48)."
+        ],
+        "recommendation": "Orthodontic and restorative multidisciplinary consultation for space opening/closure. Prophylactic monitoring of impacted third molars.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Sneha Reddy | ID: PAT-1007 | EXAM: OPG (2026-05-18)\nFINDINGS: Panoramic radiograph shows congenital absence of teeth 12 and 22. Retained primary teeth 52 and 62 demonstrate advanced root resorption. Impacted wisdom teeth 28, 38, 48 noted in jaws.\nIMPRESSION: Hypodontia: congenitally missing 12 and 22; multiple impacted molars.\nRECOMMENDATION: Orthodontic planning for space opening vs closure.",
+        "pdf_filename": "RPT-2019_Sneha_Reddy_OPG.pdf"
+      },
+      {
+        "report_id": "RPT-2020",
+        "report_date": "2026-06-25",
+        "report_type": "Cephalogram",
+        "modality": "Digital Lateral Cephalometric Radiograph",
+        "clinical_indication": "Orthodontic cephalometric tracing and skeletal diagnosis.",
+        "comparison": "OPG RPT-2019.",
+        "technique": "Standardized cephalometric exposure with ear rods and nasal positioner.",
+        "findings": [
+          {
+            "region": "Skeletal Relationships",
+            "observation": "ANB angle of 5.8 degrees (Class II skeletal pattern). Retrognathic mandible. High mandibular plane angle (FMA 29 degrees).",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Skeletal Class II malocclusion with retrognathic mandible and vertical growth tendency."
+        ],
+        "recommendation": "Comprehensive fixed orthodontic appliance therapy combined with restorative replacement of missing lateral incisors.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Sneha Reddy | ID: PAT-1007 | EXAM: Lateral Cephalogram (2026-06-25)\nFINDINGS: Cephalometric analysis indicates ANB angle of 5.8 degrees confirming skeletal Class II relationship with mandibular retrognathia. Upper incisors slightly retroclined.\nIMPRESSION: Skeletal Class II division 1 malocclusion.\nRECOMMENDATION: Comprehensive fixed mechanotherapy.",
+        "pdf_filename": "RPT-2020_Sneha_Reddy_Cephalogram.pdf"
+      },
+      {
+        "report_id": "RPT-2021",
+        "report_date": "2026-09-10",
+        "report_type": "Dental Examination",
+        "modality": "Clinical Orthodontic Consultation",
+        "clinical_indication": "Discussion of orthodontic treatment objectives and consent.",
+        "comparison": "Cephalometric study RPT-2020.",
+        "technique": "Facial aesthetics and profile evaluation; study model analysis.",
+        "findings": [
+          {
+            "region": "Facial Profile & Aesthetics",
+            "observation": "Convex facial profile with retrognathic chin. Retained primary teeth 52 and 62 have Grade I mobility.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Agreed treatment plan: Extraction of primary teeth 52/62, fixed appliance therapy, and resin-bonded bridges for missing teeth 12/22."
+        ],
+        "recommendation": "Schedule bonding and extraction appointments.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Sneha Reddy | ID: PAT-1007 | EXAM: Orthodontic Consultation (2026-09-10)\nFINDINGS: Treatment options discussed with patient. Plan confirmed to preserve space for bilateral lateral incisor implants/bridges following alignment.\nIMPRESSION: Treatment plan agreed.\nRECOMMENDATION: Initiate fixed appliance therapy.",
+        "pdf_filename": "RPT-2021_Sneha_Reddy_Dental_Examination.pdf"
+      }
+    ]
+  },
+  {
+    "patient_id": "PAT-1008",
+    "patient_name": "Ananya Iyer",
+    "date_of_birth": "1997-09-15",
+    "sex": "Female",
+    "record_number": "MRN-DEMO-1008",
+    "status": "active",
+    "reports": [
+      {
+        "report_id": "RPT-2022",
+        "report_date": "2026-05-22",
+        "report_type": "OPG",
+        "modality": "Digital Panoramic Radiograph",
+        "clinical_indication": "Annual routine dental survey.",
+        "comparison": "None.",
+        "technique": "Standard panoramic acquisition.",
+        "findings": [
+          {
+            "region": "Dentition Survey",
+            "observation": "Absence of teeth 15, 28, and 48. Remaining dentition healthy without obvious bony pathology.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Stable adult dentition with minor missing teeth."
+        ],
+        "recommendation": "Routine dental checkups.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Ananya Iyer | ID: PAT-1008 | EXAM: OPG (2026-05-22)\nFINDINGS: Panoramic overview shows absence of teeth 15, 28, and 48. Cortical bone and alveolar margins are intact. Maxillary sinuses clear.\nIMPRESSION: Unremarkable dental radiograph.\nRECOMMENDATION: Routine recall.",
+        "pdf_filename": "RPT-2022_Ananya_Iyer_OPG.pdf"
+      },
+      {
+        "report_id": "RPT-2023",
+        "report_date": "2026-07-14",
+        "report_type": "Bitewing Radiographs",
+        "modality": "Digital Posterior Bitewings",
+        "clinical_indication": "Caries screening.",
+        "comparison": "OPG RPT-2022.",
+        "technique": "Posterior bitewings.",
+        "findings": [
+          {
+            "region": "Interproximal Surfaces",
+            "observation": "No interproximal enamel or dentin radiolucencies detected.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "No active interproximal dental caries."
+        ],
+        "recommendation": "Maintain oral hygiene.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Ananya Iyer | ID: PAT-1008 | EXAM: Bitewings (2026-07-14)\nFINDINGS: Interproximal surfaces clear of decay. Crestal bone levels stable.\nIMPRESSION: Healthy dentition.\nRECOMMENDATION: Regular review.",
+        "pdf_filename": "RPT-2023_Ananya_Iyer_Bitewing_Radiographs.pdf"
+      },
+      {
+        "report_id": "RPT-2024",
+        "report_date": "2026-09-30",
+        "report_type": "Dental Examination",
+        "modality": "Clinical Intraoral Examination",
+        "clinical_indication": "Routine preventive review.",
+        "comparison": "Bitewings RPT-2023.",
+        "technique": "Clinical dental charting.",
+        "findings": [
+          {
+            "region": "Soft & Hard Tissues",
+            "observation": "Gingival tissues stippled and pink. No carious lesions detected.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Good oral health."
+        ],
+        "recommendation": "Recall in 12 months.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Ananya Iyer | ID: PAT-1008 | EXAM: Dental Examination (2026-09-30)\nFINDINGS: Clinical examination confirms excellent oral hygiene, absence of carious lesions, and healthy periodontium.\nIMPRESSION: Stable oral health.\nRECOMMENDATION: Recall in 12 months.",
+        "pdf_filename": "RPT-2024_Ananya_Iyer_Dental_Examination.pdf"
+      }
+    ]
+  },
+  {
+    "patient_id": "PAT-1009",
+    "patient_name": "Vikram Malhotra",
+    "date_of_birth": "1983-02-22",
+    "sex": "Male",
+    "record_number": "MRN-DEMO-1009",
+    "status": "active",
+    "reports": [
+      {
+        "report_id": "RPT-2025",
+        "report_date": "2026-05-28",
+        "report_type": "OPG",
+        "modality": "Digital Panoramic Radiograph",
+        "clinical_indication": "Pre-surgical implant and third molar assessment.",
+        "comparison": "None.",
+        "technique": "Digital panoramic survey.",
+        "findings": [
+          {
+            "region": "Tooth 48",
+            "observation": "Mesioangular impaction of tooth 48 with roots intimately related to inferior alveolar nerve.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Edentulous Sites 14, 15",
+            "observation": "Severe vertical alveolar ridge atrophy in upper right quadrant.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Impacted tooth 48.",
+          "Maxillary ridge resorption requiring bone augmentation prior to implants."
+        ],
+        "recommendation": "CBCT scan recommended for implant planning and nerve tracing.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Vikram Malhotra | ID: PAT-1009 | EXAM: OPG (2026-05-28)\nFINDINGS: Tooth 48 is mesioangularly impacted near the mandibular canal. Right maxillary edentulous spaces show reduced vertical bone height.\nIMPRESSION: Impacted 48; ridge atrophy 14/15.\nRECOMMENDATION: CBCT evaluation indicated.",
+        "pdf_filename": "RPT-2025_Vikram_Malhotra_OPG.pdf"
+      },
+      {
+        "report_id": "RPT-2026",
+        "report_date": "2026-06-15",
+        "report_type": "CBCT",
+        "modality": "Cone Beam Computed Tomography (3D)",
+        "clinical_indication": "3D nerve canal tracing for tooth 48 and sinus graft planning.",
+        "comparison": "OPG RPT-2025.",
+        "technique": "Limited field-of-view (8x8 cm) high-resolution 3D scan.",
+        "findings": [
+          {
+            "region": "Mandibular Canal & Tooth 48",
+            "observation": "3D cross-sectional reconstruction reveals inferior alveolar nerve canal running in direct contact with the lingual aspect of tooth 48 root apex with absence of intervening cortical bone.",
+            "certainty": "Confirmed - 3D Verified"
+          },
+          {
+            "region": "Maxillary Sinus Floor (Quadrant 1)",
+            "observation": "Residual alveolar ridge height at site 15 is 3.5 mm beneath sinus floor.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "High surgical risk for nerve injury with complete tooth 48 extraction; coronectomy advised.",
+          "Subantral bone height requires sinus lift augmentation for implant placement."
+        ],
+        "recommendation": "Perform coronectomy for tooth 48. Plan lateral window sinus augmentation at sites 14-15.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Vikram Malhotra | ID: PAT-1009 | EXAM: CBCT 3D (2026-06-15)\nFINDINGS: Volumetric multiplanar reconstructions confirm direct intimate contact between the lingual root surface of tooth 48 and the mandibular nerve canal with localized loss of the canal cortical boundary. Subantral ridge height at 15 measures 3.5 mm.\nIMPRESSION: High-risk surgical anatomy tooth 48; sinus floor proximity site 15.\nRECOMMENDATION: Coronectomy advised for tooth 48 to protect the nerve. Sinus floor elevation required for implant therapy.",
+        "pdf_filename": "RPT-2026_Vikram_Malhotra_CBCT.pdf"
+      },
+      {
+        "report_id": "RPT-2027",
+        "report_date": "2026-09-02",
+        "report_type": "Dental Examination",
+        "modality": "Surgical Follow-up Examination",
+        "clinical_indication": "Post-coronectomy healing review tooth 48.",
+        "comparison": "CBCT RPT-2026.",
+        "technique": "Clinical neurosensory testing and soft-tissue evaluation.",
+        "findings": [
+          {
+            "region": "Right Inferior Alveolar Nerve Sensation",
+            "observation": "Two-point discrimination and light touch sensation intact over right lower lip and chin. No paresthesia or altered sensation.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Surgical Site Tooth 48",
+            "observation": "Mucosa completely healed over retained root fragments. No root exposure or mobility.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Uneventful post-coronectomy healing with 100% preservation of inferior alveolar nerve function."
+        ],
+        "recommendation": "Proceed with planned maxillary sinus bone grafting.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Vikram Malhotra | ID: PAT-1009 | EXAM: Post-Surgical Review (2026-09-02)\nFINDINGS: Surgical site tooth 48 well-healed without complication. Thorough neurosensory testing confirms intact sensation in right mental nerve distribution.\nIMPRESSION: Successful coronectomy without neurological deficit.\nRECOMMENDATION: Proceed to implant augmentation phase.",
+        "pdf_filename": "RPT-2027_Vikram_Malhotra_Dental_Examination.pdf"
+      }
+    ]
+  },
+  {
+    "patient_id": "PAT-1010",
+    "patient_name": "Priya Nair",
+    "date_of_birth": "1999-05-26",
+    "sex": "Female",
+    "record_number": "MRN-DEMO-1010",
+    "status": "active",
+    "reports": [
+      {
+        "report_id": "RPT-2028",
+        "report_date": "2026-09-20",
+        "report_type": "OPG",
+        "modality": "Digital Panoramic Radiograph",
+        "clinical_indication": "Evaluation of third-molar eruption and lower right gingival pain.",
+        "comparison": "None.",
+        "technique": "Digital panoramic survey.",
+        "findings": [
+          {
+            "region": "Tooth 48",
+            "observation": "Partially erupted tooth 48 with mild distal bone troughing and pericoronal radiolucency.",
+            "certainty": "Confirmed"
+          },
+          {
+            "region": "Dentition Survey",
+            "observation": "All remaining permanent teeth present and intact with no gross decay.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Partially erupted tooth 48 with signs of localized pericoronitis."
+        ],
+        "recommendation": "Clinical review and operculectomy vs extraction.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Priya Nair | ID: PAT-1010 | EXAM: OPG (2026-09-20)\nFINDINGS: Tooth 48 is partially erupted with localized pericoronal radiolucency. Rest of dentition within normal limits.\nIMPRESSION: Partially erupted tooth 48.\nRECOMMENDATION: Clinical examination and management.",
+        "pdf_filename": "RPT-2028_Priya_Nair_OPG.pdf"
+      },
+      {
+        "report_id": "RPT-2029",
+        "report_date": "2026-09-22",
+        "report_type": "Dental Examination",
+        "modality": "Clinical Intraoral Examination",
+        "clinical_indication": "Assessment of localized gum discomfort around tooth 48.",
+        "comparison": "OPG RPT-2028.",
+        "technique": "Intraoral inspection and periodontal probing.",
+        "findings": [
+          {
+            "region": "Tooth 48 Operculum",
+            "observation": "Tender, swollen opercular tissue covering disto-occlusal surface of tooth 48. Food impaction noted under flap.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "Mild acute pericoronitis tooth 48."
+        ],
+        "recommendation": "Debridement and antiseptic irrigation. Operculectomy or extraction advised.",
+        "report_status": "Draft",
+        "report_text": "PATIENT: Priya Nair | ID: PAT-1010 | EXAM: Dental Examination (2026-09-22)\nFINDINGS: Clinical evaluation demonstrates inflamed, tender pericoronal tissue over tooth 48 with debris stagnation.\nIMPRESSION: Localized pericoronitis tooth 48.\nRECOMMENDATION: Irrigation and hygiene review.",
+        "pdf_filename": "RPT-2029_Priya_Nair_Dental_Examination.pdf"
+      },
+      {
+        "report_id": "RPT-2030",
+        "report_date": "2026-09-25",
+        "report_type": "Periapical Radiograph",
+        "modality": "Digital Intraoral Periapical",
+        "clinical_indication": "Detailed assessment of tooth 47 and 48 interproximal contact.",
+        "comparison": "OPG RPT-2028.",
+        "technique": "Paralleling periapical projection.",
+        "findings": [
+          {
+            "region": "Tooth 47 & 48 Contact",
+            "observation": "Intact enamel surface on distal of tooth 47. No caries or resorption. Alveolar bone height preserved.",
+            "certainty": "Confirmed"
+          }
+        ],
+        "impression": [
+          "No collateral pathology or carious breakdown on adjacent second molar 47."
+        ],
+        "recommendation": "Surgical removal of tooth 48 can proceed safely.",
+        "report_status": "Final",
+        "report_text": "PATIENT: Priya Nair | ID: PAT-1010 | EXAM: Periapical Radiograph (2026-09-25)\nFINDINGS: High-definition periapical image confirms distal contour of tooth 47 is intact without carous defect or resorption.\nIMPRESSION: Healthy tooth 47.\nRECOMMENDATION: Third molar removal recommended.",
+        "pdf_filename": "RPT-2030_Priya_Nair_Periapical_Radiograph.pdf"
+      }
+    ]
+  }
+]
