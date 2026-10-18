@@ -120,14 +120,22 @@ The application strictly decouples probabilistic intelligence from deterministic
 - By utilizing a **local LLM (Ollama / Llama-3.1 / Qwen-2.5)** or a zero-dependency deterministic engine, **zero PHI leaves the clinical workstation or local hospital intranet**.
 - No external cloud API calls are required for daily operation.
 
-#### B. Latency & Real-Time Clinician Experience
-- The deterministic parsing and retrieval rules execute in **< 10 milliseconds**.
-- Local quantized LLM inference (4-bit/8-bit Qwen-2.5 or Llama-3.1 on Apple Silicon / modern GPUs) responds in **< 1.2 seconds**, well within acceptable bounds for conversational clinical assistants.
+#### B. Authorization & Access Control (RBAC)
+- Enforces Role-Based Access Control (RBAC) across three clinical privilege tiers:
+  1. **Attending Radiologist / Dentist:** Full access to view scans, perform grounded Q&A, dictate findings, and digitally sign off on draft reports.
+  2. **Dental Assistant / Hygienist:** Access to open patient reports and record dictation drafts; restricted from final report sign-off.
+  3. **Audit Administrator:** Read-only access to system access logs, tool invocation traces, and safety verification reports.
+- All report retrievals and dictation sign-offs are logged with clinician identity and workstation session ID.
 
-#### C. Operational Cost
-- Zero per-token cloud API costs.
+#### C. Latency & Real-Time Clinician Experience
+- The deterministic MCP tools and business validation rules execute in **< 10 milliseconds**.
+- Local quantized LLM inference (Llama-3.1 on Apple Silicon / modern GPUs) responds in **< 1.2 seconds**, well within acceptable bounds for conversational clinical assistants.
+
+#### D. Model & Tool Operational Costs
+- **Zero Marginal API Cost:** Local self-hosted Ollama deployment eliminates per-token API charges (saving thousands of dollars per clinic annually compared to cloud-based LLM APIs).
 - Operates entirely on commodity clinical hardware (macOS / Linux / Windows workstations).
 
-#### D. Failure Handling & Resilience
-- If the local Ollama daemon is offline or starting up, the system automatically degrades to its deterministic rule engine with zero downtime and 100% test pass fidelity.
-- If an ambiguous patient name is dictated, the system avoids cognitive slips by refusing to open an arbitrary file, preventing catastrophic misattribution of diagnostic imaging.
+#### E. Failure Handling & Input Validation
+- **Pydantic v2 Schema Enforcement:** Every LLM response is validated against strict Pydantic schemas before execution.
+- **Graceful Fallback:** If the local Ollama daemon is offline or starting up, the system automatically degrades to its deterministic clinical engine with zero downtime and 100% test pass fidelity.
+- **Safety Disambiguation Gate:** If an ambiguous patient name is dictated, the system avoids cognitive slips by refusing to open an arbitrary file, preventing catastrophic misattribution of diagnostic imaging.

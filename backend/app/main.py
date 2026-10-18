@@ -142,32 +142,6 @@ def get_dashboard_ui():
             <!-- Left 6 Columns: Interactive Chat & Fast Test Buttons -->
             <div class="lg:col-span-6 flex flex-col space-y-4">
                 
-                <!-- Dynamic Patient Directory & Clinical Actions Bar -->
-                <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-3.5 shadow-sm space-y-2.5">
-                    <div class="flex flex-wrap items-center justify-between gap-2">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center">
-                            <i class="fa-solid fa-users-medical mr-1.5 text-blue-400"></i> Clinic Patient Directory:
-                        </label>
-                        <span class="text-[10px] text-slate-400">Select any patient to query dynamically</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <select id="patientDirectorySelect" class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 text-xs rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                            <option value="Priya Sharma">Priya Sharma (PAT-1001 • DOB: 1998-04-12)</option>
-                            <option value="Priya Sharmila">Priya Sharmila (PAT-1002 • DOB: 1996-09-23)</option>
-                            <option value="Rahul Verma">Rahul Verma (PAT-1003 • DOB: 1978-11-05)</option>
-                            <option value="Ananya Patel">Ananya Patel (PAT-1004 • DOB: 1985-02-14)</option>
-                            <option value="Arjun Mehta">Arjun Mehta (PAT-1005 • DOB: 1992-06-30)</option>
-                            <option value="Amit Kumar">Amit Kumar (PAT-1006 • DOB: 1980-08-19)</option>
-                            <option value="Sneha Reddy">Sneha Reddy (PAT-1007 • DOB: 1994-03-25)</option>
-                            <option value="Ananya Iyer">Ananya Iyer (PAT-1008 • DOB: 1991-10-10)</option>
-                            <option value="Vikram Malhotra">Vikram Malhotra (PAT-1009 • DOB: 1983-05-30)</option>
-                            <option value="Priya Nair">Priya Nair (PAT-1010 • DOB: 1999-05-26)</option>
-                        </select>
-                        <button onclick="triggerSelectedPatientRetrieval()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition flex items-center shadow-md">
-                            <i class="fa-solid fa-folder-open mr-1.5"></i> Open Scan
-                        </button>
-                    </div>
-                </div>
 
                 <!-- Chat Messages Terminal Card -->
                 <div class="bg-slate-800 border border-slate-700 rounded-2xl shadow-lg flex flex-col h-[520px]">
@@ -439,11 +413,6 @@ def get_dashboard_ui():
             document.getElementById(`tabBtn-${tabId}`).className = "px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 border-blue-500 text-blue-400 flex items-center transition";
         }
 
-        function triggerSelectedPatientRetrieval() {
-            const sel = document.getElementById("patientDirectorySelect");
-            const name = sel ? sel.value : "Priya Sharma";
-            sendChat(`Open ${name}'s latest report`);
-        }
 
         async function sendChat(customQuery = null) {
             const input = document.getElementById("chatInput");
