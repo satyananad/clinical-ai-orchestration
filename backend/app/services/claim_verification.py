@@ -57,15 +57,22 @@ CLINICAL_RELEVANCE_PATTERNS = [
     r"\b(?:cbct|cone\s+beam|opg|orthopantomogram|panoramic(?:\s+radiograph|\s+image|\s+scan)?|bitewing|periapical(?:\s+radiograph|\s+film|\s+view)?|iopa|cephalogram|radiograph\w*|field\s+of\s+view|voxel)\b"
 ]
 
+META_SOFTWARE_PATTERNS = [
+    r"\b(?:implement\s+(?:the\s+)?(?:clinical\s+)?dictation|inspect\s+(?:the\s+)?existing\s+code|existing\s+(?:code|codebase|pipeline)|automated\s+tests?|schema\s+and\s+clinical\s+validation|use\s+the\s+llm|hard-coded\s+phrases|unit\s+tests?|pull\s+request|github|software|framework|programming|developer|langchain|langgraph)\b"
+]
+
 def is_clinically_relevant_dictation(text: str) -> bool:
     """
     Evaluates whether an input transcript contains genuine dental, maxillofacial,
     or radiological clinical content. Rejects generic technical discussions,
-    software documentation, non-medical chit-chat, and conversational prompts.
+    software documentation, coding prompt instructions, and non-medical chit-chat.
     """
     if not text or len(text.strip()) < 4:
         return False
     t_lower = text.lower()
+    # Reject prompt instructions and coding meta-text
+    if any(re.search(pat, t_lower, re.IGNORECASE) for pat in META_SOFTWARE_PATTERNS):
+        return False
     for pat in CLINICAL_RELEVANCE_PATTERNS:
         if re.search(pat, t_lower, re.IGNORECASE):
             return True

@@ -840,11 +840,19 @@ def get_dashboard_ui():
 
                 document.getElementById("dictationOutputContainer").classList.remove("hidden");
                 document.getElementById("jsonOutput").innerText = JSON.stringify(data, null, 2);
-                document.getElementById("narrativeOutput").innerText = data.narrative_draft;
+                document.getElementById("narrativeOutput").innerText = data.narrative_draft || (data.report_metadata && data.report_metadata.extraction_status === "NON_CLINICAL_INPUT_REJECTED" ? "ATTENTION: Non-clinical or instructional text detected. Please dictate or enter actual dental/maxillofacial radiological findings." : "No narrative generated.");
 
                 // Render Findings Badges
                 let badgesHtml = "";
-                if (data.anatomical_sites) {
+                if (data.report_metadata && data.report_metadata.extraction_status === "NON_CLINICAL_INPUT_REJECTED") {
+                    badgesHtml += `
+                        <div class="w-full p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs flex items-center">
+                            <i class="fa-solid fa-triangle-exclamation mr-2 text-sm"></i>
+                            <span><strong>Non-Clinical Text Detected:</strong> Input contains software development notes or prompt instructions. No clinical dental findings were extracted.</span>
+                        </div>
+                    `;
+                }
+                if (data.anatomical_sites && data.anatomical_sites.length > 0) {
                     data.anatomical_sites.forEach(s => {
                         badgesHtml += `
                             <span class="inline-flex items-center text-xs bg-sky-500/20 border border-sky-500/40 text-sky-300 px-2.5 py-1 rounded-lg">
