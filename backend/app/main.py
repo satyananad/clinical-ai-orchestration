@@ -151,40 +151,20 @@ def get_dashboard_ui():
                         <span class="text-[10px] text-slate-400">Select any patient to query dynamically</span>
                     </div>
                     <div class="flex items-center gap-2">
-                        <select id="patientDirectorySelect" class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                        <select id="patientDirectorySelect" class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 text-xs rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none">
                             <option value="Priya Sharma">Priya Sharma (PAT-1001 • DOB: 1998-04-12)</option>
-                            <option value="John Smith">John Smith (PAT-1002 • DOB: 1985-04-12)</option>
-                            <option value="John Smith">John Smith (PAT-1003 • DOB: 1992-11-20)</option>
-                            <option value="Aarav Mehta">Aarav Mehta (PAT-1004 • DOB: 1979-09-03)</option>
-                            <option value="Fatima Al-Mansoor">Fatima Al-Mansoor (PAT-1005 • DOB: 1995-02-18)</option>
-                            <option value="Marcus Vance">Marcus Vance (PAT-1006 • DOB: 1968-11-05)</option>
-                            <option value="Ananya Deshmukh">Ananya Deshmukh (PAT-1007 • DOB: 2001-07-22)</option>
-                            <option value="Vikram Malhotra">Vikram Malhotra (PAT-1008 • DOB: 1983-05-30)</option>
-                            <option value="Elena Rostova">Elena Rostova (PAT-1009 • DOB: 1990-12-14)</option>
-                            <option value="Kavita Reddy">Kavita Reddy (PAT-1010 • DOB: 1974-08-27)</option>
+                            <option value="Priya Sharmila">Priya Sharmila (PAT-1002 • DOB: 1996-09-23)</option>
+                            <option value="Rahul Verma">Rahul Verma (PAT-1003 • DOB: 1978-11-05)</option>
+                            <option value="Ananya Patel">Ananya Patel (PAT-1004 • DOB: 1985-02-14)</option>
+                            <option value="Arjun Mehta">Arjun Mehta (PAT-1005 • DOB: 1992-06-30)</option>
+                            <option value="Amit Kumar">Amit Kumar (PAT-1006 • DOB: 1980-08-19)</option>
+                            <option value="Sneha Reddy">Sneha Reddy (PAT-1007 • DOB: 1994-03-25)</option>
+                            <option value="Ananya Iyer">Ananya Iyer (PAT-1008 • DOB: 1991-10-10)</option>
+                            <option value="Vikram Malhotra">Vikram Malhotra (PAT-1009 • DOB: 1983-05-30)</option>
+                            <option value="Priya Nair">Priya Nair (PAT-1010 • DOB: 1999-05-26)</option>
                         </select>
-                        <button onclick="triggerSelectedPatientRetrieval()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-2 rounded-xl transition flex items-center shadow-md">
+                        <button onclick="triggerSelectedPatientRetrieval()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition flex items-center shadow-md">
                             <i class="fa-solid fa-folder-open mr-1.5"></i> Open Scan
-                        </button>
-                    </div>
-
-                    <!-- Quick Dynamic Clinical Actions -->
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1">
-                        <button onclick="triggerAction('opg')" class="text-left text-[11px] bg-slate-700/60 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-lg p-2 transition">
-                            <span class="font-bold block text-[10px] text-blue-400"><i class="fa-solid fa-tooth mr-1"></i> Latest OPG</span>
-                            Fetch Panoramic
-                        </button>
-                        <button onclick="triggerAction('cbct')" class="text-left text-[11px] bg-slate-700/60 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-lg p-2 transition">
-                            <span class="font-bold block text-[10px] text-indigo-400"><i class="fa-solid fa-cube mr-1"></i> Latest CBCT</span>
-                            Fetch 3D Scan
-                        </button>
-                        <button onclick="runSamplePrompt('Open John Smith\'s latest report')" class="text-left text-[11px] bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg p-2 transition">
-                            <span class="font-bold block text-[10px] text-amber-400"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Ambiguity Stop</span>
-                            Test Rule 1 (2 Patients)
-                        </button>
-                        <button onclick="triggerAction('summarize')" class="text-left text-[11px] bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg p-2 transition">
-                            <span class="font-bold block text-[10px] text-emerald-400"><i class="fa-solid fa-arrows-spin mr-1"></i> Summarize</span>
-                            Feature C Follow-up
                         </button>
                     </div>
                 </div>
@@ -301,20 +281,7 @@ def get_dashboard_ui():
                               class="w-full text-xs bg-slate-900 border border-slate-700 text-slate-100 rounded-xl p-3.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                               placeholder="e.g. Lower right third molar is horizontally impacted with roots approximating the canal. UR5 shows apical radiolucency 8 by 7 mm."></textarea>
                     
-                    <!-- Pre-Built Audio Dictation Templates -->
-                    <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
-                        <div class="flex flex-wrap items-center gap-1.5">
-                            <span class="text-[11px] text-slate-400 mr-1">Clinical Templates:</span>
-                            <button onclick="insertSampleDictation(1)" class="text-[11px] bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg transition border border-slate-600">
-                                📋 Mandibular Molar Impaction
-                            </button>
-                            <button onclick="insertSampleDictation(2)" class="text-[11px] bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg transition border border-slate-600">
-                                📋 Maxillary Premolar (UR5, UR4)
-                            </button>
-                            <button onclick="insertSampleDictation(3)" class="text-[11px] bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg transition border border-slate-600">
-                                📋 Universal Notation #29 & TMJ
-                            </button>
-                        </div>
+                    <div class="flex items-center justify-end pt-2">
                         <button onclick="processDictation()" id="synthesizeBtn" class="text-xs bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-emerald-600/30 transition flex items-center">
                             <i class="fa-solid fa-wand-magic-sparkles mr-2 text-sm"></i> Synthesize Structured Report & Generate PDF
                         </button>
@@ -472,27 +439,10 @@ def get_dashboard_ui():
             document.getElementById(`tabBtn-${tabId}`).className = "px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 border-blue-500 text-blue-400 flex items-center transition";
         }
 
-        function runSamplePrompt(text) {
-            document.getElementById('chatInput').value = text;
-            sendChat();
-        }
-
         function triggerSelectedPatientRetrieval() {
             const sel = document.getElementById("patientDirectorySelect");
             const name = sel ? sel.value : "Priya Sharma";
-            runSamplePrompt(`Open ${name}'s latest report`);
-        }
-
-        function triggerAction(actionType) {
-            const sel = document.getElementById("patientDirectorySelect");
-            const name = sel ? sel.value : "Priya Sharma";
-            if (actionType === 'opg') {
-                runSamplePrompt(`Open ${name}'s latest OPG report`);
-            } else if (actionType === 'cbct') {
-                runSamplePrompt(`Open ${name}'s latest CBCT report`);
-            } else if (actionType === 'summarize') {
-                runSamplePrompt(`Summarize her report`);
-            }
+            sendChat(`Open ${name}'s latest report`);
         }
 
         async function sendChat(customQuery = null) {
@@ -710,17 +660,6 @@ def get_dashboard_ui():
                 alert("Error structuring dictation.");
             } finally {
                 btn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles mr-2 text-sm"></i> Synthesize Structured Report & Generate PDF`;
-            }
-        }
-
-        function insertSampleDictation(type) {
-            const input = document.getElementById("dictationInput");
-            if (type === 1) {
-                input.value = "Lower right third molar is horizontally impacted with roots approximating the inferior alveolar nerve canal. Mild pericoronal radiolucency noted around the crown.";
-            } else if (type === 2) {
-                input.value = "UR5 is root treated with a unilocular well defined apical radiolucency 8 by 7 by 6 mm. UR4 is root treated with an apical radiolucency 1 to 2 mm wide. Distal to UR8 is an unerupted supernumerary tooth with an enlarged follicle space, possibly a dentigerous cyst.";
-            } else if (type === 3) {
-                input.value = "Tooth #29 shows apical rarefying and sclerosing osteitis. TMJs show bilateral condylar flattening consistent with degenerative joint changes. Left palatine tonsillolith noted incidentally.";
             }
         }
 

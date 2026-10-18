@@ -89,6 +89,10 @@ def get_patient_reports(patient_id: str, modality: Optional[str] = None) -> List
     reports = patient.get("reports", [])
     if modality and modality.upper() != "ANY":
         mod_upper = modality.upper()
+        if mod_upper in ["PANORAMIC", "ORTHOPANTOMOGRAM"]:
+            mod_upper = "OPG"
+        elif mod_upper in ["CONE BEAM", "3D", "3D VOLUME"]:
+            mod_upper = "CBCT"
         reports = [r for r in reports if mod_upper in r["report_type"].upper()]
     enriched = [dict(r, patient_id=patient["patient_id"]) for r in reports]
     return sorted(enriched, key=lambda x: x["report_date"], reverse=True)

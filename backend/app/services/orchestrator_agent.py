@@ -46,78 +46,22 @@ Output strictly a JSON object with this format:
 def triage_clinician_request(query: str, session_id: str = "default_session") -> Dict[str, Any]:
     """
     Decides which specialized agent and MCP tool to invoke.
-    Combines conversational state, LLM intent classification, and clinical safety routing.
+    Primary: LLM Dynamic Multi-Agent Triage using full conversational context.
+    Secondary: Safety fallback if LLM service is offline.
     """
     session = get_or_create_session(session_id)
     q_lower = query.lower().strip()
 
-    # Priority 0: Disambiguation or speech correction of a pending retrieval
-    repair_match = re.search(r"not\s+([a-zA-Z0-9_-]+)\s+(?:i am saying|i meant|i said|saying|mean)\s+([a-zA-Z0-9_-]+)", q_lower)
-    if repair_match and session.last_retrieval_query:
-        wrong = repair_match.group(1)
-        correct = repair_match.group(2)
-        fixed_query = re.sub(r"\b" + re.escape(wrong) + r"\b", correct, session.last_retrieval_query, flags=re.IGNORECASE)
-        return {
-            "selected_agent": "RetrievalAgent",
-            "tool_name": "search_patient_reports",
-            "arguments": {
-                "patient_name": fixed_query,
-                "modality": "Any",
-                "corrected_query": fixed_query
-            },
-            "rationale": f"Speech correction: replaced '{wrong}' with '{correct}' from previous retrieval."
-        }
-
-    # If system is actively waiting for patient disambiguation
-    if session.pending_candidates:
-        ordinal_map = {"first": 0, "1st": 0, "1": 0, "second": 1, "2nd": 1, "2": 1, "third": 2, "3rd": 2, "3": 2}
-        for ord_word, idx in ordinal_map.items():
-            if re.search(r"\b" + re.escape(ord_word) + r"\b", q_lower) and idx < len(session.pending_candidates):
-                chosen = session.pending_candidates[idx]
-                return {
-                    "selected_agent": "RetrievalAgent",
-                    "tool_name": "search_patient_reports",
-                    "arguments": {
-                        "patient_name": chosen["patient_name"],
-                        "patient_id": chosen["patient_id"],
-                        "modality": session.last_retrieval_modality or "Any"
-                    },
-                    "rationale": f"Disambiguation resolved by ordinal selection: {chosen['patient_name']} ({chosen['patient_id']})."
-                }
-
-        for cand in session.pending_candidates:
-            c_name = cand["patient_name"].lower()
-            c_id = cand["patient_id"].lower()
-            c_last = c_name.split()[-1] if len(c_name.split()) > 1 else ""
-            if c_name in q_lower or c_id in q_lower or (c_last and re.search(r"\b" + re.escape(c_last) + r"\b", q_lower)):
-                return {
-                    "selected_agent": "RetrievalAgent",
-                    "tool_name": "search_patient_reports",
-                    "arguments": {
-                        "patient_name": cand["patient_name"],
-                        "patient_id": cand["patient_id"],
-                        "modality": session.last_retrieval_modality or "Any"
-                    },
-                    "rationale": f"Disambiguation resolved: matched {cand['patient_name']} ({cand['patient_id']})."
-                }
-
-    # Contextual Follow-up on Active Report -> Consultation Agent
-    if is_contextual_query(q_lower, has_active_report=bool(session.active_report_id)):
-        return {
-            "selected_agent": "ConsultationAgent",
-            "tool_name": "summarize_active_report",
-            "arguments": {
-                "report_id": session.active_report_id or "unselected",
-                "query": query
-            },
-            "rationale": "Detected contextual pronoun or report inquiry targeting active report."
-        }
-
-    # Step 1: LLM Dynamic Triage (Primary AI Agent Decision)
-    llm_context = f"Clinician Input: \"{query}\"\nActive Session Report: {session.active_report_id or 'None'}"
+    # Step 1: LLM Dynamic Triage (Primary AI Agent Decision with Conversational Memory)
+    llm_context = f"Clinician Input: \"{query}\"\nActive Session Report: {session.active_report_id or 'None'}\nActive Patient: {session.active_patient_id or 'None'}"
     if session.pending_candidates:
         c_names = ", ".join(f"{c['patient_name']} ({c['patient_id']})" for c in session.pending_candidates)
         llm_context += f"\nPending Clarification Candidates: {c_names}"
+    if session.last_retrieval_query:
+        llm_context += f"\nPrevious Retrieval Attempt: \"{session.last_retrieval_query}\""
+    if session.history:
+        recent = session.history[-3:]
+        llm_context += "\nRecent Conversation History:\n" + "\n".join(f"- User: {h.get('user')}\n  Assistant: {h.get('assistant')[:120]}..." for h in recent)
 
     llm_triage_raw = query_ollama(
         llm_context,
@@ -127,7 +71,8 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
     if llm_triage_raw:
         try:
             parsed = json.loads(llm_triage_raw)
-            if "tool_name" in parsed and parsed["tool_name"] in [
+            tool_name = parsed.get("tool_name")
+            if tool_name in [
                 "search_patient_reports", 
                 "structure_clinical_dictation", 
                 "summarize_active_report",
@@ -135,11 +80,65 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             ]:
                 if "arguments" not in parsed or not isinstance(parsed["arguments"], dict):
                     parsed["arguments"] = {}
+                
+                # Standardize agent assignment based on tool
+                agent_map = {
+                    "search_patient_reports": "RetrievalAgent",
+                    "structure_clinical_dictation": "ClinicalScribeAgent",
+                    "summarize_active_report": "ConsultationAgent",
+                    "general_query": "GeneralAssistantAgent"
+                }
+                parsed["selected_agent"] = agent_map[tool_name]
                 return parsed
         except Exception:
             pass
 
-    # Step 2: Fallback deterministic routing if LLM service is unavailable
+    # Step 2: Fallback routing (Only active when local LLM is offline)
+    # Speech repair check on prior search
+    if session.last_retrieval_query and any(w in q_lower for w in ["not", "saying", "meant"]):
+        for part in q_lower.split():
+            if part in ["panoramic", "opg", "cbct", "bitewing", "periapical"]:
+                mod = "OPG" if part in ["panoramic", "opg"] else ("CBCT" if part == "cbct" else part.capitalize())
+                return {
+                    "selected_agent": "RetrievalAgent",
+                    "tool_name": "search_patient_reports",
+                    "arguments": {
+                        "patient_name": session.last_retrieval_query,
+                        "modality": mod
+                    },
+                    "rationale": "Fallback: Speech repair targeting previous retrieval."
+                }
+
+    # Disambiguation candidate selection
+    if session.pending_candidates:
+        for cand in session.pending_candidates:
+            c_name = cand["patient_name"].lower()
+            c_id = cand["patient_id"].lower()
+            if c_name in q_lower or c_id in q_lower:
+                return {
+                    "selected_agent": "RetrievalAgent",
+                    "tool_name": "search_patient_reports",
+                    "arguments": {
+                        "patient_name": cand["patient_name"],
+                        "patient_id": cand["patient_id"],
+                        "modality": session.last_retrieval_modality or "Any"
+                    },
+                    "rationale": f"Fallback: Matched candidate {cand['patient_name']}."
+                }
+
+    # Contextual Follow-up on Active Report
+    if is_contextual_query(q_lower, has_active_report=bool(session.active_report_id)):
+        return {
+            "selected_agent": "ConsultationAgent",
+            "tool_name": "summarize_active_report",
+            "arguments": {
+                "report_id": session.active_report_id or "unselected",
+                "query": query
+            },
+            "rationale": "Fallback: Detected contextual pronoun or report inquiry."
+        }
+
+    # Dictation findings
     clinical_keywords = [
         "impacted", "radiolucency", "root treated", "carious", "caries",
         "periapical", "canal", "osteitis", "follicle", "supernumerary",
@@ -156,17 +155,17 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "rationale": "Fallback: Input describes clinical pathology findings."
         }
 
-    # General queries (e.g. how many reports, what reports, help, stats)
+    # General system queries
     general_pattern = r"\b(how many|how much|database|who are you|what can you|help|hello|\bhi\b|hey)\b"
     if re.search(general_pattern, q_lower) and not any(verb in q_lower for verb in ["open", "retrieve", "show", "get"]):
         return {
             "selected_agent": "GeneralAssistantAgent",
             "tool_name": "general_query",
             "arguments": {"query": query},
-            "rationale": "General clinic inquiry regarding system records or capabilities."
+            "rationale": "Fallback: General clinic inquiry regarding system records or capabilities."
         }
 
-    # Default Deterministic Fallback: Retrieval Agent
+    # Default: Retrieval Agent
     clean_query = re.sub(r"\b(open|show|find|get|latest|report|scan|opg|cbct|bitewing|periapical|please)\b", "", q_lower).strip()
     name_guess = clean_query.title() if clean_query else query.title()
     return {
