@@ -18,32 +18,42 @@ from .retrieval import resolve_report_retrieval, extract_retrieval_intent
 from .report_qa_service import answer_report_question
 from .llm_service import query_llm, query_ollama, query_ollama_chat_tools
 
-TRIAGE_SYSTEM_PROMPT = """You are the Lead Clinical Triage AI Agent for a dental voice assistant.
+TRIAGE_SYSTEM_PROMPT = """You are the Lead Clinical Triage AI Agent for a dental voice workstation.
 Your job is to analyze the clinician's speech or text input and decide which specialized sub-agent and tool to invoke.
 
 AVAILABLE TOOLS & SPECIALIZED AGENTS:
 1. "search_patient_reports": Use when the clinician wants to locate, open, or view a patient's scans or reports (e.g. "Open Priya's report", "Show Vikram Malhotra's CBCT").
+   Agent: "RetrievalAgent"
    Arguments: {"patient_name": "string", "modality": "OPG"|"CBCT"|"Bitewing"|"Periapical"|"Cephalogram"|"Any"}
 
 2. "structure_clinical_dictation": Use when the clinician is dictating physical examination findings, dental observations, pathology, or tooth conditions (e.g. "Lower right third molar is impacted", "UR5 root treated with apical radiolucency").
+   Agent: "ClinicalScribeAgent"
    Arguments: {"dictation_text": "verbatim text"}
 
-3. "summarize_active_report": Use when the clinician asks a follow-up question or summary about the currently open report (e.g. "Summarize her report", "What did the radiologist say about tooth 48?", "Are there any caries?").
+3. "summarize_active_report": Use when the clinician asks a follow-up question, explanation, or summary about the currently open report in the session (e.g. "Summarize her report", "What did the radiologist say about tooth 48?", "Explain this report", "Show me the PDF").
+   Agent: "ConsultationAgent"
    Arguments: {"report_id": "active", "query": "string"}
 
-4. "check_appointment_slots": Use when checking or booking available appointment slots for a scan (e.g. "Book a CBCT scan", "Schedule an OPG appointment", "What slots are available for CBCT?").
+4. "check_appointment_slots": Use when checking or booking available appointment slots for a scan (e.g. "Book a CBCT scan", "Schedule an OPG appointment", "What slots are available for CBCT?", "How many slots on 20 October?").
+   Agent: "ScanBookingAgent"
    Arguments: {"modality": "CBCT"|"OPG"|"Bitewing"|"Periapical"|"Any", "preferred_date": "optional date string"}
 
 5. "confirm_scan_booking": Use when confirming a slot booking (e.g. "Confirm slot SLOT-101", "Yes, book slot 1", "Book it for Priya").
+   Agent: "ScanBookingAgent"
    Arguments: {"slot_id": "string", "patient_name": "string", "patient_id": "optional string"}
 
-6. "general_query": Use when the clinician asks general questions about the system (e.g. "how many reports have", "what scans exist", "how many patients", "who are you", "help", greetings).
+6. "conversation": Use for greetings, natural dialogue, conversational questions, politeness, or questions about what you are doing or who you are (e.g. "hey", "hello", "what are you doing?", "who are you?", "can you help me?", "thanks", "good morning"). No database tool is invoked.
+   Agent: "GeneralAssistantAgent"
    Arguments: {"query": "string"}
+
+7. "query_clinic_database": Use when specifically inquiring about the clinic database facts, total scans, patient counts, or modality breakdowns (e.g. "how many reports are in the database?", "how many patients do we have?", "what scans exist in the system?").
+   Agent: "GeneralAssistantAgent"
+   Arguments: {"question": "string", "patient_name": "optional string", "modality": "optional string"}
 
 Output strictly a JSON object with this format:
 {
-  "selected_agent": "RetrievalAgent" | "ClinicalScribeAgent" | "ConsultationAgent" | "GeneralAssistantAgent" | "ScanBookingAgent",
-  "tool_name": "search_patient_reports" | "structure_clinical_dictation" | "summarize_active_report" | "check_appointment_slots" | "confirm_scan_booking" | "general_query",
+  "selected_agent": "RetrievalAgent" | "ClinicalScribeAgent" | "ConsultationAgent" | "ScanBookingAgent" | "GeneralAssistantAgent",
+  "tool_name": "search_patient_reports" | "structure_clinical_dictation" | "summarize_active_report" | "check_appointment_slots" | "confirm_scan_booking" | "conversation" | "query_clinic_database",
   "arguments": { ... },
   "rationale": "Brief reason for agent selection"
 }
@@ -322,16 +332,6 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             elif is_new_command:
                 session.pending_booking_slots = None
 
-    # Step 0C: Greetings and Conversational Openers
-    is_greeting = any(re.search(r"\b" + re.escape(g) + r"\b", q_lower) for g in ["hey", "hello", "hi", "good morning", "good afternoon", "greetings", "help", "who are you"]) and not any(w in q_lower for w in ["database", "report", "patient", "scan", "how many", "list", "open", "show", "find", "book", "schedule", "take"])
-    if is_greeting and not session.pending_candidates and not session.pending_booking_slots:
-        return {
-            "selected_agent": "GeneralAssistantAgent",
-            "tool_name": "general_query",
-            "arguments": {"question": query},
-            "rationale": "Conversational greeting handled by General Assistant Agent."
-        }
-
     # Step 1: LLM Dynamic Multi-Agent Triage (Groq / Ollama Clinical Orchestrator Agent)
     prompt = (
         f"Clinician request: \"{query}\"\n"
@@ -481,23 +481,23 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "rationale": "Fallback: Input describes clinical pathology findings."
         }
 
-    # 2D.5 Greetings and Conversational Openers
-    is_greeting = any(re.search(r"\b" + re.escape(g) + r"\b", q_lower) for g in ["hey", "hello", "hi", "good morning", "good afternoon", "greetings", "help", "who are you"]) and not any(w in q_lower for w in ["database", "report", "patient", "scan", "how many", "list", "open", "show", "find", "book", "schedule", "take"])
-    if is_greeting:
+    # 2D.5 Conversational Dialogue and Questions
+    is_conversational = any(re.search(r"\b" + re.escape(g) + r"\b", q_lower) for g in ["hey", "hello", "hi", "good morning", "good afternoon", "greetings", "help", "who are you", "what are you doing", "what can you do", "thanks", "thank you"]) and not any(w in q_lower for w in ["database", "report", "patient", "scan", "how many", "list", "open", "show", "find", "book", "schedule", "take"])
+    if is_conversational:
         return {
             "selected_agent": "GeneralAssistantAgent",
-            "tool_name": "general_query",
-            "arguments": {"question": query},
-            "rationale": "Fallback: Clinician greeting or assistance request."
+            "tool_name": "conversation",
+            "arguments": {"query": query},
+            "rationale": "Fallback: Natural conversational inquiry or greeting."
         }
 
     # 2E. General Clinic Database Queries
-    is_database_question = any(q_lower.startswith(w) for w in ["how many", "how much", "which", "who", "list", "what", "show"]) or "database" in q_lower or "?" in q_lower
+    is_database_question = any(q_lower.startswith(w) for w in ["how many", "how much", "which", "list", "count", "breakdown"]) or "database" in q_lower or "total scans" in q_lower or "total patients" in q_lower
     has_retrieval_intent = any(verb in q_lower for verb in ["open", "fetch", "load", "retrieve"])
     if is_database_question and not has_retrieval_intent:
         return {
             "selected_agent": "GeneralAssistantAgent",
-            "tool_name": "general_query",
+            "tool_name": "query_clinic_database",
             "arguments": {"question": query},
             "rationale": "Fallback: Clinical database statistical inquiry."
         }
@@ -655,18 +655,54 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
         }
 
     # =========================================================================
-    # AGENT 3: GENERAL ASSISTANT AGENT (System Stats & Natural Conversation)
+    # AGENT 3A: CONVERSATIONAL AGENT (Dynamic LLM dialogue; NO database tool)
     # =========================================================================
-    elif selected_agent == "GeneralAssistantAgent" or tool_name in ["general_query", "query_clinic_database"]:
+    elif (tool_name in ["conversation", "general_query"] and not any(w in query.lower() for w in ["database", "how many", "count", "statistics", "registered patients", "all reports"])) or (selected_agent == "GeneralAssistantAgent" and tool_name not in ["query_clinic_database"]):
+        conversation_prompt = (
+            "You are the Viscan AI Clinical Workstation Assistant for a dental radiology clinic. "
+            "You assist clinicians with retrieving patient imaging (OPG, CBCT, bitewings), "
+            "structuring clinical voice dictations into verified radiological reports, "
+            "summarizing findings, answering questions about active reports, and booking scan slots.\n"
+            "Respond naturally, concisely, warmly, and professionally to the clinician's query. "
+            "Do NOT invent fake database counts or statistics. "
+            "Answer specifically and helpfully to what the clinician actually asked."
+        )
+        if session.active_patient_id:
+            conversation_prompt += f"\nCurrently active patient in session: {session.active_patient_id}"
+        if session.active_report_id:
+            conversation_prompt += f"\nCurrently active report in session: {session.active_report_id}"
+
+        llm_reply = query_llm(query, system_prompt=conversation_prompt, json_format=False)
+        if not llm_reply or len(llm_reply.strip()) < 3:
+            llm_reply = "Hello! I am your Dental Clinical Workstation Assistant. How can I help you today? You can ask me to open a patient scan, dictate observations, summarize findings, or check appointment slots."
+
+        return {
+            "status": "success",
+            "message": "Conversational response generated by Clinical Assistant.",
+            "answer": llm_reply.strip(),
+            "citations": [],
+            "agent_trace": {
+                "orchestrator": "TriageAgent",
+                "active_agent": "GeneralAssistantAgent",
+                "tool_called": "conversation",
+                "arguments": arguments,
+                "rationale": rationale,
+                "mcp_jsonrpc": mcp_request
+            }
+        }
+
+    # =========================================================================
+    # AGENT 3B: CLINIC DATABASE QUERY (Statistical facts from database)
+    # =========================================================================
+    elif selected_agent == "GeneralAssistantAgent" or tool_name in ["query_clinic_database", "general_query"]:
         db_res = execute_tool("query_clinic_database", {
             "question": query,
             "patient_name": arguments.get("patient_name"),
             "modality": arguments.get("modality")
         })
-        is_greeting_msg = not bool(db_res.get("citations"))
         return {
             "status": "success",
-            "message": "Assistant ready." if is_greeting_msg else "Answered by General Assistant Agent via MCP Tool query_clinic_database.",
+            "message": "Answered by General Assistant Agent via MCP Tool query_clinic_database.",
             "answer": db_res.get("answer"),
             "citations": db_res.get("citations", []),
             "agent_trace": {

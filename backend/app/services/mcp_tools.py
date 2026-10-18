@@ -246,14 +246,6 @@ def execute_clinic_database_query(question: str, patient_name: Optional[str] = N
     modality_summary = ", ".join([f"{k}: {len(v)}" for k, v in modality_to_patients.items()])
 
     # Formulate answer
-    q_low = question.lower().strip()
-    is_greeting = any(re.search(r"\b" + re.escape(g) + r"\b", q_low) for g in ["hey", "hello", "hi", "good morning", "good afternoon", "greetings", "help", "who are you"]) and not any(w in q_low for w in ["database", "report", "patient", "scan", "how many", "list", "count", "record"])
-    if is_greeting:
-        return {
-            "status": "success",
-            "answer": "Hello! I am your Dental Clinical Workstation Assistant. How can I help you today? You can ask me to open a patient scan (e.g. 'Open Vikram Malhotra's CBCT'), dictate a clinical report, summarize active findings, or check appointment slots.",
-            "citations": []
-        }
 
     if matched_patients:
         if len(matched_patients) == 1:

@@ -51,12 +51,13 @@ def test_run_multi_agent_pipeline_execution_trace():
 
 
 def test_greeting_pipeline_returns_clean_welcome_without_db_stats():
-    """Verify conversational greetings ('hey', 'hello') do not dump database statistics or citations."""
-    for greeting in ["hey", "hello", "hi", "good morning", "help"]:
-        res = run_multi_agent_pipeline(greeting, session_id="test_greeting_session")
+    """Verify conversational queries ('hey', 'what are you doing') route to conversation tool and do not dump database statistics."""
+    for query in ["hey", "hello", "hi", "good morning", "what are you doing?"]:
+        res = run_multi_agent_pipeline(query, session_id="test_greeting_session")
         assert res["status"] == "success"
         assert res.get("agent_trace", {}).get("active_agent") == "GeneralAssistantAgent"
-        assert "Hello! I am your Dental Clinical Workstation Assistant." in res.get("answer", "")
+        assert res.get("agent_trace", {}).get("tool_called") == "conversation"
+        assert len(res.get("answer", "")) > 5
         assert "35 radiological reports" not in res.get("answer", "")
         assert res.get("citations") == []
 
