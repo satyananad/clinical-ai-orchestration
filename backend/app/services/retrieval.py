@@ -208,6 +208,7 @@ def extract_retrieval_intent(user_input: str) -> Dict[str, str]:
     stop_tokens = [
         "can", "you", "could", "would", "please", "i", "want", "to", "need", "see",
         "open", "show", "get", "fetch", "view", "load", "find", "latest", "recent",
+        "retrieve", "retrieving", "search", "searching",
         "report", "reports", "scan", "scans", "opg", "cbct", "bitewing", "periapical",
         "cephalogram", "iopa", "radiograph", "radiographs", "examination", "the",
         "a", "an", "for", "of", "with", "patient", "mrn", "id",
@@ -230,6 +231,16 @@ def resolve_report_retrieval(query: str, patient_name: Optional[str] = None, mod
     intent = extract_retrieval_intent(query)
     target_name = patient_name.strip() if patient_name else intent["patient_name"]
     requested_modality = modality if (modality and modality != "Any") else intent["report_type"]
+
+    # Check if user invoked retrieval without specifying a patient name or ID
+    if not target_name or target_name.lower() in ["retrieving", "retrieve", "patient report", "open report", "view report", "find report", "search", "loading"]:
+        return {
+            "status": "missing_patient_name",
+            "message": "Please specify the patient name or ID whose report you'd like to retrieve (e.g. 'Open Vikram Malhotra's CBCT' or 'Show Priya Sharma's report'). You can also ask me to list available patients.",
+            "candidates": None,
+            "report": None,
+            "patient": None
+        }
 
     # First check query directly against patient database
     candidates = search_patients(query)

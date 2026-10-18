@@ -859,13 +859,28 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "rationale": "Fallback: Input describes clinical pathology findings."
         }
 
-    # 2D.5 Conversational Dialogue, Help, and General Clinical Concept Questions
+    has_retrieval_cmd = any(verb in q_lower for verb in ["open", "load", "show report", "view report", "fetch", "retrieve", "find report"])
+
+    # 2D.5 Clinic Database Queries & Patient List Requests
+    is_database_question = (
+        any(q_lower.startswith(w) for w in ["how many", "how much", "which", "list", "count", "breakdown"])
+        or any(w in q_lower for w in ["database", "total scans", "total patients"])
+        or bool(re.search(r"\b(?:patient\s+names?|list\s+(?:of\s+)?patients?|list\s+(?:of\s+)?reports?|all\s+patients?|registered\s+patients?|who\s+are\s+the\s+patients?)\b", q_lower))
+    )
+    if is_database_question and not has_retrieval_cmd:
+        return {
+            "selected_agent": "GeneralAssistantAgent",
+            "tool_name": "query_clinic_database",
+            "arguments": {"question": query},
+            "rationale": "Clinical database patient list or statistical inquiry."
+        }
+
+    # 2D.6 Conversational Dialogue, Help, and General Clinical Concept Questions
     is_conversational_greeting = any(re.search(r"\b" + re.escape(g) + r"\b", q_lower) for g in [
         "hey", "hello", "hi", "good morning", "good afternoon", "good evening", "greetings",
         "help", "who are you", "what are you doing", "what can you do", "how do you work", "how does this work",
         "thanks", "thank you"
     ])
-    has_retrieval_cmd = any(verb in q_lower for verb in ["open", "load", "show report", "view report", "fetch", "retrieve", "find report"])
 
     if (is_conversational_greeting or is_question_intent) and not has_retrieval_cmd and not any(w in q_lower for w in ["database", "how many", "count", "breakdown"]):
         return {
@@ -873,16 +888,6 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "tool_name": "conversation",
             "arguments": {"query": query},
             "rationale": "Fallback: Natural conversational inquiry, greeting, or clinical concept question."
-        }
-
-    # 2E. General Clinic Database Queries
-    is_database_question = any(q_lower.startswith(w) for w in ["how many", "how much", "which", "list", "count", "breakdown"]) or "database" in q_lower or "total scans" in q_lower or "total patients" in q_lower
-    if is_database_question and not has_retrieval_cmd:
-        return {
-            "selected_agent": "GeneralAssistantAgent",
-            "tool_name": "query_clinic_database",
-            "arguments": {"question": query},
-            "rationale": "Fallback: Clinical database statistical inquiry."
         }
 
     # 2F. Default: Patient & Report Retrieval vs Conversational Fallback

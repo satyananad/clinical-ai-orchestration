@@ -123,3 +123,37 @@ def test_speech_correction_repair_turn():
     assert res3["status"] == "success"
     assert res3["patient"]["patient_name"] == "Priya Sharma"
     assert res3["patient"]["patient_id"] == "PAT-1001"
+
+
+def test_patient_listing_and_menu_retrieval_queries():
+    """
+    Verifies that requests for patient names or reports correctly query the database
+    instead of wrongly attempting contextual report QA or treating menu commands as patient names.
+    """
+    from backend.app.services.orchestrator_agent import run_multi_agent_pipeline
+    session_id = "test_listing_session_1"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    # 1. User asks for list of patients and reports: "how many report you show me the list od patient and report"
+    r1 = run_multi_agent_pipeline("how many report you show me the list od patient and report", session_id=session_id)
+    assert r1["status"] in ("success", "clarification_required")
+    ans1 = (r1.get("answer") or "") + " " + (r1.get("message") or "")
+    # Must list patients or registered database statistics
+    assert any(name in ans1 for name in ["Priya Sharma", "Vikram Malhotra", "registered patients", "radiological reports"])
+
+    # 2. User asks: "first tell me the patient names"
+    r2 = run_multi_agent_pipeline("first tell me the patient names", session_id=session_id)
+    assert r2["status"] == "success"
+    ans2 = (r2.get("answer") or "") + " " + (r2.get("message") or "")
+    assert "registered patients in the clinic database" in ans2
+    assert "Priya Sharma" in ans2
+    assert "Vikram Malhotra" in ans2
+
+    # 3. User types or clicks the menu item: "Retrieving a patient report" or "Retrieve a report"
+    r3 = run_multi_agent_pipeline("Retrieving a patient report", session_id=session_id)
+    ans3 = (r3.get("answer") or "") + " " + (r3.get("message") or "")
+    # Must NOT search for a patient named 'retrieving'
+    assert "No patient records found matching 'retrieving'" not in ans3
+    assert any(w in ans3.lower() for w in ["retrieve patient imaging", "open", "patient", "explore"])
+

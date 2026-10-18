@@ -300,7 +300,7 @@ def execute_clinic_database_query(question: str, patient_name: Optional[str] = N
         records = modality_to_patients.get(matched_modality, [])
         pts = list(dict.fromkeys([f"{r['patient_name']} ({r['report_id']})" for r in records]))
         answer = f"There is {len(records)} {matched_modality} scan in the database across: {', '.join(pts)}." if len(records) == 1 else f"There are {len(records)} {matched_modality} scans in the database across: {', '.join(pts)}."
-    elif "patient" in question.lower() and any(w in question.lower() for w in ["how many", "list", "show", "who", "all"]):
+    elif "patient" in question.lower() and any(w in question.lower() for w in ["how many", "list", "show", "who", "all", "names", "name", "tell", "which"]):
         answer = f"There are {total_patients} registered patients in the clinic database: {', '.join(patient_names)}."
     else:
         answer = f"There are currently {total_reports} radiological reports across {total_patients} registered patients in the clinic database ({modality_summary}). You can ask me to open any patient's report (e.g. 'Open Vikram Malhotra's CBCT')."

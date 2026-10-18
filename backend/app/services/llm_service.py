@@ -4,51 +4,17 @@ import re
 import urllib.request
 import urllib.error
 from typing import Dict, Any, List, Optional
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 from .validation import label_diagnostic_certainty
 from .dental_anatomy import normalize_dental_site, classify_observation_category
-
-# Pydantic Schemas for Strict LLM Output Validation
-class PatientDetailsModel(BaseModel):
-    age: Optional[int] = None
-    gender: Optional[str] = None
-    demographics_summary: Optional[str] = None
-    patient_name: Optional[str] = None
-    patient_id: Optional[str] = None
-    study_type: Optional[str] = None
-
-class AnatomicalSiteModel(BaseModel):
-    site_type: str = "Tooth"
-    anatomical_name: str
-    quadrant: Optional[str] = None
-    fdi_number: Optional[int] = None
-    palmer_notation: Optional[str] = None
-    universal_number: Optional[Any] = None
-
-class FindingModel(BaseModel):
-    anatomical_site: Optional[str] = "Dentition"
-    tooth_number: Optional[str] = None
-    category: str = "General Observation"
-    observation: str
-    polarity: str = "present"
-    certainty: str = "unspecified"
-    measurements: List[str] = Field(default_factory=list)
-    source_quote: Optional[str] = None
-    related_sites: List[str] = Field(default_factory=list)
-    requires_clarification: bool = False
-    clarification_reason: Optional[str] = None
-
-class DictationDraftReportModel(BaseModel):
-    patient_details: Optional[PatientDetailsModel] = None
-    anatomical_sites: List[AnatomicalSiteModel] = Field(default_factory=list)
-    findings: List[FindingModel] = Field(default_factory=list)
-    impressions: List[str] = Field(default_factory=list)
-    recommendations: List[str] = Field(default_factory=list)
-    extraction_status: str = Field(default="COMPLETE")
-
-class RetrievalIntentModel(BaseModel):
-    patient_name: str
-    report_type: str = "Any"
+from .report_service import synthesize_impression_from_findings
+from ..schemas.report import (
+    PatientDetailsModel,
+    AnatomicalSiteModel,
+    FindingModel,
+    DictationDraftReportModel,
+    RetrievalIntentModel,
+)
 
 # AI Endpoints & Credentials
 def _load_env_var(var_name: str, default: Optional[str] = None) -> Optional[str]:
@@ -498,73 +464,6 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
 
     return result
 
-
-def synthesize_impression_from_findings(findings: List[Dict[str, Any]], artifacts: Optional[List[Dict[str, Any]]] = None) -> List[str]:
-    """
-    Synthesizes impressions dynamically from structured clinical findings without hardcoded disease lists.
-    Groups significant observations, structural dimensions, negative assurances, and speech clarifications.
-    Excludes administrative metadata, headers, recommendations, and repetitive site prefixes.
-    """
-    imp_items = []
-
-    # 1. Significant observations (positive, indeterminate, or differential findings)
-    positive_findings = [
-        f for f in findings
-        if f.get("certainty") in ("definite observation", "definite observation (etiology uncertain)", "suspected / differential diagnosis")
-        and not f.get("requires_clarification")
-        and not re.search(r"^(?:patient\s*id|patient\s*name|study|study\s*type|scan\s*type|mrn|name:|id:|serial\s*#?|radiology\s+report\s+details|conducted\s+by)\b", str(f.get("observation", "")).lower().strip())
-        and not re.search(r"\b(further\s+evaluation\s+is\s+recommended|routine\s+follow-up\s+is\s+advised)\b", str(f.get("observation", "")).lower().strip())
-    ]
-
-    for f in positive_findings:
-        obs = f.get("observation", "").strip()
-        site = f.get("anatomical_site", "").strip()
-
-        # Clean section header prefix or introductory boilerplate
-        cleaned_obs = re.sub(r"^(?:IMPRESSIONS?\s*(?:&|and)\s*SPECIFIC\s+FINDINGS|SPECIFIC\s+FINDINGS|DENTAL\s+FINDINGS)\s*[:\-]?\s*", "", obs, flags=re.IGNORECASE).strip()
-        cleaned_obs = re.sub(r"^(?:at\s+(?:the\s+)?[^,]+,\s*|the\s+|there\s+is\s+|there\s+are\s+)", "", cleaned_obs, flags=re.IGNORECASE).strip()
-        if cleaned_obs:
-            cleaned_obs = cleaned_obs[0].upper() + cleaned_obs[1:]
-
-        # Avoid redundant site name prefix if already in observation or tooth/quadrant is named
-        site_in_obs = site.lower() in cleaned_obs.lower() if site else False
-        has_tooth_in_obs = bool(re.search(r"\b(?:tooth|teeth|#\d+|UR|UL|LL|LR|molar|premolar|incisor|canine)\b", cleaned_obs, re.I))
-        if site and not site_in_obs and not has_tooth_in_obs and site.lower() not in ("dentition", "regional anatomy", "general", "soft tissue", "multiple teeth", "general observation"):
-            item_text = f"{site}: {cleaned_obs}"
-        else:
-            item_text = cleaned_obs
-
-        # Deduplicate
-        if not any(item_text.lower() == p.lower() for p in imp_items):
-            imp_items.append(item_text)
-
-    # 2. Key negative findings (complications / abnormalities ruled out)
-    neg_findings = [
-        f for f in findings
-        if f.get("certainty") == "negative / normal finding"
-        and not f.get("requires_clarification")
-        and "no other abnormal finding" not in f.get("observation", "").lower()
-        and not re.search(r"^(?:patient\s*id|patient\s*name|study|mrn|serial)\b", str(f.get("observation", "")).lower().strip())
-    ]
-
-    if neg_findings:
-        neg_descs = [nf.get("observation", "").strip().rstrip(".") for nf in neg_findings]
-        if all(re.match(r"^no\s+", d, re.IGNORECASE) for d in neg_descs):
-            cleaned_phrases = [re.sub(r"^no\s+", "", d, flags=re.IGNORECASE) for d in neg_descs]
-            cleaned_phrases = [re.sub(r"\s+(?:is|are)\s+(?:observed|identified|seen|noted)$", "", cp, flags=re.IGNORECASE) for cp in cleaned_phrases]
-            imp_items.append(f"No {' or '.join(cleaned_phrases)} observed.")
-        else:
-            imp_items.append("; ".join(neg_descs) + ".")
-
-    # 3. Flagged speech transcription artifacts
-    if artifacts:
-        for art in artifacts:
-            imp_items.append(f"Unclear phrase '{art['matched_phrase']}' flagged for clinician clarification.")
-
-    if not imp_items:
-        return ["Radiological assessment completed."]
-
-    return imp_items
 
 
 def extract_clinical_body(text: str) -> str:

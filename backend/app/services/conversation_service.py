@@ -128,6 +128,9 @@ PATIENT_PRONOUN_TRIGGERS = [
 def is_contextual_query(query: str, has_active_report: bool = False) -> bool:
     """Detects whether a user query refers to an active session context rather than a new patient."""
     q_lower = query.lower()
+    # General queries for patient names or listings are database inquiries, not pronoun follow-ups
+    if re.search(r"\b(?:patient\s+names?|list\s+(?:of\s+)?patients?|all\s+patients?|how\s+many\s+patients?)\b", q_lower):
+        return False
     if any(re.search(r"\b" + re.escape(p) + r"\b", q_lower) for p in PATIENT_PRONOUN_TRIGGERS):
         return True
     if has_active_report:

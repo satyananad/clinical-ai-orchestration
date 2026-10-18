@@ -114,3 +114,52 @@ class AssistantChatResponse(BaseModel):
     citations: Optional[List[str]] = None
     context_resolution: Optional[str] = None
     agent_trace: Optional[Dict[str, Any]] = None
+
+
+# Dictation Pydantic models for structured LLM parsing
+class PatientDetailsModel(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    demographics_summary: Optional[str] = None
+    patient_name: Optional[str] = None
+    patient_id: Optional[str] = None
+    study_type: Optional[str] = None
+
+class AnatomicalSiteModel(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    site_type: str = "Tooth"
+    anatomical_name: str
+    quadrant: Optional[str] = None
+    fdi_number: Optional[int] = None
+    palmer_notation: Optional[str] = None
+    universal_number: Optional[Any] = None
+
+class FindingModel(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    anatomical_site: Optional[str] = "Dentition"
+    tooth_number: Optional[str] = None
+    category: str = "General Observation"
+    observation: str
+    polarity: str = "present"
+    certainty: str = "unspecified"
+    measurements: List[str] = Field(default_factory=list)
+    source_quote: Optional[str] = None
+    related_sites: List[str] = Field(default_factory=list)
+    requires_clarification: bool = False
+    clarification_reason: Optional[str] = None
+
+class DictationDraftReportModel(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    patient_details: Optional[PatientDetailsModel] = None
+    anatomical_sites: List[AnatomicalSiteModel] = Field(default_factory=list)
+    findings: List[FindingModel] = Field(default_factory=list)
+    impressions: List[str] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+    extraction_status: str = Field(default="COMPLETE")
+
+class RetrievalIntentModel(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    patient_name: str
+    report_type: str = "Any"
+
