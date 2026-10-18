@@ -124,8 +124,16 @@ def answer_report_question(report_id: str, query: str) -> Dict[str, Any]:
                 "report_date": report.get("report_date")
             }
 
-    # If the user is asking for a summary or comprehensive explanation
-    if any(term in q_lower for term in ["summarize", "summary", "overview", "explain this", "explain report", "explain her", "explain his", "what does the report show", "what does this report show", "what does the report say", "what are the findings"]):
+    # If the user is asking for a summary, findings, problems, or comprehensive explanation
+    summary_triggers = [
+        "summarize", "summary", "overview", "explain this", "explain report", "explain her", "explain his",
+        "what does the report show", "what does this report show", "what does the report say", "what are the findings",
+        "what problem", "what problems", "what is the problem", "what's the problem", "what is wrong", "what's wrong",
+        "what does she have", "what does he have", "what does it have", "what does patient have",
+        "what condition", "what issues", "what issue", "what are her issues", "what did you find",
+        "diagnose", "diagnosis", "impression", "impressions", "findings"
+    ]
+    if any(term in q_lower for term in summary_triggers):
         return generate_report_summary(report, patient or {})
 
     # Construct Grounded Prompt for LLM (Llama 3.1 / Qwen)

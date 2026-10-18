@@ -113,6 +113,7 @@ class AssistantChatResponse(BaseModel):
     answer: Optional[str] = None
     citations: Optional[List[str]] = None
     context_resolution: Optional[str] = None
+    available_reports: Optional[List[Dict[str, Any]]] = None
     agent_trace: Optional[Dict[str, Any]] = None
 
 

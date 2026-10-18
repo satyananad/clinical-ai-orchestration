@@ -36,6 +36,7 @@ export interface AssistantResponse {
   answer?: string;
   citations?: string[];
   context_resolution?: string;
+  available_reports?: ReportDetail[];
 }
 
 export interface DictationResponse {

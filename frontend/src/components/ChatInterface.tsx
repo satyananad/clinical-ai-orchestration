@@ -7,6 +7,7 @@ interface ChatMessage {
   isCustom?: boolean;
   candidates?: Patient[];
   citations?: string[];
+  available_reports?: ReportDetail[];
 }
 
 interface ChatInterfaceProps {
@@ -52,7 +53,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onReportLoaded }) 
           {
             sender: 'assistant',
             content: ans,
-            citations: resp.citations
+            citations: resp.citations,
+            available_reports: resp.available_reports
           }
         ]);
       } else {
@@ -61,7 +63,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onReportLoaded }) 
           {
             sender: 'assistant',
             content: resp.answer || resp.message,
-            citations: resp.citations
+            citations: resp.citations,
+            available_reports: resp.available_reports
           }
         ]);
       }
@@ -123,7 +126,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onReportLoaded }) 
                   {m.candidates.map(c => (
                     <button
                       key={c.patient_id}
-                      onClick={() => handleSend(`Open ${c.patient_name}'s latest OPG report`)}
+                      onClick={() => handleSend(`Open ${c.patient_name} (${c.patient_id})`)}
                       className="w-full text-left bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg p-2 text-xs transition flex justify-between items-center text-slate-800"
                     >
                       <div>
@@ -133,6 +136,26 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onReportLoaded }) 
                       <span className="text-[10px] text-slate-400 font-mono">{c.patient_id}</span>
                     </button>
                   ))}
+                </div>
+              )}
+
+              {m.available_reports && m.available_reports.length > 0 && (
+                <div className="mt-2.5 space-y-1.5 border-t border-blue-100 pt-2">
+                  <p className="text-[11px] font-bold text-blue-900">Available Reports for this Patient ({m.available_reports.length}):</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {m.available_reports.map((rep) => (
+                      <button
+                        key={rep.report_id}
+                        onClick={() => handleSend(`Open ${rep.report_type} report ${rep.report_id}`)}
+                        className="bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-lg px-2.5 py-1 text-[11px] font-medium transition flex items-center space-x-1"
+                        title={`Switch to ${rep.report_type} (${rep.report_id})`}
+                      >
+                        <span>📄</span>
+                        <span>{rep.report_type}</span>
+                        <span className="text-slate-400 text-[10px]">({rep.report_id})</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 

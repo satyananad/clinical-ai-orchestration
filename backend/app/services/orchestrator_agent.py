@@ -31,7 +31,7 @@ AVAILABLE TOOLS & SPECIALIZED AGENTS:
    Agent: "ClinicalScribeAgent"
    Arguments: {"dictation_text": "verbatim text"}
 
-3. "summarize_active_report": Use when the clinician asks a follow-up question, explanation, or summary about the currently open report in the session (e.g. "Summarize her report", "What did the radiologist say about tooth 48?", "Explain this report", "Show me the PDF").
+3. "summarize_active_report": Use when an active report is open in the session and the clinician asks ANY question about findings, diagnoses, problems, conditions, impressions, teeth, or summaries (e.g. "what problem it have", "what problem does she have", "what is wrong with her", "Summarize her report", "What did the radiologist say about tooth 48?", "Explain this report", "Show me the PDF"). NEVER use 'conversation' if an active report is loaded and the query asks about patient problems or scan findings!
    Agent: "ConsultationAgent"
    Arguments: {"report_id": "active", "query": "string"}
 
@@ -43,11 +43,11 @@ AVAILABLE TOOLS & SPECIALIZED AGENTS:
    Agent: "ScanBookingAgent"
    Arguments: {"slot_id": "string", "patient_name": "string", "patient_id": "optional string"}
 
-6. "conversation": Use for greetings, natural dialogue, conversational questions, workstation help, capabilities, or general clinical/dental radiology questions when no specific report is open (e.g. "hey", "hello", "what are you doing?", "who are you?", "can you help me?", "what is a CBCT scan?", "explain caries", "what is an OPG?", "how does this workstation work?", "thanks", "good morning"). No database tool is invoked.
+6. "conversation": Use ONLY for general greetings, conversational small talk, or workstation help when NO specific report is being queried (e.g. "hey", "hello", "what are you doing?", "who are you?", "can you help me?", "what is a CBCT scan?", "explain caries", "how does this workstation work?", "thanks", "good morning").
    Agent: "GeneralAssistantAgent"
    Arguments: {"query": "string"}
 
-7. "query_clinic_database": Use when specifically inquiring about the clinic database facts, total scans, patient counts, or modality breakdowns (e.g. "how many reports are in the database?", "how many patients do we have?", "what scans exist in the system?").
+7. "query_clinic_database": Use when inquiring about registered patients, listing patient names, total scans, patient counts, or database breakdowns (e.g. "can you list out only patient name", "first tell me the patient names", "how many reports are in the database?", "how many patients do we have?", "what scans exist in the system?").
    Agent: "GeneralAssistantAgent"
    Arguments: {"question": "string", "patient_name": "optional string", "modality": "optional string"}
 
@@ -743,6 +743,98 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "rationale": "Missing Required Modality: User requested 'Book a scan' without a scan type."
             }
 
+    # 0B.7 Deterministic Clinic Database Inquiry Gate
+    is_database_inquiry = (
+        (any(w in q_lower for w in ["many", "manu", "mani", "much", "total", "count", "number of"]) and any(w in q_lower for w in ["patient", "report", "scan"]))
+        or any(w in q_lower for w in ["clinic database", "database statistics"])
+        or bool(re.search(r"\b(?:patient\s+names?|list\s+(?:out\s+)?(?:only\s+)?(?:the\s+)?patient\s+names?|list\s+(?:of\s+)?patients?|who\s+are\s+the\s+patients?|all\s+patients?|registered\s+patients?|which\s+patients?|know\s+the\s+patient|tell\s+me\s+(?:the\s+)?patient\s+names?)\b", q_lower))
+    ) and not any(verb in q_lower for verb in ["open", "retrieve", "view", "load"])
+    if is_database_inquiry and not is_booking_request:
+        return {
+            "selected_agent": "GeneralAssistantAgent",
+            "tool_name": "query_clinic_database",
+            "arguments": {"question": query},
+            "rationale": "Clinic Database Inquiry: Inquiring about registered patient directory or database statistics."
+        }
+
+    # 0B.8 Deterministic Active Report Consultation & Contextual Follow-Up Gate
+    if session.active_report_id:
+        intent = extract_retrieval_intent(query)
+        extracted_cand_name = intent.get("patient_name", "").strip()
+        non_patient_tokens = {"what", "why", "how", "explain", "tell", "help", "who", "when", "does", "can", "please", "summary", "summarize", "problem", "findings", "finding", "report", "scan", "it", "she", "he", "her", "his"}
+        has_new_patient_target = bool(extracted_cand_name) and not all(t.lower() in non_patient_tokens for t in extracted_cand_name.split())
+        has_retrieval_verb = any(v in q_lower for v in ["open", "retrieve", "fetch", "load", "find", "show"])
+        has_new_patient_retrieval = has_retrieval_verb and has_new_patient_target
+        
+        # Check if user is asking to switch to another report of the active patient (e.g. 'open her OPG', 'show periapical')
+        is_modality_switch = (
+            not has_new_patient_target
+            and any(w in q_lower for w in ["opg", "cbct", "panoramic", "bitewing", "periapical", "examination", "rpt-"])
+            and any(w in q_lower for w in ["open", "show", "switch", "view", "load", "her", "his", "the", "other"])
+        )
+        if is_modality_switch:
+            target_mod = "Any"
+            if any(m in q_lower for m in ["opg", "panoramic"]):
+                target_mod = "OPG"
+            elif any(m in q_lower for m in ["cbct", "cone beam", "3d"]):
+                target_mod = "CBCT"
+            elif "bitewing" in q_lower:
+                target_mod = "Bitewing"
+            elif any(m in q_lower for m in ["periapical", "iopa"]):
+                target_mod = "Periapical"
+            elif "examination" in q_lower:
+                target_mod = "Dental Examination"
+
+            rid_match = re.search(r"\b(RPT-\d+)\b", query, re.IGNORECASE)
+            target_rid = rid_match.group(1).upper() if rid_match else None
+
+            from .retrieval import get_patient_reports, get_report_by_id
+            p_reports = get_patient_reports(session.active_patient_id)
+            matched_rep = None
+            if target_rid:
+                matched_rep = get_report_by_id(target_rid)
+            elif target_mod != "Any":
+                for r in p_reports:
+                    if target_mod.lower() in r.get("report_type", "").lower():
+                        matched_rep = r
+                        break
+
+            if matched_rep:
+                session.active_report_id = matched_rep["report_id"]
+                return {
+                    "selected_agent": "RetrievalAgent",
+                    "tool_name": "search_patient_reports",
+                    "arguments": {
+                        "patient_id": session.active_patient_id,
+                        "modality": matched_rep.get("report_type")
+                    },
+                    "rationale": f"Report Switch: Switched to {matched_rep.get('report_type')} ({matched_rep['report_id']}) for active patient."
+                }
+
+        # Check if user is asking a question about the active report
+        is_report_question = (
+            is_contextual_query(q_lower, has_active_report=True)
+            or any(w in q_lower for w in [
+                "what problem", "what problems", "what is the problem", "what's the problem", "what is wrong", "what's wrong",
+                "what did you find", "what did the scan show", "what findings", "what does the report say",
+                "summarize", "summary", "overview", "diagnosis", "impression", "impressions", "findings", "finding",
+                "caries", "decay", "cavity", "cavities", "pain", "molar", "tooth", "teeth", "bone loss",
+                "nerve", "canal", "impaction", "lesion", "root", "apical", "periapical",
+                "what does she have", "what does he have", "what does it have", "what does patient have",
+                "explain", "tell me about", "what does it mean", "pdf", "recommendation"
+            ])
+        )
+        if is_report_question and not is_booking_request and not is_database_inquiry and not has_new_patient_retrieval:
+            return {
+                "selected_agent": "ConsultationAgent",
+                "tool_name": "summarize_active_report",
+                "arguments": {
+                    "report_id": session.active_report_id,
+                    "query": query
+                },
+                "rationale": f"Active Report Consultation: Clinician inquiry on active report {session.active_report_id}."
+            }
+
     # Step 1: LLM Dynamic Multi-Agent Triage (Groq / Ollama Clinical Orchestrator Agent)
     prompt = (
         f"Clinician request: \"{query}\"\n"
@@ -1101,6 +1193,13 @@ def generate_dynamic_conversational_reply(query: str, session: Any) -> str:
     clinically sound, query-specific response tailored to what was asked
     rather than a static repeated greeting.
     """
+    q_lower = query.lower().strip()
+    if session.active_report_id and any(w in q_lower for w in ["problem", "wrong", "findings", "finding", "diagnos", "impression", "summar", "condition", "issue", "caries", "teeth", "tooth"]):
+        from .report_qa_service import answer_report_question
+        qa = answer_report_question(session.active_report_id, query)
+        if qa.get("answer"):
+            return qa["answer"]
+
     conversation_prompt = (
         "You are the Viscan AI Clinical Workstation Assistant for a Dental & Maxillofacial Radiology Clinic. "
         "This workstation supports four specialized functions:\n"
@@ -1321,9 +1420,34 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             p_name = retrieval_res["patient"]["patient_name"]
             rep_type = rep.get("report_type", "Scan")
             rep_id = rep.get("report_id", "")
+
+            from .retrieval import get_patient_reports
+            all_reports = get_patient_reports(session.active_patient_id)
+            retrieval_res["available_reports"] = [
+                {
+                    "report_id": r["report_id"],
+                    "report_type": r["report_type"],
+                    "report_date": r["report_date"],
+                    "pdf_filename": r.get("pdf_filename"),
+                    "pdf_url": f"/patient-pdf/{r.get('pdf_filename')}" if r.get("pdf_filename") else None
+                }
+                for r in all_reports
+            ]
+
+            extra_msg = ""
+            if len(all_reports) > 1:
+                other_reps = [f"• [{r['report_id']}] {r['report_type']} ({r['report_date']})" for r in all_reports]
+                extra_msg = (
+                    f"\n\nThis patient has {len(all_reports)} diagnostic reports on file:\n"
+                    + "\n".join(other_reps)
+                    + f"\n\nYou can ask to view any of these reports (e.g. 'Open her OPG' or 'Show {all_reports[0]['report_id']}'), "
+                    f"or ask clinical questions about the current report."
+                )
+
             retrieval_res["message"] = (
                 f"Opened {rep_type} report ({rep_id}) for {p_name}."
                 + (f" [View Diagnostic PDF]({pdf_url})" if pdf_url else "")
+                + extra_msg
             )
             retrieval_res["answer"] = retrieval_res["message"]
         elif retrieval_res.get("status") == "clarification_required":
