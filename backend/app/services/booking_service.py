@@ -126,11 +126,13 @@ def check_available_slots(modality: str = "Any", preferred_date: Optional[str] =
         for s in available:
             s_date = s.get("date", "").lower()
             s_dt = s.get("datetime_str", "").lower()
-            if "20" in d_lower and ("10-20" in s_date or "oct 20" in s_dt):
+            if d_lower in s_date:
                 filtered.append(s)
-            elif ("19" in d_lower or "tomorrow" in d_lower) and ("10-19" in s_date or "oct 19" in s_dt or "tomorrow" in s_dt):
+            elif "tomorrow" in d_lower and ("10-19" in s_date or "tomorrow" in s_dt):
                 filtered.append(s)
-            elif d_lower in s_date or d_lower in s_dt:
+            elif re.search(r"\b20(?:th)?\b", d_lower) and not re.search(r"\b202\d\b", d_lower) and ("10-20" in s_date or "oct 20" in s_dt):
+                filtered.append(s)
+            elif re.search(r"\b19(?:th)?\b", d_lower) and not re.search(r"\b202\d\b", d_lower) and ("10-19" in s_date or "oct 19" in s_dt):
                 filtered.append(s)
         available = filtered
 

@@ -233,6 +233,61 @@ def resolve_pending_slot_from_query(query: str, pending_slots: List[Dict[str, An
 
     return None
 
+def extract_date_from_query(query: str) -> Optional[str]:
+    """
+    Extracts an appointment or scan date from clinician natural language:
+    - 'tomorrow' -> 2026-10-19
+    - 'today' -> 2026-10-18
+    - '23rd october', '20 october', '19 oct' -> 2026-MM-DD
+    - 'october 23rd', 'oct 20' -> 2026-MM-DD
+    - ISO dates e.g. '2026-10-23'
+    """
+    q_lower = query.lower().strip()
+    if "tomorrow" in q_lower:
+        return "2026-10-19"
+    if "today" in q_lower:
+        return "2026-10-18"
+
+    iso = re.search(r"\b(202\d)-(0[1-9]|1[0-2])-([0-3]\d)\b", q_lower)
+    if iso:
+        return f"{iso.group(1)}-{iso.group(2)}-{iso.group(3)}"
+
+    months = {
+        "jan": "01", "january": "01",
+        "feb": "02", "february": "02",
+        "mar": "03", "march": "03",
+        "apr": "04", "april": "04",
+        "may": "05",
+        "jun": "06", "june": "06",
+        "jul": "07", "july": "07",
+        "aug": "08", "august": "08",
+        "sep": "09", "september": "09",
+        "oct": "10", "october": "10",
+        "nov": "11", "november": "11",
+        "dec": "12", "december": "12"
+    }
+    m_re = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+
+    # "23rd october", "20 oct", "20th of october"
+    m_day_first = re.search(rf"\b([0-3]?\d)(?:st|nd|rd|th)?\s+(?:of\s+)?({m_re})\b", q_lower)
+    if m_day_first:
+        day = int(m_day_first.group(1))
+        m_str = m_day_first.group(2)
+        for k, v in months.items():
+            if m_str.startswith(k):
+                return f"2026-{v}-{day:02d}"
+
+    # "october 23rd", "oct 20" (ensure day is not time like 10:00)
+    m_month_first = re.search(rf"\b({m_re})\s+([0-3]?\d)(?:st|nd|rd|th)?(?!\s*[:\d])\b", q_lower)
+    if m_month_first:
+        m_str = m_month_first.group(1)
+        day = int(m_month_first.group(2))
+        for k, v in months.items():
+            if m_str.startswith(k):
+                return f"2026-{v}-{day:02d}"
+
+    return None
+
 def triage_clinician_request(query: str, session_id: str = "default_session") -> Dict[str, Any]:
     """
     Decides which specialized agent and MCP tool to invoke.
@@ -317,9 +372,14 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "rationale": "Clinician cancelled appointment booking."
             }
         else:
+            is_new_inquiry = (
+                any(w in q_lower for w in ["is there", "any dr", "any doctor", "how many", "check", "want to book", "i want", "other", "another", "what are", "which"])
+                or any(v in q_lower for v in ["open", "find", "retrieve", "dictate", "generate", "summarize", "database"])
+            )
             is_time_or_date = any(t in q_lower for t in ["am", "pm", "a.m.", "p.m.", ":", "tomorrow", "oct", "october", "morning", "afternoon", "slot", "#", "first", "second", "third", "take", "give me"]) or any(c.isdigit() for c in query)
-            is_new_command = any(v in q_lower for v in ["open", "find", "retrieve", "dictate", "generate", "summarize", "database", "how many"])
-            if is_time_or_date and not is_new_command:
+            if is_new_inquiry:
+                session.pending_booking_slots = None
+            elif is_time_or_date:
                 return {
                     "selected_agent": "ScanBookingAgent",
                     "tool_name": "invalid_slot_selection",
@@ -329,7 +389,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     },
                     "rationale": f"Safety Gate: User query '{query}' did not match any available slot."
                 }
-            elif is_new_command:
+            else:
                 session.pending_booking_slots = None
     else:
         # If session pending_booking_slots was cleared/None, check if user directly entered a slot ID or time/date
@@ -461,8 +521,13 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 }
 
 
-    # 2B.5 Scan Booking Request (Check Available Slots)
-    is_booking_request = any(w in q_lower for w in ["book", "booking", "schedule", "reschedule", "appointment", "appoint ment", "reserve", "slots", "slot"])
+    # 2B.5 Scan Booking Request (Check Available Slots & Doctor Availability)
+    detected_date = extract_date_from_query(query)
+    is_booking_request = (
+        any(w in q_lower for w in ["book", "booking", "schedule", "reschedule", "appointment", "appoint ment", "reserve", "slots", "slot"])
+        or (any(w in q_lower for w in ["dr", "doctor", "radiologist", "scan"]) and any(w in q_lower for w in ["have", "available", "free", "open", "slot", "slots", "schedule", "appointment", "oct", "october", "nov", "dec", "tomorrow", "today", "any", "is there", "are there"]))
+        or (bool(detected_date) and any(w in q_lower for w in ["have", "available", "slot", "slots", "appointment", "dr", "doctor", "scan", "can i"]))
+    )
     is_retrieval_override = any(w in q_lower for w in ["open", "show", "view", "find report", "retrieve"])
     if is_booking_request and not is_retrieval_override:
         detected_mod = "Any"
@@ -475,12 +540,6 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         elif any(w in q_lower for w in ["periapical", "iopa"]):
             detected_mod = "Periapical"
 
-        detected_date = None
-        if re.search(r"\b(20(?:th)?\s+oct(?:ober)?|oct(?:ober)?\s+20(?:th)?|2026-10-20)\b", q_lower):
-            detected_date = "2026-10-20"
-        elif re.search(r"\b(19(?:th)?\s+oct(?:ober)?|oct(?:ober)?\s+19(?:th)?|tomorrow|2026-10-19)\b", q_lower):
-            detected_date = "2026-10-19"
-
         return {
             "selected_agent": "ScanBookingAgent",
             "tool_name": "check_appointment_slots",
@@ -488,7 +547,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "modality": detected_mod,
                 "preferred_date": detected_date
             },
-            "rationale": f"Fallback: Clinician requested scan booking for {detected_mod} on {detected_date or 'any date'}."
+            "rationale": f"Fallback: Clinician requested scan booking/availability for {detected_mod} on {detected_date or 'any date'}."
         }
 
     # 2C. Contextual Follow-up on Active Report
@@ -602,15 +661,18 @@ def generate_dynamic_conversational_reply(query: str, session: Any) -> str:
     rather than a static repeated greeting.
     """
     conversation_prompt = (
-        "You are an intelligent, empathetic, and knowledgeable Clinical AI Assistant. "
-        "Answer the clinician or user directly, intelligently, naturally, and helpfully. "
-        "Rules:\n"
-        "1. Directly answer what the user asks in a conversational, helpful, and natural manner.\n"
-        "2. Never output placeholder tokens like '[Clinic Name]', '[Doctor Name]', or 'None'.\n"
-        "3. If the user asks for a doctor or hospital, ask them clarifying details (such as city/location, medical specialty, or preferred hospital) to assist them.\n"
-        "4. If they ask about dental or medical concepts (such as CBCT, OPG, caries, impactions, root canals), explain clearly and concisely.\n"
-        "5. If they want to retrieve a patient's scans, structure dictation, or check appointment slots, guide them naturally.\n"
-        "6. Do not repeat a fixed greeting if they asked a specific question."
+        "You are the Viscan AI Clinical Workstation Assistant for a Dental & Maxillofacial Radiology Clinic. "
+        "This workstation supports four specialized functions:\n"
+        "1. Diagnostic Patient Report Retrieval: Retrieve imaging reports (OPG panoramic, CBCT 3D volume, Bitewing, Periapical) with safety ambiguity resolution.\n"
+        "2. Clinical Dictation to Structured Draft: Convert spoken/typed clinical observations into validated draft reports with FDI/Palmer tooth mapping and anti-hallucination verification.\n"
+        "3. Report-Aware Consultation: Answer clinician questions grounded in active imaging reports with source citations.\n"
+        "4. Scan Booking & Scheduling: Check real-time appointment slots in Radiology Suite 1 (CBCT), Panoramic Suite 2 (OPG), and Intraoral Bay 3, and confirm bookings.\n\n"
+        "Rules for answering:\n"
+        "• Answer concisely, professionally, and accurately within dental radiology and maxillofacial clinical domain.\n"
+        "• If asked about doctors, clinic, or hospital name, explain our dental radiology imaging clinic suites (Suite 1 3D CBCT, Panoramic Suite 2 OPG, Intraoral Bay 3) and guide them to check scan slots or retrieve patient reports.\n"
+        "• If asked about dental or radiological concepts (such as CBCT, OPG, caries, impactions, root canals, periapical lesions), explain them clearly.\n"
+        "• Never output placeholder tokens like '[Clinic Name]', '[Doctor Name]', or 'None'.\n"
+        "• Do not suggest non-dental specialties like cardiology or orthopedics."
     )
     if session.active_patient_id:
         conversation_prompt += f"\nCurrently active patient in session: {session.active_patient_id}"
@@ -681,14 +743,14 @@ def generate_dynamic_conversational_reply(query: str, session: Any) -> str:
             "• **Scan Scheduling**: Check real-time appointment slots and confirm bookings."
         )
 
-    # 7b. Doctor / Hospital information queries
+    # 7b. Doctor / Clinic information queries
     if any(k in q_lower for k in ["doctor", "doctore", "docoter", "hospital", "physician", "clinic name"]):
         return (
-            "To help provide you with the right doctor or hospital details, could you please specify:\n"
-            "1. Location (city, state, or region)\n"
-            "2. Type of doctor or medical specialty (e.g. oral surgeon, radiologist, cardiologist, general practitioner)\n"
-            "3. Name of the hospital or clinic (if you already know it)\n\n"
-            "Once you provide these details, I will be happy to assist you!"
+            "Viscan AI is the Clinical Workstation for our Dental & Maxillofacial Radiology Clinic. "
+            "Our imaging facilities and hospital suites include Radiology Suite 1 (3D CBCT Scanner), Panoramic Suite 2 (OPG), "
+            "and Intraoral X-Ray Bay 3 (Bitewing & Periapical). Our team of specialized dental radiologists and doctors provides "
+            "diagnostic maxillofacial imaging and clinical interpretations. You can ask me to check available scan appointment slots "
+            "or retrieve a patient's diagnostic report."
         )
 
     # 8. Greetings
@@ -982,9 +1044,14 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
 
             date_str = ""
             if pref_date:
-                if "10-20" in str(pref_date) or "20" in str(pref_date):
+                iso_m = re.search(r"2026-(\d{2})-(\d{2})", str(pref_date))
+                if iso_m:
+                    m_num, d_num = iso_m.group(1), iso_m.group(2)
+                    m_names = {"01": "January", "02": "February", "03": "March", "04": "April", "05": "May", "06": "June", "07": "July", "08": "August", "09": "September", "10": "October", "11": "November", "12": "December"}
+                    date_str = f" on {m_names.get(m_num, 'October')} {int(d_num)}"
+                elif "10-20" in str(pref_date) or "20" in str(pref_date):
                     date_str = " on October 20"
-                elif "10-19" in str(pref_date) or "19" in str(pref_date):
+                elif "10-19" in str(pref_date) or "19" in str(pref_date) or "tomorrow" in str(pref_date).lower():
                     date_str = " for Tomorrow (Oct 19)"
                 else:
                     date_str = f" on {pref_date}"
@@ -998,7 +1065,19 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                     + f"\n\nConfirmation Required: Would you like to confirm any of these slots? (e.g. 'Yes, book slot {slots[0]['slot_id']}')."
                 )
             else:
-                msg = f"No appointment slots currently available{f' for {mod_title} scan' if mod_title != 'Radiology' else ''}{date_str}. Please check back later."
+                from .booking_service import check_available_slots as get_all_slots
+                all_open = get_all_slots(modality=raw_mod or "Any")
+                if all_open:
+                    slot_lines = [f"• [{s['slot_id']}] {s['datetime_str']} — {s['modality']} ({s['room']})" for s in all_open]
+                    session.pending_booking_slots = all_open
+                    msg = (
+                        f"No appointment slots or radiologists are currently scheduled{date_str}. "
+                        f"However, we have {len(all_open)} available scan slot(s) on upcoming dates:\n"
+                        + "\n".join(slot_lines)
+                        + f"\n\nConfirmation Required: Would you like to confirm any of these slots? (e.g. 'Yes, book slot {all_open[0]['slot_id']}')."
+                    )
+                else:
+                    msg = f"No appointment slots currently available{f' for {mod_title} scan' if mod_title != 'Radiology' else ''}{date_str}. Please check back later."
 
             return {
                 "status": "confirmation_required",

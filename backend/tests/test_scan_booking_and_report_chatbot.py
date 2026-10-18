@@ -272,7 +272,7 @@ def test_doctor_and_hospital_inquiry():
     """
     Verifies that when a clinician asks for doctor and hospital name (e.g. 'docoter and hospital name'),
     the assistant does not output placeholder '[Clinic Name]' or an intro greeting,
-    but instead responds dynamically requesting relevant location/specialty details or giving information.
+    but instead responds dynamically explaining the dental radiology clinic suites, doctors, and capabilities.
     """
     session_id = "test_doc_hosp_session"
     session = get_or_create_session(session_id)
@@ -282,7 +282,37 @@ def test_doctor_and_hospital_inquiry():
     assert res["status"] == "success"
     assert res["agent_trace"]["active_agent"] == "GeneralAssistantAgent"
     assert "[Clinic Name]" not in res["answer"]
-    assert any(term in res["answer"].lower() for term in ["location", "specialty", "hospital", "doctor", "details"])
+    assert any(term in res["answer"].lower() for term in ["hospital", "doctor", "radiology", "suite", "radiologist"])
+
+
+def test_doctor_availability_query_and_booking_workflow():
+    """
+    Verifies that an inquiry like 'is there any dr have 23rd october':
+    1. Routes directly to ScanBookingAgent.
+    2. Identifies October 23.
+    3. Informs that no slots exist for Oct 23 and lists upcoming open slots (Oct 19 & 20).
+    4. Seamlessly confirms when clinician replies 'October 10:00 a.m.'.
+    """
+    session_id = "test_oct_23_booking_workflow"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    # Step 1: Doctor availability inquiry for 23rd October
+    res1 = run_multi_agent_pipeline("is there any dr have 23rd october", session_id=session_id)
+    assert res1["status"] == "confirmation_required"
+    assert res1["agent_trace"]["active_agent"] == "ScanBookingAgent"
+    assert "October 23" in res1["message"]
+    assert "No appointment slots" in res1["message"]
+    assert "SLOT-101" in res1["message"]
+    assert "Confirmation Required" in res1["message"]
+
+    # Step 2: Clinician picks 'October 10:00 a.m.'
+    res2 = run_multi_agent_pipeline("October 10:00 a.m.", session_id=session_id)
+    assert res2["status"] == "success"
+    assert res2["agent_trace"]["active_agent"] == "ScanBookingAgent"
+    assert "booking_reference" in res2
+    assert "10:00 AM" in res2["message"]
+
 
 
 
