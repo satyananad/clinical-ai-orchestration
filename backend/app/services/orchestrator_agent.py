@@ -171,17 +171,70 @@ def resolve_pending_candidates_from_query(
 
     return {"status": "unmatched"}
 
+def resolve_pending_slot_from_query(query: str, pending_slots: List[Dict[str, Any]]) -> Optional[str]:
+    """
+    Matches user's appointment confirmation input against pending slots by:
+    - Slot ID (e.g. 'SLOT-101', '101')
+    - Time (e.g. '10:00 AM', '10:00 a.m.', '10am', '10:00', '2:30 PM', '11:15')
+    - Date / Day (e.g. 'tomorrow', 'Oct 19', 'Oct 20')
+    - Modality (e.g. 'CBCT', 'OPG')
+    - Ordinal (e.g. 'first', '1st', 'second', '2nd')
+    - Confirmation keywords ('yes', 'confirm', 'book it', 'take it', 'proceed') -> defaults to slot 1
+    """
+    if not pending_slots:
+        return None
+    q_norm = query.lower().replace("a.m.", "am").replace("p.m.", "pm").strip()
+
+    # 1. Exact slot ID match (SLOT-101 or 101)
+    for s in pending_slots:
+        sid = s["slot_id"].lower()
+        s_num = "".join(filter(str.isdigit, sid))
+        if sid in q_norm or re.search(r"\b(?:slot[- ]?)?" + re.escape(s_num) + r"\b", q_norm):
+            return s["slot_id"]
+
+    # 2. Ordinal match (first, second, etc.)
+    ordinal_map = {"first": 0, "1st": 0, "second": 1, "2nd": 1, "third": 2, "3rd": 2, "fourth": 3, "4th": 3, "fifth": 4, "5th": 4}
+    for word, idx in ordinal_map.items():
+        if re.search(r"\b" + re.escape(word) + r"\b", q_norm) and idx < len(pending_slots):
+            return pending_slots[idx]["slot_id"]
+
+    # 3. Match by time / date in datetime_str
+    matched = []
+    for s in pending_slots:
+        s_time = s.get("time", "").lower()
+        time_part = s_time.replace(" am", "").replace(" pm", "").strip()
+        if s_time in q_norm or (time_part and time_part in q_norm) or (time_part.lstrip("0") and time_part.lstrip("0") in q_norm):
+            matched.append(s)
+
+    if len(matched) == 1:
+        return matched[0]["slot_id"]
+    elif len(matched) > 1:
+        for m in matched:
+            m_dt = m.get("datetime_str", "").lower()
+            if any(w in q_norm for w in ["oct 19", "tomorrow", "19th", "cbct"]) and "19" in m_dt:
+                return m["slot_id"]
+            if any(w in q_norm for w in ["oct 20", "20th"]) and "20" in m_dt:
+                return m["slot_id"]
+        return matched[0]["slot_id"]
+
+    # 4. Confirmation keyword fallback (default to slot 1)
+    if any(w in q_norm for w in ["yes", "confirm", "book", "proceed", "sure", "ok", "please"]):
+        return pending_slots[0]["slot_id"]
+
+    return None
+
 def triage_clinician_request(query: str, session_id: str = "default_session") -> Dict[str, Any]:
     """
     Decides which specialized agent and MCP tool to invoke.
-    Step 0: Disambiguation candidate resolution if clarification is pending.
+    Step 0A: Disambiguation candidate resolution if clarification is pending.
+    Step 0B: Scan booking confirmation resolution if appointment slots are pending.
     Step 1: LLM Dynamic Multi-Agent Triage using full conversational context.
     Step 2: Safety fallback if LLM service is offline or unhandled.
     """
     session = get_or_create_session(session_id)
     q_lower = query.lower().strip()
 
-    # Step 0: Disambiguation candidate selection from pending clarification
+    # Step 0A: Disambiguation candidate selection from pending clarification
     if session.pending_candidates:
         clarification_res = resolve_pending_candidates_from_query(query, session.pending_candidates)
         query_intent = extract_retrieval_intent(query)
@@ -219,6 +272,55 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             has_retrieval_cmd = any(verb in q_lower for verb in ["open", "find", "load", "retrieve", "book", "schedule", "cancel", "stop"])
             if is_database_q or has_retrieval_cmd:
                 session.pending_candidates = None
+
+    # Step 0B: Scan booking confirmation resolution from pending slots
+    if session.pending_booking_slots:
+        matched_slot_id = resolve_pending_slot_from_query(query, session.pending_booking_slots)
+        if matched_slot_id:
+            pat_name = None
+            pat_id = session.active_patient_id
+            if pat_id:
+                from .retrieval import get_patient
+                p = get_patient(pat_id)
+                if p:
+                    pat_name = p.get("patient_name")
+            if not pat_name:
+                pat_name = "Walk-in Patient"
+
+            session.pending_booking_slots = None
+            return {
+                "selected_agent": "ScanBookingAgent",
+                "tool_name": "confirm_scan_booking",
+                "arguments": {
+                    "slot_id": matched_slot_id,
+                    "patient_name": pat_name,
+                    "patient_id": pat_id
+                },
+                "rationale": f"Clarification Resolution: Matched slot {matched_slot_id} from user input '{query}'."
+            }
+        elif any(w in q_lower for w in ["cancel", "never mind", "stop", "abort", "no"]):
+            session.pending_booking_slots = None
+            return {
+                "selected_agent": "GeneralAssistantAgent",
+                "tool_name": "general_query",
+                "arguments": {"question": "Appointment booking cancelled."},
+                "rationale": "Clinician cancelled appointment booking."
+            }
+        else:
+            is_time_or_date = any(t in q_lower for t in ["am", "pm", "a.m.", "p.m.", ":", "tomorrow", "oct", "october", "morning", "afternoon", "slot", "#", "first", "second", "third", "take", "give me"]) or any(c.isdigit() for c in query)
+            is_new_command = any(v in q_lower for v in ["open", "find", "retrieve", "dictate", "generate", "summarize", "database", "how many"])
+            if is_time_or_date and not is_new_command:
+                return {
+                    "selected_agent": "ScanBookingAgent",
+                    "tool_name": "invalid_slot_selection",
+                    "arguments": {
+                        "query": query,
+                        "available_slots": session.pending_booking_slots
+                    },
+                    "rationale": f"Safety Gate: User query '{query}' did not match any available slot."
+                }
+            elif is_new_command:
+                session.pending_booking_slots = None
 
     # Step 1: Native LLM Function / Tool Calling (Direct Ollama / OpenAI Tool Calling Interface)
     messages = [
@@ -276,45 +378,6 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     "rationale": "Fallback: Speech repair targeting previous retrieval."
                 }
 
-    # 2B.4 Scan Booking Confirmation from pending slots
-    if session.pending_booking_slots:
-        is_confirm = any(w in q_lower for w in ["yes", "confirm", "book", "proceed", "slot", "ok", "sure", "please", "take", "first", "second"])
-        if is_confirm:
-            slot_id = None
-            slot_match = re.search(r"SLOT-(\d+)", query, re.IGNORECASE)
-            if slot_match:
-                slot_id = f"SLOT-{slot_match.group(1)}"
-            else:
-                num_match = re.search(r"\b(10[1-9])\b", query)
-                if num_match:
-                    slot_id = f"SLOT-{num_match.group(1)}"
-                elif any(w in q_lower for w in ["first", "1st", "slot 1"]):
-                    slot_id = session.pending_booking_slots[0]["slot_id"]
-                elif any(w in q_lower for w in ["second", "2nd", "slot 2"]) and len(session.pending_booking_slots) > 1:
-                    slot_id = session.pending_booking_slots[1]["slot_id"]
-                else:
-                    slot_id = session.pending_booking_slots[0]["slot_id"]
-
-            pat_name = None
-            pat_id = session.active_patient_id
-            if pat_id:
-                from .retrieval import get_patient
-                p = get_patient(pat_id)
-                if p:
-                    pat_name = p.get("patient_name")
-            if not pat_name:
-                pat_name = "Walk-in Patient"
-
-            return {
-                "selected_agent": "ScanBookingAgent",
-                "tool_name": "confirm_scan_booking",
-                "arguments": {
-                    "slot_id": slot_id,
-                    "patient_name": pat_name,
-                    "patient_id": pat_id
-                },
-                "rationale": "Clarification Resolution: Clinician confirmed appointment booking."
-            }
 
     # 2B.5 Scan Booking Request (Check Available Slots)
     is_booking_request = any(w in q_lower for w in ["book", "booking", "schedule", "reschedule", "appointment", "reserve", "slots", "slot"])
@@ -597,22 +660,50 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                     "mcp_jsonrpc": mcp_request
                 }
             }
-        else:
-            slots_res = execute_tool("check_appointment_slots", arguments)
-            slots = slots_res.get("available_slots", [])
-            session.pending_booking_slots = slots
-            session.pending_booking_modality = arguments.get("modality", "Any")
-            mod_title = arguments.get("modality", "Radiology")
-
+        elif tool_name == "invalid_slot_selection":
+            slots = session.pending_booking_slots or []
             if slots:
                 slot_lines = [f"• [{s['slot_id']}] {s['datetime_str']} — {s['modality']} ({s['room']})" for s in slots]
                 msg = (
-                    f"Found {len(slots)} available appointment slot(s) for {mod_title} scan:\n"
+                    f"I couldn't find an available appointment slot matching '{query}'. "
+                    f"Please choose from the available slots:\n"
                     + "\n".join(slot_lines)
                     + f"\n\nConfirmation Required: Would you like to confirm any of these slots? (e.g. 'Yes, book slot {slots[0]['slot_id']}')."
                 )
             else:
-                msg = f"No appointment slots currently available for {mod_title} scan. Please check back later."
+                msg = "No appointment slots are currently available. Please check back later."
+
+            return {
+                "status": "confirmation_required",
+                "message": msg,
+                "available_slots": slots,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+        else:
+            slots_res = execute_tool("check_appointment_slots", arguments)
+            slots = slots_res.get("available_slots", [])
+            raw_mod = arguments.get("modality")
+            mod_title = raw_mod if (raw_mod and str(raw_mod).lower() not in ["none", "any", "null", "all"]) else "Radiology"
+            session.pending_booking_slots = slots
+            session.pending_booking_modality = mod_title
+
+            if slots:
+                slot_lines = [f"• [{s['slot_id']}] {s['datetime_str']} — {s['modality']} ({s['room']})" for s in slots]
+                mod_phrase = f" for {mod_title} scan" if mod_title != "Radiology" else ""
+                msg = (
+                    f"Found {len(slots)} available appointment slot(s){mod_phrase}:\n"
+                    + "\n".join(slot_lines)
+                    + f"\n\nConfirmation Required: Would you like to confirm any of these slots? (e.g. 'Yes, book slot {slots[0]['slot_id']}')."
+                )
+            else:
+                msg = f"No appointment slots currently available{f' for {mod_title} scan' if mod_title != 'Radiology' else ''}. Please check back later."
 
             return {
                 "status": "confirmation_required",

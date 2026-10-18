@@ -67,6 +67,54 @@ def _load_env_var(var_name: str, default: Optional[str] = None) -> Optional[str]
 OLLAMA_ENDPOINT = os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/api/generate")
 OLLAMA_CHAT_ENDPOINT = os.getenv("OLLAMA_CHAT_ENDPOINT", "http://localhost:11434/api/chat")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
+GROQ_API_KEY = _load_env_var("GROQ_API_KEY")
+GROQ_MODEL = _load_env_var("GROQ_MODEL", "openai/gpt-oss-120b")
+
+
+# =====================================================================
+# GROQ CLOUD FAST INFERENCE ENGINE (Sub-second response)
+# =====================================================================
+def query_groq(prompt: str, system_prompt: Optional[str] = None, json_format: bool = True) -> Optional[str]:
+    """Queries ultra-fast Groq Cloud API (<0.5s latency)."""
+    api_key = GROQ_API_KEY or _load_env_var("GROQ_API_KEY")
+    if not api_key:
+        return None
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+
+    payload = {
+        "model": GROQ_MODEL or "openai/gpt-oss-120b",
+        "messages": messages,
+        "temperature": 0.1
+    }
+    if json_format:
+        payload["response_format"] = {"type": "json_object"}
+
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        }
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            choices = data.get("choices", [])
+            if choices:
+                content = choices[0].get("message", {}).get("content", "").strip()
+                if content:
+                    print(f"\n⚡ [GROQ ACCELERATED] Response received from {payload['model']}!")
+                    return content
+    except Exception:
+        return None
+    return None
+
 
 # =====================================================================
 # GENERAL CLINICAL DICTATION STRUCTURING PROMPT
@@ -135,7 +183,7 @@ Return strictly valid JSON:
 
 
 # =====================================================================
-# LOCAL OLLAMA LLM CLIENT (Exclusive Private Execution)
+# LOCAL OLLAMA LLM CLIENT (Local Private Execution)
 # =====================================================================
 def query_ollama(prompt: str, system_prompt: Optional[str] = None, json_format: bool = True) -> Optional[str]:
     """Queries the local Ollama LLM endpoint (llama3.1)."""
@@ -155,7 +203,7 @@ def query_ollama(prompt: str, system_prompt: Optional[str] = None, json_format: 
         headers={"Content-Type": "application/json"}
     )
     try:
-        with urllib.request.urlopen(req, timeout=90) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             response_text = data.get("response", "").strip()
             if response_text:
@@ -167,9 +215,15 @@ def query_ollama(prompt: str, system_prompt: Optional[str] = None, json_format: 
 
 def query_llm(prompt: str, system_prompt: Optional[str] = None, json_format: bool = True) -> Optional[str]:
     """
-    Local Ollama LLM Dispatcher (Ollama llama3.1).
-    Falls back cleanly to deterministic clinical parsing if local Ollama daemon is offline.
+    High-Performance LLM Dispatcher:
+    1. Checks ultra-fast Groq Cloud (<0.5s) if GROQ_API_KEY is available.
+    2. Falls back to local Ollama (llama3.1) with 15s timeout.
+    3. Falls back cleanly to deterministic clinical parsing if local daemon is offline.
     """
+    groq_res = query_groq(prompt, system_prompt=system_prompt, json_format=json_format)
+    if groq_res:
+        return groq_res
+
     return query_ollama(prompt, system_prompt=system_prompt, json_format=json_format)
 
 
@@ -190,7 +244,7 @@ def query_ollama_chat_tools(messages: List[Dict[str, Any]], tools: List[Dict[str
         headers={"Content-Type": "application/json"}
     )
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             msg = data.get("message", {})
             tool_calls = msg.get("tool_calls", [])

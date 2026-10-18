@@ -349,9 +349,10 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
 
         elif tool_name == "check_appointment_slots":
             from .booking_service import check_available_slots
-            modality = arguments.get("modality", "Any")
+            raw_mod = arguments.get("modality")
+            modality = raw_mod if (raw_mod and str(raw_mod).lower() not in ["none", "any"]) else "Radiology"
             preferred_date = arguments.get("preferred_date")
-            slots = check_available_slots(modality=modality, preferred_date=preferred_date)
+            slots = check_available_slots(modality=raw_mod or "Any", preferred_date=preferred_date)
             return {
                 "status": "success",
                 "modality": modality,

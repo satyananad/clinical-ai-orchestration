@@ -127,3 +127,30 @@ def test_cbct_multi_tooth_dictation_structuring():
     obs_text = " ".join(f.get("observation", "") for f in findings).lower()
     assert "impacted" in obs_text or "angulated" in obs_text
     assert "radiolucency" in obs_text or "calcification" in obs_text
+
+
+def test_scan_booking_time_based_confirmation():
+    """
+    Verifies that when a clinician enters a natural time string like 'October 10:00 a.m.'
+    or '10:00 AM' after appointment slots are displayed, the system:
+    1. Does NOT mistake the time for a patient name retrieval.
+    2. Correctly matches the corresponding slot (SLOT-101 at 10:00 AM).
+    3. Successfully books and confirms the slot.
+    """
+    session_id = "test_time_booking_session"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    # Turn 1: Clinician asks to book an appointment
+    resp1 = run_multi_agent_pipeline("I want to book appointment", session_id=session_id)
+    assert resp1["status"] == "confirmation_required"
+    assert "available_slots" in resp1
+    assert "None scan" not in resp1["message"]
+
+    # Turn 2: Clinician specifies the time "October 10:00 a.m."
+    resp2 = run_multi_agent_pipeline("October 10:00 a.m.", session_id=session_id)
+    assert resp2["status"] == "success"
+    assert resp2["agent_trace"]["active_agent"] == "ScanBookingAgent"
+    assert "booking_reference" in resp2
+    assert "10:00 AM" in resp2["message"]
+
