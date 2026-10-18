@@ -44,7 +44,7 @@ def verify_anti_hallucination(raw_dictation: str, structured_findings: List[Dict
 
     return {
         "status": status,
-        "grounded_ratio": verification["verified_count"],
+        "grounded_ratio": verification["grounded_ratio"],
         "unsupported_findings": unsupported,
         "contradicted_claims": verification.get("contradicted_claims", []),
         "anti_hallucination_guarantee": verification.get("anti_hallucination_guarantee", "Zero ungrounded or contradicted findings admitted to final report.")

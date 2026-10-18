@@ -536,8 +536,11 @@ def verify_dictation_against_source(raw_dictation: str, findings: List[Dict[str,
         overall_status = "FLAGGED_UNSUPPORTED"
         guarantee = "Unsupported findings flagged for clinician review."
 
+    grounded_ratio_val = round(verified_count / len(findings), 3) if findings else 1.0
+
     return {
         "status": overall_status,
+        "grounded_ratio": grounded_ratio_val,
         "verified_count": f"{verified_count}/{len(findings)}",
         "claims_total": len(findings),
         "supported_claims": verified_count,

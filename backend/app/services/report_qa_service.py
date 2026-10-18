@@ -48,16 +48,19 @@ def generate_report_summary(report: Dict[str, Any], patient: Dict[str, Any]) -> 
     indication = report.get("clinical_indication", "Not specified")
     findings = report.get("findings", [])
     impressions = report.get("impression", [])
-    recommendations = report.get("recommendation", "Clinical correlation advised.")
+    recommendations = report.get("recommendation") or "None documented in report."
 
     findings_bullets = [f"• {f.get('region', 'Tooth')}: {f.get('observation')} (Certainty: {f.get('certainty', 'Observed')})" for f in findings]
     impressions_bullets = [f"• {imp}" for imp in impressions]
 
+    findings_content = "\n".join(findings_bullets) if findings_bullets else "• No specific findings documented in report."
+    impressions_content = "\n".join(impressions_bullets) if impressions_bullets else "• No diagnostic impression documented in report."
+
     answer_text = (
         f"Summary for {patient.get('patient_name')} ({report_type} Report: {report_id}, Date: {report_date}):\n\n"
         f"Clinical Indication:\n• {indication}\n\n"
-        f"Key Diagnostic Findings:\n" + ("\n".join(findings_bullets) if findings_bullets else "• No significant osseous abnormalities.") + "\n\n"
-        f"Radiologist Impression:\n" + ("\n".join(impressions_bullets) if impressions_bullets else "• Normal radiographic examination.") + "\n\n"
+        f"Key Diagnostic Findings:\n{findings_content}\n\n"
+        f"Radiologist Impression:\n{impressions_content}\n\n"
         f"Recommendation:\n• {recommendations}"
     )
 

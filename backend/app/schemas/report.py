@@ -47,18 +47,24 @@ class AnatomicalSite(BaseModel):
     anatomical_name: str
     quadrant: str
 
+from typing import List, Optional, Dict, Any, Union
+
 class ClinicalFindingItem(BaseModel):
     anatomical_site: str
+    tooth_number: Optional[str] = None
     category: str
     observation: str
-    source_quote: Optional[str] = None
+    polarity: Optional[str] = "present"
     certainty: str
     measurements: Optional[List[str]] = []
+    source_quote: Optional[str] = None
+    related_sites: Optional[List[str]] = []
     requires_clarification: bool = False
+    clarification_reason: Optional[str] = None
 
 class SafetyGuardrails(BaseModel):
     status: str
-    grounded_ratio: str
+    grounded_ratio: Union[float, str]
     unsupported_findings: List[str] = []
     anti_hallucination_guarantee: str
 
