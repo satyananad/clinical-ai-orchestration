@@ -382,8 +382,8 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
     # 2F. Default: Patient & Report Retrieval
     query_intent = extract_retrieval_intent(query)
     target_modality = query_intent.get("report_type", "Any")
-    clean_query = re.sub(r"\b(open|show|find|get|latest|report|scan|opg|cbct|bitewing|periapical|please)\b", "", q_lower).strip()
-    name_guess = clean_query.title() if clean_query else query.title()
+    extracted_name = query_intent.get("patient_name", "").strip()
+    name_guess = extracted_name.title() if extracted_name else query.title()
 
     pat_id_match = re.search(r"\b(PAT-\d+)\b", query, re.IGNORECASE)
     patient_id_found = pat_id_match.group(1).upper() if pat_id_match else None
@@ -635,6 +635,34 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
     else:
         # Check active report guardrail
         if not session.active_patient_id or not session.active_report_id:
+            # Auto-recovery: If user actually asked to open a patient's report, route to retrieval!
+            has_retrieval_verb = any(v in query.lower() for v in ["open", "show", "load", "find", "fetch", "get", "view"])
+            intent = extract_retrieval_intent(query)
+            if has_retrieval_verb and intent.get("patient_name"):
+                actual_query = intent.get("patient_name")
+                retrieval_res = resolve_report_retrieval(actual_query, patient_name=intent.get("patient_name"), modality=intent.get("report_type"))
+                if retrieval_res.get("status") == "success" and retrieval_res.get("report"):
+                    session.set_active(
+                        retrieval_res["patient"]["patient_id"],
+                        retrieval_res["report"]["report_id"]
+                    )
+                    session.pending_candidates = None
+                elif retrieval_res.get("status") == "clarification_required":
+                    session.pending_candidates = retrieval_res.get("candidates")
+                    session.last_retrieval_modality = intent.get("report_type", "Any")
+
+                return {
+                    **retrieval_res,
+                    "agent_trace": {
+                        "orchestrator": "TriageAgent",
+                        "active_agent": "RetrievalAgent",
+                        "tool_called": "search_patient_reports",
+                        "arguments": intent,
+                        "rationale": "Auto-recovery: Request was to open a report; redirected from Consultation to Retrieval.",
+                        "mcp_jsonrpc": mcp_request
+                    }
+                }
+
             return {
                 "status": "clarification_required",
                 "message": "No active patient report is currently selected. Please select a patient from the directory above or ask me to open a specific report (e.g. 'Open Vikram Malhotra's CBCT').",
