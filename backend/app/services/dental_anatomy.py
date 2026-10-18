@@ -244,33 +244,41 @@ def classify_observation_category(observation: str, site_name: str = "") -> str:
     """
     obs_lower = observation.lower()
 
-    # 1. Endodontic Status (Strictly endodontic therapy & pulpal status)
-    if any(term in obs_lower for term in ["root canal", "root treated", "endodontic", "pulpectomy", "obturation", "gutta-percha", "pulp vitality", "pulp stone"]):
+    # 1. Trauma & Tooth Fracture
+    if any(term in obs_lower for term in ["fracture", "separation of the crown", "avulsion", "luxation"]):
+        return "Trauma & Tooth Fracture"
+
+    # 2. Cysts & Benign Odontogenic Tumors / Pathology
+    if any(term in obs_lower for term in ["radicular cyst", "cyst", "odontogenic tumor", "aot", "adenomatoid", "ameloblastoma", "lesion"]):
+        return "Root Pathology & Resorption"
+
+    # 3. Endodontic Status (Strictly endodontic therapy & pulpal status)
+    if any(term in obs_lower for term in ["root canal", "root treated", "root-filled", "root filled", "endodontic", "pulpectomy", "obturation", "gutta-percha", "pulp vitality", "pulp stone"]):
         return "Endodontic Status"
 
-    # 2. Root Resorption & Structural Pathology
+    # 4. Root Resorption & Structural Pathology
     if any(term in obs_lower for term in ["root resorption", "resorption", "external resorption", "internal resorption"]):
         return "Root Pathology & Resorption"
 
-    # 3. Sinonasal & Extra-Dental Structures
-    if any(term in obs_lower for term in ["maxillary sinus", "sinus floor", "airway", "cervical spine", "calcification", "tmj", "temporomandibular", "ostia"]):
+    # 5. Sinonasal & Extra-Dental Structures
+    if any(term in obs_lower for term in ["maxillary sinus", "sinuses", "sinus floor", "airway", "cervical spine", "calcification", "tonsillolith", "tonsils", "tmj", "temporomandibular", "ostia"]):
         if any(term in obs_lower for term in ["apices touch", "elevation of", "contacting the sinus", "touch the sinus"]):
             return "Anatomical Relationships & Proximity"
         return "Sinonasal & Extra-Dental Structures"
 
-    # 4. Anatomical Relationships & Proximity (Root contacts, trifurcation, nerve proximity, orientation)
+    # 6. Anatomical Relationships & Proximity (Root contacts, trifurcation, nerve proximity, orientation)
     if any(term in obs_lower for term in ["trifurcation", "apices touch", "buccal orientation", "contacting", "proximity", "nerve canal", "mandibular canal", "orientation", "adjacent tooth", "adjacent teeth"]):
         return "Anatomical Relationships & Proximity"
 
-    # 5. Impaction / Eruption
+    # 7. Impaction / Eruption
     if any(term in obs_lower for term in ["unerupted", "impacted", "impaction", "follicle", "supernumerary", "ectopic", "eruption"]):
         return "Impaction / Eruption"
 
-    # 6. Restorative & Caries Status
+    # 8. Restorative & Caries Status
     if any(term in obs_lower for term in ["restored", "filling", "caries", "carious", "amalgam", "composite"]):
         return "Restorative & Caries Status"
 
-    # 7. Periapical & Osseous Status
+    # 9. Periapical & Osseous Status
     if any(term in obs_lower for term in ["periapical", "radiolucency", "bone height", "alveolar", "periodontal attachment", "osteitis"]):
         return "Periapical & Osseous Status"
 

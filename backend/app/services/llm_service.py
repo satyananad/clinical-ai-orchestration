@@ -141,7 +141,7 @@ def query_ollama(prompt: str, system_prompt: Optional[str] = None, json_format: 
         headers={"Content-Type": "application/json"}
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=90) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             response_text = data.get("response", "").strip()
             if response_text:
@@ -270,7 +270,7 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
         result = _dynamic_semantic_parse(dictation_text)
 
     # 1. Enforce No Invented Recommendations
-    has_explicit_rec = any(w in dictation_text.lower() for w in ["recommend", "recommended", "plan", "advised", "advise", "routine follow-up"])
+    has_explicit_rec = bool(re.search(r"\b(recommend|recommended|recommendation|advise|advised|routine follow-up)\b", dictation_text, re.IGNORECASE))
     if not has_explicit_rec:
         result["recommendations"] = []
 
@@ -415,10 +415,17 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             anatomical_sites.append(norm)
 
     # 5. Regional extra-dental anatomy
-    extra_sites = ["maxillary sinus", "sinus floor", "tmj", "airway", "cervical spine", "inferior alveolar nerve canal", "mandibular canal"]
-    for es in extra_sites:
-        if re.search(r"\b" + re.escape(es) + r"\b", cleaned_text, re.IGNORECASE):
-            norm = normalize_dental_site({"anatomical_name": es.title(), "site_type": "Regional Anatomy"})
+    extra_sites_map = [
+        ([r"palatine\s+tonsilloliths?", r"tonsilloliths?", r"tonsils?"], "Palatine Tonsils", "Soft Tissue"),
+        ([r"maxillary\s+sinuses?", r"sinuses?", r"sinus\s+floor"], "Maxillary Sinuses", "Regional Anatomy"),
+        ([r"marginal\s+alveolar\s+bone", r"alveolar\s+bone", r"alveolar\s+crest", r"alveolar\s+ridge"], "Marginal Alveolar Bone", "Osseous Structure"),
+        ([r"cervical\s+spine", r"vertebrae"], "Cervical Spine", "Regional Anatomy"),
+        ([r"tmj", r"temporomandibular", r"condyle"], "Temporomandibular Joints", "Regional Anatomy"),
+        ([r"inferior\s+alveolar\s+nerve", r"mandibular\s+canal"], "Inferior Alveolar Canal", "Regional Anatomy"),
+    ]
+    for patterns, site_title, s_type in extra_sites_map:
+        if any(re.search(r"\b" + p + r"\b", cleaned_text, re.IGNORECASE) for p in patterns):
+            norm = normalize_dental_site({"anatomical_name": site_title, "site_type": s_type})
             if norm["anatomical_name"] not in seen_sites:
                 seen_sites.add(norm["anatomical_name"])
                 anatomical_sites.append(norm)
@@ -431,7 +438,21 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
 
     # Parse clauses into findings
     for s in sentences:
-        s_lower = s.lower()
+        s_lower = s.lower().strip()
+
+        # Skip patient demographics, scan technique/indication, or report verification boilerplate
+        if (
+            re.search(r"^patient\s+is\s+a\b", s_lower) or
+            re.search(r"\b(?:cbct|examination|study|scan)\s+(?:of\s+the\s+[a-z\s]+\s+)?was\s+performed\s+for\b", s_lower) or
+            re.search(r"\breport\s+was\s+verified\b", s_lower) or
+            re.search(r"\bmeasurements\s+should\s+not\s+be\s+made\b", s_lower)
+        ):
+            continue
+
+        # Check if sentence is a standalone diagnostic summary / impression statement
+        if re.search(r"^(?:the\s+)?findings\s+suggest\b", s_lower):
+            impressions.append(s)
+            continue
 
         # Check if this sentence contains an unclear speech transcription artifact
         art_match = next((a for a in artifacts if a["matched_phrase"].lower() in s_lower), None)
@@ -445,7 +466,7 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             continue
 
         # Check for surrounding bone observation
-        if "surrounding bone" in s_lower:
+        if "surrounding bone" in s_lower and "alveolar bone" not in s_lower:
             findings.append({
                 "anatomical_site": primary_site_label,
                 "category": "Periapical & Osseous Status",
@@ -484,19 +505,32 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             })
             continue
 
-        # General sentence fallback
-        certainty = label_diagnostic_certainty(s)
-        target_site = primary_site_label
-        for site in anatomical_sites:
-            p_code = site.get("palmer_notation", "")
-            fdi_code = str(site.get("fdi_number", ""))
-            if p_code and re.search(r"\b" + re.escape(p_code) + r"\b", s, re.IGNORECASE):
-                target_site = site.get("anatomical_name")
-                break
-            elif fdi_code and re.search(r"\b" + re.escape(fdi_code) + r"\b", s):
-                target_site = site.get("anatomical_name")
+        # Determine target anatomical site for finding
+        target_site = None
+        for patterns, site_title, _ in extra_sites_map:
+            if any(re.search(r"\b" + p + r"\b", s_lower) for p in patterns):
+                target_site = site_title
                 break
 
+        if not target_site:
+            for site in anatomical_sites:
+                p_code = site.get("palmer_notation", "")
+                fdi_code = str(site.get("fdi_number", ""))
+                a_name = site.get("anatomical_name", "")
+                if p_code and re.search(r"\b" + re.escape(p_code) + r"\b", s, re.IGNORECASE):
+                    target_site = a_name
+                    break
+                elif fdi_code and re.search(r"\b" + re.escape(fdi_code) + r"\b", s):
+                    target_site = a_name
+                    break
+                elif a_name and a_name.lower() in s_lower:
+                    target_site = a_name
+                    break
+
+        if not target_site:
+            target_site = primary_site_label
+
+        certainty = label_diagnostic_certainty(s)
         category = classify_observation_category(s, target_site)
         findings.append({
             "anatomical_site": target_site,
@@ -505,35 +539,51 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
             "certainty": certainty
         })
 
-    # Synthesize clean Impressions
+    # Synthesize clean Impressions if not already extracted
     imp_parts = []
-    if any("horizontally impacted" in f["observation"].lower() for f in findings):
-        imp_parts.append(f"Horizontally impacted {primary_site_label}")
-    elif any("impacted" in f["observation"].lower() for f in findings):
-        imp_parts.append(f"Impacted {primary_site_label}")
+    for f in findings:
+        obs = f["observation"].lower()
+        site = f["anatomical_site"]
+        if "fracture" in obs:
+            if "separation" in obs:
+                imp_parts.append(f"{site}: horizontal mid-root fracture with crown-root separation")
+            else:
+                imp_parts.append(f"{site}: root fracture")
+        elif "radicular cyst" in obs or "cyst" in obs:
+            if "suggest" in obs or "possible" in obs:
+                imp_parts.append(f"Well-defined radiolucency suggestive of radicular cyst ({site})")
+            else:
+                imp_parts.append(f"Radicular cyst ({site})")
+        elif "adenomatoid odontogenic tumor" in obs or "aot" in obs:
+            imp_parts.append(f"Benign odontogenic lesion suggestive of AOT ({site})")
+        elif "horizontally impacted" in obs:
+            imp_parts.append(f"Horizontally impacted {site}")
+        elif "impacted" in obs and not any("impacted" in p for p in imp_parts):
+            imp_parts.append(f"Impacted {site}")
 
     if any("second molar" in f["observation"].lower() for f in findings):
-        imp_parts.append("in close proximity to adjacent second molar")
+        imp_parts.append("close proximity to adjacent second molar")
 
-    if any("bone appears normal" in f["observation"].lower() for f in findings):
-        imp_parts.append("surrounding bone is normal")
+    if any("tonsillolith" in f["observation"].lower() for f in findings):
+        imp_parts.append("bilateral palatine tonsilloliths noted incidentally")
 
-    base_imp = "; ".join(imp_parts) if imp_parts else "Radiological assessment of dentition completed."
-    if artifacts:
-        base_imp += f". Unclear phrase '{artifacts[0]['matched_phrase']}' flagged for clinician clarification."
-    impressions.append(base_imp)
+    if not impressions:
+        base_imp = "; ".join(list(dict.fromkeys(imp_parts))) if imp_parts else "Radiological assessment completed."
+        if artifacts:
+            base_imp += f". Unclear phrase '{artifacts[0]['matched_phrase']}' flagged for clinician clarification."
+        impressions.append(base_imp)
 
     # Recommendations: Strict zero-hallucination. Only include if explicitly dictated!
-    has_explicit_rec = any(w in dictation_text.lower() for w in ["recommend", "recommended", "plan", "advised", "advise", "routine follow-up"])
+    has_explicit_rec = bool(re.search(r"\b(recommend|recommended|recommendation|advise|advised|routine follow-up)\b", dictation_text, re.IGNORECASE))
     if has_explicit_rec:
         for s in sentences:
-            if any(w in s.lower() for w in ["recommend", "advise", "plan", "follow-up"]):
+            if re.search(r"\b(recommend|recommended|recommendation|advise|advised|follow-up)\b", s, re.IGNORECASE) and "performed for" not in s.lower():
                 recommendations.append(s)
 
     return {
         "anatomical_sites": anatomical_sites,
         "findings": findings,
-        "impressions": impressions,
+        "impressions": list(dict.fromkeys(impressions)),
         "recommendations": list(dict.fromkeys(recommendations))
     }
 

@@ -153,14 +153,60 @@ def verify_single_claim_deterministic(source_text: str, claim_text: str) -> Dict
                 "claim": claim_text
             }
 
-    # Check 2: Negation Contradiction (e.g. source says 'no caries', claim says 'caries present')
-    src_has_negation = any(re.search(r"\b" + re.escape(w) + r"\b", src_lower) for w in NEGATION_WORDS)
+    # Check 2: Laterality Mismatch (e.g. left vs right)
+    src_lat = extract_laterality(source_text)
+    claim_lat = extract_laterality(claim_text)
+    if src_lat and claim_lat and src_lat != "bilateral" and claim_lat != "bilateral" and src_lat != claim_lat:
+        return {
+            "status": ClaimStatus.CONTRADICTED,
+            "dimension": "laterality",
+            "details": f"Laterality contradiction: Source specifies {src_lat} side, but claim states {claim_lat} side.",
+            "claim": claim_text
+        }
+
+    # Check 3: Measurement Mismatch (e.g. 4 mm vs 8 mm)
+    src_meas = extract_measurements(source_text)
+    claim_meas = extract_measurements(claim_text)
+    if claim_meas and src_meas:
+        if not any(cm in src_lower for cm in claim_meas):
+            return {
+                "status": ClaimStatus.CONTRADICTED,
+                "dimension": "measurement",
+                "details": f"Measurement mismatch: Claim states {claim_meas}, but source documents {src_meas}.",
+                "claim": claim_text
+            }
+
+    # Check 4: Verbatim Substring Match
+    # If the claim is an exact substring of the source dictation (ignoring punctuation), it is grounded and cannot be a contradiction
+    claim_clean = re.sub(r"[^\w\s]", "", claim_lower).strip()
+    src_clean = re.sub(r"[^\w\s]", "", src_lower)
+    if claim_lower in src_lower or (claim_clean and claim_clean in src_clean):
+        return {
+            "status": ClaimStatus.SUPPORTED,
+            "dimension": "verbatim_source_grounding",
+            "details": "Claim is verified and supported by source clinical text.",
+            "claim": claim_text
+        }
+
+    # Locate the most relevant sentence in source_text for sentence-level contextual verification
+    src_sentences = [s.strip() for s in re.split(r"[.\n;]+", src_lower) if len(s.strip()) > 3]
+    claim_words_set = set(w for w in re.findall(r"\w+", claim_lower) if len(w) > 2)
+    relevant_src = src_lower
+    best_overlap = 0
+    for sent in src_sentences:
+        sent_words = set(w for w in re.findall(r"\w+", sent) if len(w) > 2)
+        overlap = len(claim_words_set.intersection(sent_words))
+        if overlap > best_overlap:
+            best_overlap = overlap
+            relevant_src = sent
+
+    # Check 5: Negation Contradiction on relevant sentence
+    src_has_negation = any(re.search(r"\b" + re.escape(w) + r"\b", relevant_src) for w in NEGATION_WORDS)
     claim_has_negation = any(re.search(r"\b" + re.escape(w) + r"\b", claim_lower) for w in NEGATION_WORDS)
 
-    # Core pathologies to check for negation flipping
     pathologies = ["caries", "radiolucency", "fracture", "lesion", "bone loss", "impaction", "cyst", "periapical"]
     for p in pathologies:
-        if p in src_lower and p in claim_lower:
+        if p in relevant_src and p in claim_lower:
             if src_has_negation and not claim_has_negation:
                 return {
                     "status": ClaimStatus.CONTRADICTED,
@@ -176,31 +222,8 @@ def verify_single_claim_deterministic(source_text: str, claim_text: str) -> Dict
                     "claim": claim_text
                 }
 
-    # Check 3: Laterality Mismatch (e.g. left vs right)
-    src_lat = extract_laterality(source_text)
-    claim_lat = extract_laterality(claim_text)
-    if src_lat and claim_lat and src_lat != "bilateral" and claim_lat != "bilateral" and src_lat != claim_lat:
-        return {
-            "status": ClaimStatus.CONTRADICTED,
-            "dimension": "laterality",
-            "details": f"Laterality contradiction: Source specifies {src_lat} side, but claim states {claim_lat} side.",
-            "claim": claim_text
-        }
-
-    # Check 4: Measurement Mismatch (e.g. 4 mm vs 8 mm)
-    src_meas = extract_measurements(source_text)
-    claim_meas = extract_measurements(claim_text)
-    if claim_meas and src_meas:
-        if not any(cm in src_lower for cm in claim_meas):
-            return {
-                "status": ClaimStatus.CONTRADICTED,
-                "dimension": "measurement",
-                "details": f"Measurement mismatch: Claim states {claim_meas}, but source documents {src_meas}.",
-                "claim": claim_text
-            }
-
-    # Check 5: Uncertainty Escalation (e.g. 'possible lesion' -> 'confirmed lesion')
-    src_status = classify_clinical_finding_status(source_text)
+    # Check 6: Uncertainty Escalation on relevant sentence
+    src_status = classify_clinical_finding_status(relevant_src)
     claim_status = classify_clinical_finding_status(claim_text)
     if src_status["certainty"] == "suspected" and claim_status["certainty"] == "confirmed" and not claim_has_negation:
         return {
@@ -210,7 +233,7 @@ def verify_single_claim_deterministic(source_text: str, claim_text: str) -> Dict
             "claim": claim_text
         }
 
-    # Check 6: Lexical & Token Grounding (Presence in source)
+    # Check 7: Lexical & Token Grounding (Presence in source)
     claim_words = [w for w in re.findall(r"\w+", claim_lower) if len(w) > 3 and w not in NEGATION_WORDS]
     if claim_words:
         matched = [w for w in claim_words if w in src_lower]
