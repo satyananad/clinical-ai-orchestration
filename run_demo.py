@@ -154,7 +154,7 @@ def run_tests():
     print_banner("4. AUTOMATED TEST SUITE VERIFICATION")
     ret = os.system("PYTHONPATH=.:venv/lib/python3.14/site-packages python3 -m pytest backend/tests -q")
     if ret == 0:
-        print("\n[✓] ALL 62 AUTOMATED CLINICAL TESTS PASSED SUCCESSFULLY.")
+        print("\n[✓] ALL 63 AUTOMATED CLINICAL TESTS PASSED SUCCESSFULLY.")
 
 if __name__ == "__main__":
     print_banner("VISCAN VOICE-FIRST DENTAL ASSISTANT - TECHNICAL PROOF OF CONCEPT")
