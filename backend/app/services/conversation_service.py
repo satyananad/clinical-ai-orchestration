@@ -21,17 +21,26 @@ class SessionState:
         self.active_patient_id: Optional[str] = None
         self.active_report_id: Optional[str] = None
         self.history: List[Dict[str, str]] = []
+        self.pending_candidates: Optional[List[Dict[str, Any]]] = None
+        self.last_retrieval_query: Optional[str] = None
+        self.last_retrieval_modality: Optional[str] = None
 
     def set_active(self, patient_id: str, report_id: str):
         """Updates active patient & report ONLY upon verified successful retrieval."""
         self.active_patient_id = patient_id
         self.active_report_id = report_id
+        self.pending_candidates = None
+        self.last_retrieval_query = None
+        self.last_retrieval_modality = None
 
     def clear(self):
         """Clears session context and resets active selections."""
         self.active_patient_id = None
         self.active_report_id = None
         self.history = []
+        self.pending_candidates = None
+        self.last_retrieval_query = None
+        self.last_retrieval_modality = None
 
 # Thread-safe session dictionary keyed by unique session_id
 SESSIONS: Dict[str, SessionState] = {}
@@ -49,10 +58,21 @@ PRONOUN_TRIGGERS = [
     "that scan", "her scan", "his scan", "the scan"
 ]
 
-def is_contextual_query(query: str) -> bool:
+def is_contextual_query(query: str, has_active_report: bool = False) -> bool:
     """Detects whether a user query refers to an active session context rather than a new patient."""
     q_lower = query.lower()
-    return any(re.search(r"\b" + re.escape(p) + r"\b", q_lower) for p in PRONOUN_TRIGGERS)
+    if any(re.search(r"\b" + re.escape(p) + r"\b", q_lower) for p in PRONOUN_TRIGGERS):
+        return True
+    if has_active_report:
+        followup_triggers = [
+            "summarize", "summary", "overview", "what did", "what does",
+            "are there", "is there", "any caries", "caries", "decay", "cavities",
+            "tooth", "teeth", "molar", "impaction", "nerve", "canal",
+            "bone loss", "radiolucency", "recommendation", "findings", "impression"
+        ]
+        if any(term in q_lower for term in followup_triggers) and not any(verb in q_lower for verb in ["open", "find", "retrieve", "search", "show"]):
+            return True
+    return False
 
 def handle_assistant_interaction(query: str, session_id: str = "default_session") -> Dict[str, Any]:
     """

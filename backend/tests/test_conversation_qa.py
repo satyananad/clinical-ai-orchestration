@@ -76,3 +76,49 @@ def test_conversational_follow_up_and_report_qa_workflow():
     assert r5["status"] == "success"
     # Anti-hallucination check: Explains that earlier scan is not documented
     assert "not documented" in r5["answer"].lower() or "impression is" in r5["answer"].lower()
+
+
+def test_full_name_with_speech_artifact_and_contextual_follow_up():
+    """Verifies that queries containing full names with extraneous or misrecognized words open directly and support follow-up."""
+    from backend.app.services.orchestrator_agent import run_multi_agent_pipeline
+    session_id = "test_artifact_session_42"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    # 1. Spoken input with speech artifact: 'can you open Priya Sharma OPG pineapple report'
+    res1 = run_multi_agent_pipeline("can you open Priya Sharma OPG pineapple report", session_id=session_id)
+    assert res1["status"] == "success"
+    assert res1["patient"]["patient_name"] == "Priya Sharma"
+    assert res1["report"]["report_id"] == "RPT-2001"
+
+    # 2. Conversational follow-up: 'Summarize her report'
+    res2 = run_multi_agent_pipeline("Summarize her report", session_id=session_id)
+    assert res2["status"] == "success"
+    assert "Priya Sharma" in res2["answer"]
+    assert len(res2["citations"]) > 0
+
+    # 3. Grounded question answering: 'What did the radiologist say about tooth 48?'
+    res3 = run_multi_agent_pipeline("What did the radiologist say about tooth 48?", session_id=session_id)
+    assert res3["status"] == "success"
+    assert len(res3["citations"]) > 0
+
+
+def test_speech_correction_repair_turn():
+    """Verifies multi-turn speech repair when clinician corrects a misrecognized term."""
+    from backend.app.services.orchestrator_agent import run_multi_agent_pipeline
+    session_id = "test_repair_session_99"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    # Ambiguous search with speech error
+    res1 = run_multi_agent_pipeline("open Priya pineapple report", session_id=session_id)
+    assert res1["status"] == "clarification_required"
+
+    # Speech repair: 'not pineapple I am saying panoramic'
+    res2 = run_multi_agent_pipeline("not pineapple I am saying panoramic", session_id=session_id)
+    assert res2["status"] == "clarification_required"
+
+    # Clinician clarifies candidate
+    res3 = run_multi_agent_pipeline("Priya Sharma", session_id=session_id)
+    assert res3["status"] == "success"
+    assert res3["patient"]["patient_name"] == "Priya Sharma"
