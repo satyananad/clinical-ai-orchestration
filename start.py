@@ -21,9 +21,13 @@ def main():
     print("• Press Ctrl+C to stop the server")
     print("=" * 65)
 
+    python_bin = os.path.join(base_dir, "venv", "bin", "python")
+    if not os.path.exists(python_bin):
+        python_bin = sys.executable
+
     try:
         subprocess.run(
-            [sys.executable, "-m", "uvicorn", "backend.app.main:app", "--host", "127.0.0.1", "--port", "8000", "--reload"],
+            [python_bin, "-m", "uvicorn", "backend.app.main:app", "--host", "127.0.0.1", "--port", "8000", "--reload"],
             env=env
         )
     except KeyboardInterrupt:
