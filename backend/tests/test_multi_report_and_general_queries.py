@@ -227,3 +227,74 @@ def test_caries_assessment_across_all_reports():
     assert "16" in ans
     assert "tooth 16" in ans.lower() or "teeth 16" in ans.lower()
     assert any(w in ans for w in ["RPT-2001", "RPT-2003", "caries", "radiolucency"])
+
+
+def test_greeting_prefaced_retrieval_arjun_mehta():
+    """
+    Clinician uses natural greeting preface: 'hey i want to open the report of arjun mehta'.
+    Must directly retrieve Arjun Mehta (PAT-1005), open his report, and list associated reports.
+    Must NEVER reject with security verification or ask for DOB/ID when patient is unambiguous.
+    """
+    session_id = "test_greeting_arjun"
+    res = client.post("/assistant/chat", json={
+        "query": "hey i want to open the report of arjun mehta",
+        "session_id": session_id
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert data["patient"]["patient_name"] == "Arjun Mehta"
+    assert data["patient"]["patient_id"] == "PAT-1005"
+    assert data["report"] is not None
+    # Verify no fake security refusal text
+    assert "verify his details" not in data["answer"].lower()
+    assert "safety and security purposes" not in data["answer"].lower()
+    # Verify reports are loaded
+    assert len(data.get("available_reports", [])) == 3
+
+
+def test_multi_report_what_problem_they_have():
+    """
+    When patient has multiple reports on file and clinician asks 'what problem they have',
+    the assistant synthesizes the clinical findings and impressions across their reports with citations.
+    """
+    session_id = "test_multi_problems_arjun"
+    # 1. Open Arjun Mehta
+    open_res = client.post("/assistant/chat", json={
+        "query": "hey i want to open the report of arjun mehta",
+        "session_id": session_id
+    })
+    assert open_res.status_code == 200
+    assert open_res.json()["status"] == "success"
+
+    # 2. Ask what problem they have
+    res = client.post("/assistant/chat", json={
+        "query": "what problem they have",
+        "session_id": session_id
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    ans = data["answer"].lower()
+    # Should explain clinical condition of tooth 25 (obturation, crown preparation, or crown)
+    assert any(term in ans for term in ["tooth 25", "25", "endodontic", "obturation", "crown", "root canal"])
+    # Citations must be present
+    assert len(data.get("citations", [])) >= 1
+
+
+def test_greeting_prefaced_retrieval_variations():
+    """
+    Various natural conversational greetings must not obstruct report retrieval.
+    """
+    session_id = "test_greeting_vikram"
+    res = client.post("/assistant/chat", json={
+        "query": "good morning please open vikram malhotra's cbct",
+        "session_id": session_id
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert data["patient"]["patient_name"] == "Vikram Malhotra"
+    assert data["patient"]["patient_id"] == "PAT-1009"
+    assert "CBCT" in data["report"]["report_type"]
+

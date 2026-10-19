@@ -106,7 +106,8 @@ def search_patients(query: str) -> List[Dict[str, Any]]:
         "can", "you", "open", "show", "get", "fetch", "view", "the", "a", "an",
         "report", "reports", "scan", "scans", "opg", "cbct", "bitewing", "periapical",
         "latest", "recent", "please", "for", "of", "to", "in", "and", "or",
-        "radiograph", "radiographs", "examination", "panoramic", "orthopantomogram"
+        "radiograph", "radiographs", "examination", "panoramic", "orthopantomogram",
+        "hey", "hello", "hi", "greetings"
     }
     candidate_tokens = query_words - stop_words
 
@@ -224,7 +225,8 @@ def extract_retrieval_intent(user_input: str) -> Dict[str, str]:
         "book", "booking", "schedule", "reschedule", "reserve", "reservation",
         "appointment", "appoint", "ment", "slot", "slots", "tomorrow", "today",
         "yesterday", "dr", "doctor", "check", "available", "availability", "time", "date",
-        "confirm", "confirmed", "confirmation", "yes", "ok", "sure", "proceed", "cancel"
+        "confirm", "confirmed", "confirmation", "yes", "ok", "sure", "proceed", "cancel",
+        "hey", "hello", "hi", "greetings", "good", "morning", "afternoon", "evening"
     ]
     for token in stop_tokens:
         clean = re.sub(r"\b" + re.escape(token) + r"\b", " ", clean)

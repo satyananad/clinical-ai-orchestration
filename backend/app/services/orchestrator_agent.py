@@ -23,7 +23,7 @@ TRIAGE_SYSTEM_PROMPT = """You are the Lead Clinical Triage AI Agent for a dental
 Your job is to analyze the clinician's speech or text input and decide which specialized sub-agent and tool to invoke.
 
 AVAILABLE TOOLS & SPECIALIZED AGENTS:
-1. "search_patient_reports": Use when the clinician wants to locate, open, or view a patient's scans or reports (e.g. "Open Priya's report", "Show Vikram Malhotra's CBCT").
+1. "search_patient_reports": Use when the clinician wants to locate, open, view, or search for a patient's scans or reports (e.g. "Open Priya's report", "Show Vikram Malhotra's CBCT", "hey i want to open the report of arjun mehta"). Even if the clinician starts with a greeting like 'hey', 'hello', or 'hi', you MUST select 'search_patient_reports' if they mention opening, viewing, or searching for a patient's report!
    Agent: "RetrievalAgent"
    Arguments: {"patient_name": "string", "modality": "OPG"|"CBCT"|"Bitewing"|"Periapical"|"Cephalogram"|"Any"}
 
@@ -43,7 +43,7 @@ AVAILABLE TOOLS & SPECIALIZED AGENTS:
    Agent: "ScanBookingAgent"
    Arguments: {"slot_id": "string", "patient_name": "string", "patient_id": "optional string"}
 
-6. "conversation": Use ONLY for general greetings, conversational small talk, or workstation help when NO specific report is being queried (e.g. "hey", "hello", "what are you doing?", "who are you?", "can you help me?", "what is a CBCT scan?", "explain caries", "how does this workstation work?", "thanks", "good morning").
+6. "conversation": Use ONLY for pure greetings, small talk, or general dental concepts when NO patient, report retrieval, booking, or clinical dictation is requested (e.g. "hello", "who are you?", "what is a CBCT scan?"). If the clinician asks to open or view a report or mentions a patient (e.g. "hey i want to open the report of arjun mehta"), NEVER use 'conversation'!
    Agent: "GeneralAssistantAgent"
    Arguments: {"query": "string"}
 
@@ -371,8 +371,22 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
                         extracted_d = extract_date_from_query(query)
                         if extracted_d:
                             args["preferred_date"] = extracted_d
-                elif t_name == "conversation" and "query" not in args:
-                    args["query"] = query
+                elif t_name == "conversation":
+                    has_retrieval = (
+                        any(v in q_lower for v in ["open", "view", "retrieve", "fetch", "load", "find"])
+                        and any(w in q_lower for w in ["report", "scan", "opg", "cbct", "bitewing", "periapical", "examination", "record", "patient"])
+                    ) or bool(re.search(r"\b(pat-\d+|pt-\d+|rpt-\d+)\b", q_lower))
+                    intent = extract_retrieval_intent(query)
+                    cand_name = intent.get("patient_name", "").strip()
+                    if has_retrieval or (cand_name and is_valid_patient_name(cand_name) and any(v in q_lower for v in ["open", "view", "retrieve", "fetch", "load", "find", "show", "get"])):
+                        sel_agent = "RetrievalAgent"
+                        t_name = "search_patient_reports"
+                        args = {
+                            "patient_name": cand_name or "Patient",
+                            "modality": intent.get("report_type", "Any")
+                        }
+                    elif "query" not in args:
+                        args["query"] = query
                 return {
                     "selected_agent": sel_agent,
                     "tool_name": t_name,
@@ -1087,8 +1101,22 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                             args["preferred_date"] = "2026-10-20"
                         elif re.search(r"\b(19(?:th)?\s+oct(?:ober)?|oct(?:ober)?\s+19(?:th)?|tomorrow|2026-10-19)\b", q_lower):
                             args["preferred_date"] = "2026-10-19"
-                elif t_name == "conversation" and "query" not in args:
-                    args["query"] = query
+                elif t_name == "conversation":
+                    has_retrieval = (
+                        any(v in q_lower for v in ["open", "view", "retrieve", "fetch", "load", "find"])
+                        and any(w in q_lower for w in ["report", "scan", "opg", "cbct", "bitewing", "periapical", "examination", "record", "patient"])
+                    ) or bool(re.search(r"\b(pat-\d+|pt-\d+|rpt-\d+)\b", q_lower))
+                    intent = extract_retrieval_intent(query)
+                    cand_name = intent.get("patient_name", "").strip()
+                    if has_retrieval or (cand_name and is_valid_patient_name(cand_name) and any(v in q_lower for v in ["open", "view", "retrieve", "fetch", "load", "find", "show", "get"])):
+                        sel_agent = "RetrievalAgent"
+                        t_name = "search_patient_reports"
+                        args = {
+                            "patient_name": cand_name or "Patient",
+                            "modality": intent.get("report_type", "Any")
+                        }
+                    elif "query" not in args:
+                        args["query"] = query
                 return {
                     "selected_agent": sel_agent,
                     "tool_name": t_name,
@@ -1351,7 +1379,9 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "rationale": "Fallback: Input describes clinical pathology findings."
         }
 
-    has_retrieval_cmd = any(verb in q_lower for verb in ["open", "load", "show report", "view report", "fetch", "retrieve", "find report"])
+    has_retrieval_cmd = any(verb in q_lower for verb in ["open", "load", "fetch", "retrieve"]) or (
+        any(verb in q_lower for verb in ["show", "view", "find", "get"]) and any(w in q_lower for w in ["report", "scan", "opg", "cbct", "bitewing", "periapical", "examination", "record", "patient", "image"])
+    )
 
     # 2D.5 Clinic Database Queries & Patient List Requests
     is_database_question = (
@@ -1436,16 +1466,32 @@ def generate_dynamic_conversational_reply(query: str, session: Any) -> str:
     rather than a static repeated greeting.
     """
     q_lower = query.lower().strip()
-    if not is_general_or_assistant_query(query) and session.active_report_id and any(w in q_lower for w in [
+    # Guard against retrieval requests accidentally entering conversation
+    if any(verb in q_lower for verb in ["open", "retrieve", "fetch", "load"]) or (
+        any(verb in q_lower for verb in ["show", "view", "find"]) and any(w in q_lower for w in ["report", "scan", "opg", "cbct", "bitewing", "periapical"])
+    ):
+        from .retrieval import resolve_report_retrieval
+        retrieval_res = resolve_report_retrieval(query)
+        if retrieval_res.get("status") == "success" and retrieval_res.get("report"):
+            rep = retrieval_res["report"]
+            return f"Retrieved and opened {rep.get('report_type')} report ({rep.get('report_id')}) for {retrieval_res['patient']['patient_name']}."
+
+    if not is_general_or_assistant_query(query) and (session.active_report_id or session.active_patient_id) and any(w in q_lower for w in [
         "problem", "wrong", "findings", "finding", "diagnos", "impression", "summar",
         "condition", "issue", "caries", "teeth", "tooth", "they have", "she have", "he have",
         "what they", "what do they", "what does", "what is", "report", "scan",
         "explain", "elaborate", "clarify", "why", "meaning"
     ]):
-        from .report_qa_service import answer_report_question
-        qa = answer_report_question(session.active_report_id, query, history=session.history)
-        if qa.get("answer"):
-            return qa["answer"]
+        if session.active_report_id:
+            from .report_qa_service import answer_report_question
+            qa = answer_report_question(session.active_report_id, query, history=session.history)
+            if qa.get("answer"):
+                return qa["answer"]
+        elif session.active_patient_id:
+            from .report_qa_service import answer_patient_reports_question
+            qa = answer_patient_reports_question(session.active_patient_id, None, query, history=session.history)
+            if qa.get("answer"):
+                return qa["answer"]
 
     conversation_prompt = (
         "You are the Viscan AI Clinical Workstation Assistant for a Dental & Maxillofacial Radiology Clinic. "

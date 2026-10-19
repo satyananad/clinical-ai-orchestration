@@ -710,6 +710,72 @@ def generate_multi_report_summary(reports: List[Dict[str, Any]], patient: Dict[s
             section += f"\n{rec_str}"
         sections.append(section)
 
+    # Check if the clinician asked a direct clinical question rather than a broad listing
+    is_clinical_question = any(w in q_lower for w in [
+        "problem", "problems", "wrong", "what they have", "what do they have",
+        "what does he have", "what does she have", "what condition", "what issues", "what issue",
+        "what pathology", "what is wrong", "tell me about", "explain", "they have"
+    ]) and not any(w in q_lower for w in ["all her reports", "all reports", "list her reports", "list reports", "how many reports"])
+
+    if is_clinical_question and reports:
+        rep_context_blocks = []
+        for r in reports:
+            f_list = [f"- [{f.get('region')}]: {f.get('observation')} (Certainty: {f.get('certainty', 'Confirmed')})" for f in r.get("findings", [])]
+            i_list = [f"- {imp}" for imp in r.get("impression", [])]
+            rep_context_blocks.append(
+                f"Report ID: {r.get('report_id')} ({r.get('report_type')}, Date: {r.get('report_date')})\n"
+                f"Clinical Indication: {r.get('clinical_indication', 'N/A')}\n"
+                f"Findings:\n{chr(10).join(f_list) if f_list else 'None'}\n"
+                f"Impression:\n{chr(10).join(i_list) if i_list else 'None'}\n"
+                f"Recommendation: {r.get('recommendation', 'N/A')}"
+            )
+        combined_reports_text = "\n\n".join(rep_context_blocks)
+
+        multi_rep_prompt = (
+            f"You are a Clinical Radiologist Assistant. The clinician is asking a question about patient {patient_name} ({patient_id}) who has {len(reports)} diagnostic reports on file.\n\n"
+            f"DIAGNOSTIC REPORTS CONTEXT:\n{combined_reports_text}\n\n"
+            f"CLINICIAN QUESTION: {query}\n\n"
+            "INSTRUCTIONS:\n"
+            "1. Answer the clinician's question directly, clearly, and concisely based on the findings and impressions across these reports.\n"
+            "2. If asked 'what problem they have' or similar, describe the patient's documented clinical issues, treatment history (e.g., tooth 25 root canal and subsequent crown restoration), and current status (e.g., whether current margins are sound or if there is active disease).\n"
+            "3. Ground all statements in the reports above and cite the specific Report IDs (e.g. RPT-2013, RPT-2015).\n"
+            "4. Do not output raw JSON or unformatted data dumps."
+        )
+        llm_answer = query_llm(query, system_prompt=multi_rep_prompt, json_format=False)
+        if llm_answer and len(llm_answer.strip()) > 15:
+            return {
+                "status": "success",
+                "answer": llm_answer.strip(),
+                "citations": citations,
+                "patient_id": patient_id,
+                "report_count": len(reports),
+                "report_id": reports[0].get("report_id") if reports else None,
+                "report_date": reports[0].get("report_date") if reports else None,
+                "report_type": f"Multi-Report ({len(reports)} records)"
+            }
+
+        # Structured clinical question synthesis fallback:
+        summary_bullets = []
+        for r in reports:
+            imp_text = "; ".join(r.get("impression", []))
+            rec_text = f" (Recommendation: {r.get('recommendation')})" if r.get('recommendation') else ""
+            summary_bullets.append(f"• **{r.get('report_type')} ({r.get('report_id')}, {r.get('report_date')})**: {imp_text}{rec_text}")
+
+        answer_text = (
+            f"Clinical summary of conditions across {len(reports)} reports for **{patient_name}** ({patient_id}):\n\n"
+            + "\n".join(summary_bullets)
+        )
+        return {
+            "status": "success",
+            "answer": answer_text,
+            "citations": citations,
+            "patient_id": patient_id,
+            "report_count": len(reports),
+            "report_id": reports[0].get("report_id") if reports else None,
+            "report_date": reports[0].get("report_date") if reports else None,
+            "report_type": f"Multi-Report ({len(reports)} records)"
+        }
+
     answer_text = (
         f"Diagnostic Summary across {len(reports)} reports for **{patient_name}** ({patient_id}):\n\n"
         + "\n\n".join(sections)
