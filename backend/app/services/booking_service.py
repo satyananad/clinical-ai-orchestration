@@ -301,7 +301,9 @@ def confirm_booking(
     patient_name: str,
     patient_id: Optional[str] = None,
     scan_type: Optional[str] = None,
-    clinic_id: Optional[str] = None
+    clinic_id: Optional[str] = None,
+    patient_age: Optional[str] = None,
+    doctor_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Validates, commits, and reads back verification for an appointment booking.
@@ -416,6 +418,8 @@ def confirm_booking(
         target["patient_id"] = verified_patient_id
         target["patient_name"] = clean_p_name
         target["patient_status"] = patient_status
+        target["patient_age"] = patient_age
+        target["doctor_name"] = doctor_name or "Dr. R. Mehta, MDS (Attending Radiologist)"
         target["status"] = "booked"
         target["booking_status"] = "CONFIRMED"
         target["queue_token"] = token_no
@@ -453,17 +457,24 @@ def confirm_booking(
 
         decorated_slot = _decorate_slot_datetime(verified)
         p_label = f"{clean_p_name} ({verified_patient_id})" if patient_status == "REGISTERED" else f"{clean_p_name} (Status: UNREGISTERED / Guest Booking)"
+        p_age_text = f", Age: {patient_age}" if patient_age else ""
+        doc_label = doctor_name or target.get("doctor_name") or "Dr. R. Mehta, MDS (Attending Radiologist)"
+        clinic_info = SUPPORTED_CLINICS.get(decorated_slot.get("clinic_id", "CLINIC-MAIN-01"), {})
+        clinic_name_val = clinic_info.get("name", "Viscan Dental Imaging Center - Main Clinic")
 
         arrival_msg = (
             f"Appointment confirmed for {clean_p_name}: {decorated_slot['modality']} scan on {decorated_slot['datetime_str']} in {decorated_slot['room']} (Ref: {booking_ref}).\n\n"
             f"• Token / Queue #: {token_no}\n"
             f"• Booking Reference: {booking_ref}\n"
-            f"• Patient: {p_label}\n"
-            f"• Clinic: Viscan Dental Imaging Center - Main Clinic ({decorated_slot.get('clinic_id', 'CLINIC-MAIN-01')})\n\n"
+            f"• Patient: {p_label}{p_age_text}\n"
+            f"• Attending Doctor / Radiologist: {doc_label}\n"
+            f"• Facility & Location: {decorated_slot['room']}, {clinic_name_val} ({decorated_slot.get('clinic_id', 'CLINIC-MAIN-01')})\n"
+            f"• Modality: {decorated_slot['modality']}\n"
+            f"• Scheduled Time: {decorated_slot['datetime_str']}\n\n"
             f"Hospital Arrival Instructions:\n"
             f"1. Please arrive at the clinic 15 minutes before your scheduled appointment.\n"
             f"2. Present Token {token_no} or Booking Ref {booking_ref} at the {decorated_slot['room']} reception desk.\n"
-            f"3. Bring a government photo ID and any clinical referral/prescription.\n"
+            f"3. Bring a government photo ID and clinical referral/prescription from {doc_label}.\n"
             f"4. Remove all metallic items, dental appliances, and jewelry prior to scan."
         )
 

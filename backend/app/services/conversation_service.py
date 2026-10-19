@@ -27,6 +27,9 @@ class BookingWorkflowState:
         self.stage: BookingStage = BookingStage.IDLE
         self.patient_id: Optional[str] = None
         self.patient_name: Optional[str] = None
+        self.patient_age: Optional[str] = None
+        self.doctor_name: Optional[str] = None
+        self.location: Optional[str] = None
         self.patient_type: str = "registered"  # "registered", "walk_in"
         self.modality: Optional[str] = None
         self.preferred_date: Optional[str] = None
@@ -41,6 +44,9 @@ class BookingWorkflowState:
         self.stage = BookingStage.IDLE
         self.patient_id = None
         self.patient_name = None
+        self.patient_age = None
+        self.doctor_name = None
+        self.location = None
         self.patient_type = "registered"
         self.modality = None
         self.preferred_date = None
@@ -94,6 +100,12 @@ class SessionState:
             p = get_patient(patient_id)
             if p:
                 self.booking_state.patient_name = p.get("patient_name")
+                dob = p.get("date_of_birth")
+                if dob:
+                    try:
+                        self.booking_state.patient_age = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
+                    except Exception:
+                        self.booking_state.patient_age = f"DOB: {dob}"
 
     def set_active(self, patient_id: str, report_id: str):
         """Updates active patient & report ONLY upon verified successful retrieval."""
@@ -109,6 +121,12 @@ class SessionState:
             p = get_patient(patient_id)
             if p:
                 self.booking_state.patient_name = p.get("patient_name")
+                dob = p.get("date_of_birth")
+                if dob:
+                    try:
+                        self.booking_state.patient_age = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
+                    except Exception:
+                        self.booking_state.patient_age = f"DOB: {dob}"
 
     def clear(self):
         """Clears session context and resets active selections."""

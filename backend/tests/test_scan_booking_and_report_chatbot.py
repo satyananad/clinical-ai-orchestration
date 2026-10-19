@@ -314,6 +314,80 @@ def test_doctor_availability_query_and_booking_workflow():
     assert "10:00 AM" in res2["message"]
 
 
+def test_tooth_48_findings_chip_removed_from_ui():
+    """Verify that 'Tooth 48 Findings' chip is completely removed from the UI dashboard."""
+    from backend.app.main import get_dashboard_ui
+    html = get_dashboard_ui()
+    assert "Tooth 48 Findings" not in html
+    assert "Check Scan Slots" in html
+
+
+def test_booking_workflow_captures_doctor_age_location_and_patient():
+    """
+    Verify that booking workflow collects and displays:
+    1. Patient Name and Age
+    2. Referring/Attending Doctor
+    3. Room & Clinic Location
+    4. Slot & Modality details
+    """
+    from backend.app.services.booking_service import reset_slots
+    reset_slots()
+    session_id = "test_doc_age_location_session"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    # Step 1: Clinician specifies patient, age, referring doctor, and modality
+    r1 = run_multi_agent_pipeline(
+        "Book a Periapical scan tomorrow at 10:30 AM for patient Anita Verma, age 34, referred by Dr. Sharma",
+        session_id=session_id
+    )
+    assert r1["status"] in ("success", "confirmation_required")
+    assert "Anita Verma" in r1["message"]
+    assert "34 years" in r1["message"] or "Age: 34" in r1["message"]
+    assert "Dr. Sharma" in r1["message"]
+    assert "Intraoral X-Ray Bay 3" in r1["message"]
+    assert "Viscan Dental Imaging Center - Main Clinic" in r1["message"]
+
+
+def test_booking_with_active_patient_calculates_age_and_location():
+    """
+    Verify that when an active patient is selected in session,
+    booking automatically derives patient name, ID, calculated age from DOB,
+    and formats room and clinic location.
+    """
+    from backend.app.services.booking_service import reset_slots
+    reset_slots()
+    session_id = "test_active_patient_booking_session"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    # Retrieve Priya Sharma (PAT-1001, DOB: 1998-04-12 -> 28 years)
+    r_retrieval = run_multi_agent_pipeline("Open Priya Sharma PAT-1001's OPG report", session_id=session_id)
+    assert r_retrieval["status"] == "success"
+    assert session.active_patient_id == "PAT-1001"
+
+    # Select a slot
+    r_select = run_multi_agent_pipeline("Select slot SLOT-106", session_id=session_id)
+    assert r_select["status"] == "confirmation_required"
+    assert "Priya Sharma" in r_select["message"]
+    assert "PAT-1001" in r_select["message"]
+    assert "28 years" in r_select["message"] or "1998" in r_select["message"]
+    assert "Dr. R. Mehta" in r_select["message"]
+    assert "Intraoral X-Ray Bay 3" in r_select["message"]
+    assert "Viscan Dental Imaging Center - Main Clinic" in r_select["message"]
+    assert "Confirmation Required" in r_select["message"]
+
+    # Confirm booking
+    r_confirm = run_multi_agent_pipeline("Yes, confirm", session_id=session_id)
+    assert r_confirm["status"] == "success"
+    assert "Priya Sharma" in r_confirm["message"]
+    assert "Dr. R. Mehta" in r_confirm["message"]
+    assert "Intraoral X-Ray Bay 3" in r_confirm["message"]
+    assert "Viscan Dental Imaging Center - Main Clinic" in r_confirm["message"]
+    assert "Token / Queue #" in r_confirm["message"]
+
+
+
 
 
 

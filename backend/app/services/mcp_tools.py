@@ -431,7 +431,18 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             patient_name = arguments.get("patient_name", "")
             patient_id = arguments.get("patient_id")
             scan_type = arguments.get("scan_type") or arguments.get("modality")
-            return confirm_booking(slot_id=slot_id, patient_name=patient_name, patient_id=patient_id, scan_type=scan_type)
+            patient_age = arguments.get("patient_age")
+            doctor_name = arguments.get("doctor_name")
+            clinic_id = arguments.get("clinic_id")
+            return confirm_booking(
+                slot_id=slot_id,
+                patient_name=patient_name,
+                patient_id=patient_id,
+                scan_type=scan_type,
+                clinic_id=clinic_id,
+                patient_age=patient_age,
+                doctor_name=doctor_name
+            )
 
         elif tool_name == "lookup_existing_booking":
             from .booking_service import lookup_existing_bookings

@@ -189,14 +189,15 @@ def is_valid_patient_name(name: Optional[str]) -> bool:
     clean = name.strip()
     if len(clean) < 3:
         return False
-    # Patient name cannot contain digits or slot references
-    if re.search(r"\d", clean):
+    # Patient name cannot contain digits, slot references, or hyphens followed by numbers
+    if re.search(r"\d", clean) or re.search(r"\b(?:slot|bkg|tk)[- ]?", clean, re.IGNORECASE):
         return False
     invalid_keywords = {
         "slot", "slots", "confirm", "confirmed", "booking", "book", "appointment",
         "patient", "walk-in", "walk", "yes", "please", "tomorrow", "today", "yesterday",
         "scan", "report", "opg", "cbct", "periapical", "xray", "x-ray", "ok", "okay",
-        "sure", "cancel", "open", "show", "view", "find", "load"
+        "sure", "cancel", "open", "show", "view", "find", "load", "dr", "doctor",
+        "location", "hospital", "clinic", "radiology", "suite", "room", "bay"
     }
     words = re.findall(r"[a-zA-Z]+", clean.lower())
     if not words or any(w in invalid_keywords for w in words):
@@ -311,6 +312,24 @@ def extract_date_from_query(query: str) -> Optional[str]:
             if m_str.startswith(k):
                 return f"{now_d.year}-{v}-{day:02d}"
 
+    return None
+
+def extract_age_from_query(query: str) -> Optional[str]:
+    """Extracts patient age or date of birth reference from natural language."""
+    m = re.search(r"\b(?:age[d]?\s*[:=]?\s*|age\s+is\s+)(\d{1,3})\b", query, re.IGNORECASE)
+    if m:
+        return f"{m.group(1)} years"
+    m2 = re.search(r"\b(\d{1,3})\s*(?:years?\s+old|yrs?\s+old|yo|y/o)\b", query, re.IGNORECASE)
+    if m2:
+        return f"{m2.group(1)} years"
+    return None
+
+def extract_doctor_from_query(query: str) -> Optional[str]:
+    """Extracts referring or attending doctor name from natural language."""
+    m = re.search(r"\b(?:dr\.?|doctor)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)\b", query, re.IGNORECASE)
+    if m:
+        doc = m.group(1).strip().title()
+        return f"Dr. {doc}"
     return None
 
 def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
@@ -471,6 +490,13 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         is_decline = any(w in q_lower for w in ["no", "cancel", "stop", "abort", "never mind", "don't"])
 
         if is_approval and not is_decline:
+            cand_age = extract_age_from_query(query)
+            if cand_age and not b_state.patient_age:
+                b_state.patient_age = cand_age
+            cand_doc = extract_doctor_from_query(query)
+            if cand_doc and not b_state.doctor_name:
+                b_state.doctor_name = cand_doc
+
             slot = b_state.selected_slot
             return {
                 "selected_agent": "ScanBookingAgent",
@@ -479,6 +505,8 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     "slot_id": slot["slot_id"],
                     "patient_name": b_state.patient_name or "Patient",
                     "patient_id": b_state.patient_id,
+                    "patient_age": b_state.patient_age,
+                    "doctor_name": b_state.doctor_name or "Dr. R. Mehta, MDS (Attending Radiologist)",
                     "modality": b_state.modality or slot.get("modality")
                 },
                 "rationale": "Explicit Confirmation: Clinician confirmed booking."
@@ -680,11 +708,22 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 if not pat_name:
                     pat_name = "Walk-in Patient" if (b_state.patient_type == "walk_in" or "walk" in q_lower) else "Walk-in Patient"
 
-                b_state.selected_slot = matched_slot
-                b_state.patient_name = pat_name
-                b_state.patient_id = pat_id
+                if pat_id and not b_state.patient_age:
+                    from .retrieval import get_patient
+                    p_rec = get_patient(pat_id)
+                    if p_rec and p_rec.get("date_of_birth"):
+                        try:
+                            b_state.patient_age = f"{2026 - int(p_rec['date_of_birth'].split('-')[0])} years (DOB: {p_rec['date_of_birth']})"
+                        except Exception:
+                            b_state.patient_age = f"DOB: {p_rec['date_of_birth']}"
 
-                # Distinguish explicit selection (e.g. 'select the 10am slot') from direct confirmation (e.g. 'October 10:00 a.m.')
+                cand_age = extract_age_from_query(query)
+                if cand_age:
+                    b_state.patient_age = cand_age
+                cand_doc = extract_doctor_from_query(query)
+                if cand_doc:
+                    b_state.doctor_name = cand_doc
+
                 is_explicit_selection = bool(
                     re.search(r"\b(select|choose|pick|option)\b", q_lower)
                     or "change that to" in q_lower
@@ -701,12 +740,13 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                             "slot_id": matched_slot_id,
                             "patient_name": pat_name,
                             "patient_id": pat_id,
+                            "patient_age": b_state.patient_age,
+                            "doctor_name": b_state.doctor_name or "Dr. R. Mehta, MDS (Attending Radiologist)",
                             "modality": matched_slot.get("modality") if matched_slot else b_state.modality
                         },
                         "rationale": f"Direct Confirmation: Confirmed slot {matched_slot_id}."
                     }
                 else:
-                    # Show summary and await explicit confirmation
                     b_state.stage = BookingStage.AWAITING_CONFIRMATION
                     return {
                         "selected_agent": "ScanBookingAgent",
@@ -715,6 +755,8 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                             "slot": matched_slot,
                             "patient_name": pat_name,
                             "patient_id": pat_id,
+                            "patient_age": b_state.patient_age,
+                            "doctor_name": b_state.doctor_name or "Dr. R. Mehta, MDS (Attending Radiologist)",
                             "modality": matched_slot.get("modality") if matched_slot else b_state.modality
                         },
                         "rationale": f"Slot Selected: Presenting summary for {matched_slot_id} awaiting explicit confirmation."
@@ -760,12 +802,53 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     p = get_patient(pat_id)
                     if p:
                         pat_name = p.get("patient_name")
+                        dob = p.get("date_of_birth")
+                        if dob and not b_state.patient_age:
+                            try:
+                                b_state.patient_age = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
+                            except Exception:
+                                b_state.patient_age = f"DOB: {dob}"
+                if not pat_name:
+                    q_intent = extract_retrieval_intent(query)
+                    cand_name = q_intent.get("patient_name", "")
+                    if cand_name and is_valid_patient_name(cand_name):
+                        from .retrieval import search_patients
+                        found_cands = search_patients(cand_name)
+                        exact_cands = [c for c in found_cands if c["patient_name"].lower() == cand_name.lower()]
+                        if len(exact_cands) == 1:
+                            pat_name = exact_cands[0]["patient_name"]
+                            pat_id = exact_cands[0]["patient_id"]
+                            dob = exact_cands[0].get("date_of_birth")
+                            if dob and not b_state.patient_age:
+                                try:
+                                    b_state.patient_age = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
+                                except Exception:
+                                    b_state.patient_age = f"DOB: {dob}"
+                        elif len(cand_name.split()) == 1:
+                            same_f = [c for c in found_cands if c["patient_name"].split()[0].lower() == cand_name.lower()]
+                            if len(same_f) == 1:
+                                pat_name = same_f[0]["patient_name"]
+                                pat_id = same_f[0]["patient_id"]
+                                dob = same_f[0].get("date_of_birth")
+                                if dob and not b_state.patient_age:
+                                    try:
+                                        b_state.patient_age = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
+                                    except Exception:
+                                        b_state.patient_age = f"DOB: {dob}"
+                            else:
+                                pat_name = cand_name.title()
+                        else:
+                            pat_name = cand_name.title()
+
                 if not pat_name:
                     pat_name = "Walk-in Patient"
 
-                b_state.selected_slot = matched_slot
-                b_state.patient_name = pat_name
-                b_state.patient_id = pat_id
+                cand_age = extract_age_from_query(query)
+                if cand_age:
+                    b_state.patient_age = cand_age
+                cand_doc = extract_doctor_from_query(query)
+                if cand_doc:
+                    b_state.doctor_name = cand_doc
 
                 is_explicit_selection = bool(
                     re.search(r"\b(select|choose|pick|option)\b", q_lower)
@@ -781,6 +864,8 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                             "slot_id": matched_slot_id,
                             "patient_name": pat_name,
                             "patient_id": pat_id,
+                            "patient_age": b_state.patient_age,
+                            "doctor_name": b_state.doctor_name or "Dr. R. Mehta, MDS (Attending Radiologist)",
                             "modality": matched_slot.get("modality") if matched_slot else b_state.modality
                         },
                         "rationale": f"Direct Slot Resolution: Confirmed slot {matched_slot_id}."
@@ -794,6 +879,8 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                             "slot": matched_slot,
                             "patient_name": pat_name,
                             "patient_id": pat_id,
+                            "patient_age": b_state.patient_age,
+                            "doctor_name": b_state.doctor_name or "Dr. R. Mehta, MDS (Attending Radiologist)",
                             "modality": matched_slot.get("modality") if matched_slot else b_state.modality
                         },
                         "rationale": f"Slot Selected: Presenting summary for {matched_slot_id} awaiting explicit confirmation."
@@ -1190,6 +1277,26 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                         pat_name_for_booking = cand_name.title()
                         pat_id_for_booking = None
                         session.booking_state.patient_type = "new"
+
+        if not pat_name_for_booking and session.active_patient_id:
+            from .retrieval import get_patient
+            p = get_patient(session.active_patient_id)
+            if p:
+                pat_name_for_booking = p.get("patient_name")
+                pat_id_for_booking = p.get("patient_id")
+                dob = p.get("date_of_birth")
+                if dob and not session.booking_state.patient_age:
+                    try:
+                        session.booking_state.patient_age = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
+                    except Exception:
+                        session.booking_state.patient_age = f"DOB: {dob}"
+
+        cand_age = extract_age_from_query(query)
+        if cand_age:
+            session.booking_state.patient_age = cand_age
+        cand_doc = extract_doctor_from_query(query)
+        if cand_doc:
+            session.booking_state.doctor_name = cand_doc
 
         session.booking_state.patient_name = pat_name_for_booking
         session.booking_state.patient_id = pat_id_for_booking
@@ -1719,10 +1826,15 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             if not patient_name or not is_valid_patient_name(patient_name):
                 patient_name = "Walk-in Patient"
 
+            patient_age = arguments.get("patient_age") or session.booking_state.patient_age
+            doctor_name = arguments.get("doctor_name") or session.booking_state.doctor_name or "Dr. R. Mehta, MDS (Attending Radiologist)"
+
             confirm_res = execute_tool("confirm_scan_booking", {
                 "slot_id": slot_id,
                 "patient_name": patient_name,
                 "patient_id": patient_id,
+                "patient_age": patient_age,
+                "doctor_name": doctor_name,
                 "scan_type": arguments.get("modality") or session.booking_state.modality
             })
 
@@ -1816,23 +1928,40 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
         elif tool_name == "show_booking_summary":
             slot = arguments.get("slot") or session.booking_state.selected_slot or {}
             patient_name = arguments.get("patient_name") or session.booking_state.patient_name or "Patient"
-            patient_id = arguments.get("patient_id") or session.booking_state.patient_id or "N/A"
+            patient_id = arguments.get("patient_id") or session.booking_state.patient_id
+            patient_age = arguments.get("patient_age") or session.booking_state.patient_age
+            doctor_name = arguments.get("doctor_name") or session.booking_state.doctor_name or "Dr. R. Mehta, MDS (Attending Radiologist)"
             modality = arguments.get("modality") or slot.get("modality", "Radiology")
+            room_name = slot.get("room", "Radiology Suite")
+            clinic_id = slot.get("clinic_id", "CLINIC-MAIN-01")
+            from .booking_service import SUPPORTED_CLINICS
+            clinic_title = SUPPORTED_CLINICS.get(clinic_id, {}).get("name", "Viscan Dental Imaging Center - Main Clinic")
+
+            p_id_str = f" ({patient_id})" if patient_id else " (Status: UNREGISTERED / Guest Booking)"
+            age_line = f"• Patient Age: {patient_age}\n" if patient_age else "• Patient Age: Not specified (Walk-in / Guest)\n"
 
             summary_msg = (
-                f"Confirm appointment details:\n"
-                f"• Patient: {patient_name} ({patient_id})\n"
-                f"• Scan: {modality}\n"
-                f"• Date/Time: {slot.get('datetime_str', 'Scheduled slot')}\n"
-                f"• Location: {slot.get('room', 'Radiology Suite')}\n"
-                f"• Slot: {slot.get('slot_id')}\n\n"
-                f"Confirmation Required: Would you like to confirm this booking? (e.g. 'Yes, confirm' or 'Cancel')."
+                f"Review Appointment Booking Details:\n"
+                f"• Patient Name: {patient_name}{p_id_str}\n"
+                f"{age_line}"
+                f"• Attending Doctor / Radiologist: {doctor_name}\n"
+                f"• Modality / Scan: {modality}\n"
+                f"• Scheduled Date & Time: {slot.get('datetime_str', 'Scheduled slot')}\n"
+                f"• Facility & Location: {room_name}, {clinic_title}\n"
+                f"• Slot ID: {slot.get('slot_id')}\n\n"
+                f"Confirmation Required: Would you like to confirm this appointment booking? (Please reply 'Yes, confirm' or 'Cancel')."
             )
             session.booking_state.stage = BookingStage.AWAITING_CONFIRMATION
             session.booking_state.summary_displayed = True
             session.booking_state.selected_slot = slot
             if patient_name:
                 session.booking_state.patient_name = patient_name
+            if patient_id:
+                session.booking_state.patient_id = patient_id
+            if patient_age:
+                session.booking_state.patient_age = patient_age
+            if doctor_name:
+                session.booking_state.doctor_name = doctor_name
 
             return {
                 "status": "confirmation_required",
