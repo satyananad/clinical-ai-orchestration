@@ -141,18 +141,23 @@ def test_scan_booking_time_based_confirmation():
     session = get_or_create_session(session_id)
     session.clear()
 
-    # Turn 1: Clinician asks to book an appointment
-    resp1 = run_multi_agent_pipeline("I want to book appointment", session_id=session_id)
+    # Turn 1: Clinician asks to check appointment slots
+    resp1 = run_multi_agent_pipeline("Check available appointment slots", session_id=session_id)
     assert resp1["status"] == "confirmation_required"
     assert "available_slots" in resp1
     assert "None scan" not in resp1["message"]
 
-    # Turn 2: Clinician specifies the time "October 10:00 a.m."
+    # Turn 2: Clinician specifies the time "October 10:00 a.m." -> presents Review card
     resp2 = run_multi_agent_pipeline("October 10:00 a.m.", session_id=session_id)
-    assert resp2["status"] == "success"
-    assert resp2["agent_trace"]["active_agent"] == "ScanBookingAgent"
-    assert "booking_reference" in resp2
-    assert "10:00 AM" in resp2["message"]
+    assert resp2["status"] == "confirmation_required"
+    assert "Review appointment" in resp2["message"]
+
+    # Turn 3: Clinician confirms booking
+    resp3 = run_multi_agent_pipeline("Yes, please confirm", session_id=session_id)
+    assert resp3["status"] == "success"
+    assert resp3["agent_trace"]["active_agent"] == "ScanBookingAgent"
+    assert "booking_reference" in resp3
+    assert "10:00 AM" in resp3["message"]
 
 
 def test_scan_booking_date_based_slot_query():
@@ -246,7 +251,7 @@ def test_direct_time_slot_confirmation_without_prior_pending_slots():
     session.clear()
     assert session.pending_booking_slots is None
 
-    res = run_multi_agent_pipeline("October 10:00 a.m.", session_id=session_id)
+    res = run_multi_agent_pipeline("Confirm October 10:00 a.m.", session_id=session_id)
     assert res["status"] == "success"
     assert res["agent_trace"]["active_agent"] == "ScanBookingAgent"
     assert "booking_reference" in res
@@ -291,7 +296,8 @@ def test_doctor_availability_query_and_booking_workflow():
     1. Routes directly to ScanBookingAgent.
     2. Identifies October 23.
     3. Informs that no slots exist for Oct 23 and lists upcoming open slots (Oct 19 & 20).
-    4. Seamlessly confirms when clinician replies 'October 10:00 a.m.'.
+    4. Displays Review Card when clinician picks 'October 10:00 a.m.'.
+    5. Confirms booking upon clinician confirmation.
     """
     session_id = "test_oct_23_booking_workflow"
     session = get_or_create_session(session_id)
@@ -306,12 +312,17 @@ def test_doctor_availability_query_and_booking_workflow():
     assert "SLOT-101" in res1["message"]
     assert "Confirmation Required" in res1["message"]
 
-    # Step 2: Clinician picks 'October 10:00 a.m.'
+    # Step 2: Clinician picks 'October 10:00 a.m.' -> displays review card
     res2 = run_multi_agent_pipeline("October 10:00 a.m.", session_id=session_id)
-    assert res2["status"] == "success"
-    assert res2["agent_trace"]["active_agent"] == "ScanBookingAgent"
-    assert "booking_reference" in res2
-    assert "10:00 AM" in res2["message"]
+    assert res2["status"] == "confirmation_required"
+    assert "Review appointment" in res2["message"]
+
+    # Step 3: Clinician confirms
+    res3 = run_multi_agent_pipeline("Yes, confirm", session_id=session_id)
+    assert res3["status"] == "success"
+    assert res3["agent_trace"]["active_agent"] == "ScanBookingAgent"
+    assert "booking_reference" in res3
+    assert "10:00 AM" in res3["message"]
 
 
 def test_tooth_48_findings_chip_removed_from_ui():

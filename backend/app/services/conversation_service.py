@@ -51,6 +51,7 @@ class BookingWorkflowState:
         self.summary_displayed: bool = False
         self.completed_booking: Optional[Dict[str, Any]] = None
         self.last_action_status: Optional[str] = None
+        self.notes: Optional[str] = None
 
     def reset(self):
         self.stage = BookingStage.IDLE
@@ -76,6 +77,7 @@ class BookingWorkflowState:
         self.summary_displayed = False
         self.completed_booking = None
         self.last_action_status = None
+        self.notes = None
 
 class SessionState:
     """

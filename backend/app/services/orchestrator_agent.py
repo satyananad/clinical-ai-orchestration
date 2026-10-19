@@ -1129,17 +1129,13 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 if cand_doc:
                     b_state.doctor_name = cand_doc
 
-                is_explicit_selection = bool(
-                    re.search(r"\b(select|choose|pick|option)\b", q_lower)
-                    or "change that to" in q_lower
-                    or "switch to" in q_lower
-                    or "let's select" in q_lower
-                    or "go with" in q_lower
-                    or "let's go" in q_lower
-                    or "book the" in q_lower
-                )
+                is_direct_confirmation = bool(
+                    re.search(r"\b(confirm|confirmed|yes|proceed|approve|confirm\s+slot)\b", q_lower)
+                    or "please confirm" in q_lower
+                    or "yes," in q_lower
+                ) and not any(w in q_lower for w in ["select", "choose", "pick", "change that to", "switch to", "let's go with", "go with", "option"])
 
-                if not is_explicit_selection:
+                if is_direct_confirmation:
                     session.pending_booking_slots = None
                     return {
                         "selected_agent": "ScanBookingAgent",
@@ -1152,10 +1148,12 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                             "doctor_name": b_state.doctor_name or "Dr. R. Mehta, MDS (Attending Radiologist)",
                             "modality": matched_slot.get("modality") if matched_slot else b_state.modality
                         },
-                        "rationale": f"Direct Confirmation: Confirmed slot {matched_slot_id}."
+                        "rationale": f"Explicit Direct Confirmation: Confirmed slot {matched_slot_id}."
                     }
                 else:
                     b_state.stage = BookingStage.AWAITING_CONFIRMATION
+                    b_state.selected_slot = matched_slot
+                    b_state.summary_displayed = True
                     return {
                         "selected_agent": "ScanBookingAgent",
                         "tool_name": "show_booking_summary",
@@ -1235,13 +1233,13 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 if cand_doc:
                     b_state.doctor_name = cand_doc
 
-                is_explicit_selection = bool(
-                    re.search(r"\b(select|choose|pick|option)\b", q_lower)
-                    or "change that to" in q_lower
-                    or "switch to" in q_lower
-                    or "let's select" in q_lower
-                )
-                if not is_explicit_selection:
+                is_direct_confirmation = bool(
+                    re.search(r"\b(confirm|confirmed|yes|proceed|approve|confirm\s+slot)\b", q_lower)
+                    or "please confirm" in q_lower
+                    or "yes," in q_lower
+                ) and not any(w in q_lower for w in ["select", "choose", "pick", "change that to", "switch to", "let's go with", "go with", "option"])
+
+                if is_direct_confirmation:
                     return {
                         "selected_agent": "ScanBookingAgent",
                         "tool_name": "confirm_scan_booking",
@@ -1257,6 +1255,8 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     }
                 else:
                     b_state.stage = BookingStage.AWAITING_CONFIRMATION
+                    b_state.selected_slot = matched_slot
+                    b_state.summary_displayed = True
                     return {
                         "selected_agent": "ScanBookingAgent",
                         "tool_name": "show_booking_summary",
@@ -1684,15 +1684,19 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         if cand_doc:
             session.booking_state.doctor_name = cand_doc
 
-        # Check if user requested an appointment with a dental specialist / doctor without patient specified (Step 1)
-        is_specialist_appointment = bool(re.search(r"\b(?:dental\s+specialist|specialist|doctor\s+consultation|specialization)\b", q_lower))
-        if is_specialist_appointment and not pat_name_for_booking and not session.active_patient_id:
+        # Check if user requested an appointment without active patient or patient specified (Step 1: Patient Identification)
+        is_generic_appointment = bool(
+            re.search(r"\b(?:dental\s+specialist|specialist|doctor\s+consultation|specialization)\b", q_lower)
+            or re.search(r"\b(?:want\s+to\s+book|want\s+book|book\s+an?\s+appointment|schedule\s+an?\s+appointment|make\s+an?\s+appointment|need\s+an?\s+appointment|book\s+appointment)\b", q_lower)
+            or (any(w in q_lower for w in ["book", "booking", "schedule", "appointment"]) and not any(m in q_lower for m in ["cbct", "opg", "panoramic", "bitewing", "periapical", "iopa", "slot-", "slots", "slot "]))
+        ) and not any(w in q_lower for w in ["walk-in", "walk in"])
+        if is_generic_appointment and not pat_name_for_booking and not session.active_patient_id:
             session.booking_state.stage = BookingStage.COLLECTING_DETAILS
             return {
                 "selected_agent": "ScanBookingAgent",
                 "tool_name": "prompt_existing_or_new_patient",
                 "arguments": {"query": query},
-                "rationale": "Specialist Appointment: Inquiring whether patient is existing or first visit."
+                "rationale": "Generic Appointment Inquiry: Inquiring whether patient is existing or first visit."
             }
 
         if not pat_name_for_booking:

@@ -404,3 +404,85 @@ def test_all_14_mcp_tools():
     assert t14["status"] == "success"
     assert t14["notification"]["booking_id"] == fresh_ref
     assert t14["notification"]["status"] == "delivered"
+
+
+def test_user_exact_phrase_real_life_booking_workflow():
+    """
+    Verifies that when a user says 'i want book appoint':
+    1. It initiates real-life appointment booking (prompt_existing_or_new_patient) instead of auto Walk-in.
+    2. Turn 2: User says 'first visit' -> prompts for registration details.
+    3. Turn 3: User registers -> registers patient, calculates age, asks reason for visit.
+    4. Turn 4: User specifies Bitewing scan -> presents available slots (including SLOT-105).
+    5. Turn 5: User picks 'slot 105' (or 'Tomorrow, Oct 20 at 09:00 AM') ->
+       MUST show Review appointment summary card awaiting confirmation, and NOT commit!
+    6. Turn 6: User says 'Yes, confirm' -> commits booking, returns token and arrival instructions.
+    """
+    session_id = "test-user-exact-flow-105"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    # Turn 1: User says exact phrase "i want book appoint"
+    t1 = run_multi_agent_pipeline("i want book appoint", session_id=session_id)
+    assert t1["status"] == "clarification_required"
+    assert "existing patient" in t1["message"].lower() or "first visit" in t1["message"].lower()
+    assert session.booking_state.stage == BookingStage.COLLECTING_DETAILS
+
+    # Turn 2: User says "first visit"
+    t2 = run_multi_agent_pipeline("This is my first visit", session_id=session_id)
+    assert t2["status"] == "clarification_required"
+    assert "full name" in t2["message"].lower()
+    assert "date of birth" in t2["message"].lower()
+
+    # Turn 3: User provides registration details
+    t3 = run_multi_agent_pipeline(
+        "My name is Divya Sen, born 10 May 1995, phone +91-98765-00000, female",
+        session_id=session_id
+    )
+    assert t3["status"] == "clarification_required"
+    assert "Divya Sen" in t3["message"]
+    assert "PAT-" in t3["message"]
+    assert "31" in t3["message"]  # 2026 - 1995 = 31 years
+    assert "reason for your visit" in t3["message"].lower() or "service" in t3["message"].lower()
+    assert session.booking_state.patient_name == "Divya Sen"
+
+    # Turn 4: User specifies visit reason
+    t4 = run_multi_agent_pipeline("I need a Bitewing scan", session_id=session_id)
+    assert t4["status"] == "clarification_required"
+    assert "General Dentistry" in t4["message"]
+    assert "preferred date" in t4["message"].lower()
+
+    # Turn 5: User specifies timing preference
+    t5 = run_multi_agent_pipeline("October 20 morning", session_id=session_id)
+    assert t5["status"] == "confirmation_required"
+    assert "available_slots" in t5
+    assert any(s["slot_id"] == "SLOT-105" for s in t5["available_slots"])
+    assert session.booking_state.stage == BookingStage.SLOTS_PRESENTED
+
+    # Turn 6: User picks 'slot 105'
+    # Architectural requirement: MUST NOT auto-confirm! Must present Review Card!
+    t6 = run_multi_agent_pipeline("slot 105", session_id=session_id)
+    assert t6["status"] == "confirmation_required"
+    assert "Review appointment" in t6["message"]
+    assert "Divya Sen" in t6["message"]
+    assert "SLOT-105" in t6["message"]
+    assert "Confirmation Required" in t6["message"]
+    assert session.booking_state.stage == BookingStage.AWAITING_CONFIRMATION
+    assert session.booking_state.selected_slot["slot_id"] == "SLOT-105"
+
+    # Verify inventory is not mutated yet
+    avail_before = check_available_slots()
+    assert any(s["slot_id"] == "SLOT-105" for s in avail_before)
+
+    # Turn 7: Explicit affirmative confirmation
+    t7 = run_multi_agent_pipeline("Yes, confirm", session_id=session_id)
+    assert t7["status"] == "success"
+    assert "Appointment confirmed for Divya Sen" in t7["message"]
+    assert "Divya Sen" in t7["message"]
+    assert "BKG-105-" in t7["message"] or "BKG-" in t7["message"]
+    assert "TK-105" in t7["message"] or "Token" in t7["message"]
+    assert session.booking_state.stage == BookingStage.CONFIRMED
+
+    # Verify inventory is updated
+    avail_after = check_available_slots()
+    assert not any(s["slot_id"] == "SLOT-105" for s in avail_after)
+
