@@ -257,8 +257,24 @@ def get_dashboard_ui():
 
                         <!-- Input Controls -->
                         <div class="p-3 border-t border-slate-700 bg-slate-800/95 rounded-b-2xl">
+                            <!-- Quick Spoken Command Chips -->
+                            <div class="flex items-center space-x-1.5 pb-2 overflow-x-auto text-[10px] text-slate-400 no-scrollbar">
+                                <span class="text-slate-500 font-semibold whitespace-nowrap"><i class="fa-solid fa-microphone-lines text-sky-400 mr-1"></i> Quick Voice:</span>
+                                <button type="button" onclick="speakVoiceSample('Open Priya Sharma', 'chatInput', true)" class="bg-slate-700/80 hover:bg-slate-700 text-sky-300 border border-slate-600 px-2 py-0.5 rounded-lg whitespace-nowrap transition">
+                                    "Open Priya Sharma"
+                                </button>
+                                <button type="button" onclick="speakVoiceSample('Summarize her report', 'chatInput', true)" class="bg-slate-700/80 hover:bg-slate-700 text-amber-300 border border-slate-600 px-2 py-0.5 rounded-lg whitespace-nowrap transition">
+                                    "Summarize her report"
+                                </button>
+                                <button type="button" onclick="speakVoiceSample('I want to book an appointment', 'chatInput', true)" class="bg-slate-700/80 hover:bg-slate-700 text-emerald-300 border border-slate-600 px-2 py-0.5 rounded-lg whitespace-nowrap transition">
+                                    "Book appointment"
+                                </button>
+                                <button type="button" onclick="speakVoiceSample('Is there any jaw fracture documented in this scan?', 'chatInput', true)" class="bg-slate-700/80 hover:bg-slate-700 text-rose-300 border border-slate-600 px-2 py-0.5 rounded-lg whitespace-nowrap transition">
+                                    "Any jaw fracture?"
+                                </button>
+                            </div>
                             <div class="flex items-center space-x-2">
-                                <input id="chatInput" type="text" placeholder="Type query or question (e.g. 'Summarize her report')..." 
+                                <input id="chatInput" type="text" placeholder="Type query or click mic to speak (e.g. 'Summarize her report')..." 
                                        onkeydown="if(event.key==='Enter') sendChat()"
                                        class="flex-1 text-xs bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-sky-500">
                                 <button onclick="toggleVoiceRecord('chatInput', 'voiceBtn')" id="voiceBtn" class="bg-slate-700 hover:bg-slate-600 text-slate-200 w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm" title="Click to Speak Voice Command">
@@ -1220,29 +1236,34 @@ def get_dashboard_ui():
         }
 
         let activeRecognition = null;
+        let activeMediaStream = null;
         let isListening = false;
         let finalSpeechTranscript = "";
+        let speechCapturedCount = 0;
 
-        function toggleVoiceRecord(targetInputId, btnId) {
+        async function toggleVoiceRecord(targetInputId, btnId) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRecognition) {
-                alert("Speech Recognition is supported in Chrome, Edge, Safari, and other Web Speech API browsers. You can also upload recorded audio files directly using the 'Upload Audio' button.");
-                return;
-            }
-
             const input = document.getElementById(targetInputId);
             const btn = document.getElementById(btnId);
 
             const resetBtnUi = () => {
                 isListening = false;
+                if (activeMediaStream) {
+                    try { activeMediaStream.getTracks().forEach(t => t.stop()); } catch(e) {}
+                    activeMediaStream = null;
+                }
                 if (btn) {
                     btn.classList.remove("bg-rose-600", "text-white", "animate-pulse");
                     if (btnId === "dictationMicBtn") {
+                        btn.className = "text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1.5 rounded-xl transition flex items-center shadow-md";
                         btn.innerHTML = `<i class="fa-solid fa-microphone mr-1.5"></i> Click & Speak Dictation`;
                     } else if (btnId === "voiceBtn") {
-                        btn.innerHTML = `<i class="fa-solid fa-microphone text-sm"></i>`;
+                        btn.className = "bg-slate-700 hover:bg-slate-600 text-slate-200 w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm";
+                        btn.innerHTML = `<i class="fa-solid fa-microphone text-xs"></i>`;
                     }
                 }
+                const banner = document.getElementById("voiceStatusBanner");
+                if (banner) banner.remove();
             };
 
             const triggerAction = () => {
@@ -1256,6 +1277,7 @@ def get_dashboard_ui():
                 }
             };
 
+            // If already recording, stop and send
             if (isListening && activeRecognition) {
                 try { activeRecognition.stop(); } catch(e) {}
                 resetBtnUi();
@@ -1263,12 +1285,35 @@ def get_dashboard_ui():
                 return;
             }
 
+            // 1. Explicitly request microphone stream from macOS / browser
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                try {
+                    activeMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                } catch (micErr) {
+                    console.warn("Microphone access error:", micErr);
+                    if (micErr.name === 'NotAllowedError' || micErr.name === 'PermissionDeniedError') {
+                        alert("Microphone permission denied. Please click the lock/settings icon in your browser address bar and enable Microphone for http://localhost:8000.");
+                        return;
+                    }
+                }
+            }
+
+            // 2. Check Web Speech API support
+            if (!SpeechRecognition) {
+                alert("Speech recognition is supported in Google Chrome, Edge, and Safari. You can also type directly or upload an audio recording (.wav/.mp3).");
+                resetBtnUi();
+                return;
+            }
+
             try {
                 const recognition = new SpeechRecognition();
-                recognition.continuous = true;
+                const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+                recognition.continuous = !isSafari; // Safari requires continuous = false
                 recognition.interimResults = true;
                 recognition.lang = "en-US";
+                recognition.maxAlternatives = 1;
 
+                speechCapturedCount = 0;
                 finalSpeechTranscript = input ? input.value : "";
                 if (finalSpeechTranscript && !finalSpeechTranscript.endsWith(" ")) {
                     finalSpeechTranscript += " ";
@@ -1276,10 +1321,28 @@ def get_dashboard_ui():
 
                 btn.classList.add("bg-rose-600", "text-white", "animate-pulse");
                 if (btnId === "dictationMicBtn") {
-                    btn.innerHTML = `<i class="fa-solid fa-microphone mr-1.5"></i> Listening... (Click to Finish)`;
+                    btn.className = "text-xs bg-rose-600 hover:bg-rose-500 text-white font-bold px-3 py-1.5 rounded-xl transition flex items-center shadow-lg animate-pulse";
+                    btn.innerHTML = `<i class="fa-solid fa-stop mr-1.5"></i> Listening... (Click to Finish)`;
                 } else if (btnId === "voiceBtn") {
-                    btn.innerHTML = `<i class="fa-solid fa-microphone text-sm"></i>`;
+                    btn.className = "bg-rose-600 hover:bg-rose-500 text-white w-9 h-9 rounded-xl flex items-center justify-center transition shadow-lg animate-pulse";
+                    btn.innerHTML = `<i class="fa-solid fa-stop text-xs"></i>`;
                 }
+
+                // Show active listening toast/banner
+                const existingBanner = document.getElementById("voiceStatusBanner");
+                if (existingBanner) existingBanner.remove();
+
+                const banner = document.createElement("div");
+                banner.id = "voiceStatusBanner";
+                banner.className = "fixed bottom-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-rose-500/80 text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center space-x-3 text-xs backdrop-blur-md";
+                banner.innerHTML = `
+                    <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
+                    <span class="font-semibold text-rose-300">Listening to microphone... Speak clearly.</span>
+                    <span id="voiceLivePreview" class="text-slate-300 italic max-w-xs truncate"></span>
+                    <button type="button" onclick="toggleVoiceRecord('${targetInputId}', '${btnId}')" class="bg-rose-600 hover:bg-rose-500 px-2.5 py-1 rounded-lg text-white font-bold text-[11px] ml-2">Finish & Send</button>
+                    <button type="button" onclick="cancelVoiceRecord('${btnId}')" class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded-lg text-slate-300 text-[11px]">Cancel</button>
+                `;
+                document.body.appendChild(banner);
 
                 isListening = true;
                 activeRecognition = recognition;
@@ -1290,27 +1353,43 @@ def get_dashboard_ui():
                         const transcriptPart = event.results[i][0].transcript;
                         if (event.results[i].isFinal) {
                             finalSpeechTranscript += transcriptPart + " ";
+                            speechCapturedCount++;
                         } else {
                             interim += transcriptPart;
                         }
                     }
+                    const combined = (finalSpeechTranscript + interim).trim();
                     if (input) {
-                        input.value = (finalSpeechTranscript + interim).trim();
+                        input.value = combined;
+                    }
+                    const preview = document.getElementById("voiceLivePreview");
+                    if (preview) {
+                        preview.textContent = `"${combined}"`;
                     }
                 };
 
                 recognition.onerror = (event) => {
                     console.warn("Speech recognition notice:", event.error);
-                    resetBtnUi();
                     if (event.error === 'not-allowed') {
                         alert("Microphone permission was denied. Please allow microphone access in your browser address bar.");
+                        resetBtnUi();
+                    } else if (event.error === 'network') {
+                        console.warn("Browser speech recognition network notice (Google service unreachable).");
+                        const preview = document.getElementById("voiceLivePreview");
+                        if (preview) preview.textContent = "Network notice on Chrome speech server. Please speak again or type.";
                     }
                 };
 
                 recognition.onend = () => {
                     if (isListening) {
-                        resetBtnUi();
-                        triggerAction();
+                        // If user actually spoke words, trigger the action
+                        if (speechCapturedCount > 0 || (input && input.value.trim().length > 0)) {
+                            resetBtnUi();
+                            triggerAction();
+                        } else {
+                            // If stopped without capturing text (silence timeout), reset UI gracefully
+                            resetBtnUi();
+                        }
                     }
                 };
 
@@ -1318,6 +1397,41 @@ def get_dashboard_ui():
             } catch (err) {
                 console.error("Speech recognition error:", err);
                 resetBtnUi();
+            }
+        }
+
+        function cancelVoiceRecord(btnId) {
+            if (activeRecognition) {
+                try { activeRecognition.stop(); } catch(e) {}
+            }
+            if (activeMediaStream) {
+                try { activeMediaStream.getTracks().forEach(t => t.stop()); } catch(e) {}
+                activeMediaStream = null;
+            }
+            isListening = false;
+            const btn = document.getElementById(btnId);
+            if (btn) {
+                btn.classList.remove("bg-rose-600", "text-white", "animate-pulse");
+                if (btnId === "dictationMicBtn") {
+                    btn.className = "text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1.5 rounded-xl transition flex items-center shadow-md";
+                    btn.innerHTML = `<i class="fa-solid fa-microphone mr-1.5"></i> Click & Speak Dictation`;
+                } else if (btnId === "voiceBtn") {
+                    btn.className = "bg-slate-700 hover:bg-slate-600 text-slate-200 w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm";
+                    btn.innerHTML = `<i class="fa-solid fa-microphone text-xs"></i>`;
+                }
+            }
+            const banner = document.getElementById("voiceStatusBanner");
+            if (banner) banner.remove();
+        }
+
+        function speakVoiceSample(text, targetInputId, autoSend = false) {
+            const input = document.getElementById(targetInputId);
+            if (input) {
+                input.value = text;
+                if (autoSend) {
+                    if (targetInputId === "chatInput") sendChat();
+                    else if (targetInputId === "dictationInput") processDictation();
+                }
             }
         }
 
