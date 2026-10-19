@@ -401,14 +401,19 @@ def extract_patient_registration_details(query: str) -> Dict[str, Optional[str]]
     if dob_m:
         res["date_of_birth"] = dob_m.group(1).strip()
     else:
-        # Check natural dates like '14 February 1996'
-        date_pattern = re.search(r"\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+\d{4})\b", q_clean, re.IGNORECASE)
-        if date_pattern:
-            res["date_of_birth"] = date_pattern.group(1).strip()
+        # Check DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+        dmy_m = re.search(r"\b([0-3]?\d[-/.][0-1]?\d[-/.](?:19|20)\d{2})\b", q_clean)
+        if dmy_m:
+            res["date_of_birth"] = dmy_m.group(1).strip()
         else:
-            iso_m = re.search(r"\b((?:19|20)\d{2}[-/][0-1]?\d[-/][0-3]?\d)\b", q_clean)
-            if iso_m:
-                res["date_of_birth"] = iso_m.group(1).strip()
+            # Check natural dates like '14 February 1996'
+            date_pattern = re.search(r"\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+\d{4})\b", q_clean, re.IGNORECASE)
+            if date_pattern:
+                res["date_of_birth"] = date_pattern.group(1).strip()
+            else:
+                iso_m = re.search(r"\b((?:19|20)\d{2}[-/][0-1]?\d[-/][0-3]?\d)\b", q_clean)
+                if iso_m:
+                    res["date_of_birth"] = iso_m.group(1).strip()
 
     # 5. Full Name
     name_m = re.search(r"\b(?:my\s+name\s+is|name\s+is|name\s*[:=]?|patient\s*[:=]?)\s*([A-Za-z\s]+?)(?=(?:,|\.|\bborn\b|\bdob\b|\bphone\b|\bemail\b|\bmy\s+phone\b|\band\b|\n|$))", q_clean, re.IGNORECASE)

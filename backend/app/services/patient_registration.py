@@ -41,13 +41,8 @@ def calculate_age_from_dob(dob_str: str) -> Optional[int]:
     if not dob_str:
         return None
     try:
-        # Standard ISO YYYY-MM-DD
-        m_iso = re.search(r"\b(19\d\d|20\d\d)-(0[1-9]|1[0-2])-([0-3]\d)\b", dob_str)
-        if m_iso:
-            return 2026 - int(m_iso.group(1))
-
-        # Words like '14 February 1996' or 'Feb 14, 1996'
-        m_year = re.search(r"\b(19\d\d|20\d\d)\b", dob_str)
+        norm = normalize_dob(dob_str)
+        m_year = re.search(r"\b(19\d\d|20\d\d)\b", norm or dob_str)
         if m_year:
             return 2026 - int(m_year.group(1))
     except Exception:
@@ -63,6 +58,27 @@ def normalize_dob(dob_str: str) -> str:
     # Check if already YYYY-MM-DD
     if re.match(r"^\d{4}-\d{2}-\d{2}$", clean):
         return clean
+
+    # Match DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+    m_dmy = re.search(r"\b([0-3]?\d)[-/.]\s*([0-1]?\d)[-/.]\s*(\d{4})\b", clean)
+    if m_dmy:
+        d = int(m_dmy.group(1))
+        m = int(m_dmy.group(2))
+        y = m_dmy.group(3)
+        if d > 12 and m <= 12:
+            return f"{y}-{m:02d}-{d:02d}"
+        elif m > 12 and d <= 12:
+            return f"{y}-{d:02d}-{m:02d}"
+        else:
+            return f"{y}-{m:02d}-{d:02d}"
+
+    # Match YYYY/MM/DD or YYYY.MM.DD
+    m_ymd = re.search(r"\b(\d{4})[-/.]\s*([0-1]?\d)[-/.]\s*([0-3]?\d)\b", clean)
+    if m_ymd:
+        y = m_ymd.group(1)
+        m = int(m_ymd.group(2))
+        d = int(m_ymd.group(3))
+        return f"{y}-{m:02d}-{d:02d}"
 
     months = {
         "january": "01", "jan": "01",

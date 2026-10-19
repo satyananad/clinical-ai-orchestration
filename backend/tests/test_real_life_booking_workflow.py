@@ -586,3 +586,46 @@ def test_single_word_name_incremental_registration_flow():
             f.write(original_data)
 
 
+def test_satya_with_standalone_dob_17_08_2001():
+    """
+    Tests the exact sequence:
+    1. 'first time'
+    2. 'satya'
+    3. '17/08/2001'
+    Ensures that DD/MM/YYYY date format registers the patient, calculates age 25,
+    and advances to service inquiry without repeating the DOB prompt.
+    """
+    import json
+    from backend.app.services.retrieval import DATA_FILE
+    with open(DATA_FILE, "r") as f:
+        original_data = f.read()
+
+    try:
+        session_id = "test-satya-dob-2001"
+        sess = get_or_create_session(session_id)
+        sess.clear()
+
+        # Turn 1: User says first time
+        r1 = run_multi_agent_pipeline("first time", session_id=session_id)
+        assert r1["status"] == "clarification_required"
+        assert sess.booking_state.is_new_patient is True
+
+        # Turn 2: User provides name 'satya'
+        r2 = run_multi_agent_pipeline("satya", session_id=session_id)
+        assert r2["status"] == "clarification_required"
+        assert "Satya" in r2["answer"]
+        assert sess.booking_state.patient_name == "Satya"
+
+        # Turn 3: User provides standalone DOB '17/08/2001'
+        r3 = run_multi_agent_pipeline("17/08/2001", session_id=session_id)
+        assert r3["status"] == "clarification_required"
+        assert "Satya" in r3["answer"]
+        assert "registered as a new patient" in r3["answer"].lower()
+        assert "25" in r3["answer"]  # 2026 - 2001 = 25
+        assert r3.get("agent_trace", {}).get("tool_called") == "registration_completed_ask_service"
+    finally:
+        with open(DATA_FILE, "w") as f:
+            f.write(original_data)
+
+
+
