@@ -1661,6 +1661,17 @@ def generate_dynamic_conversational_reply(query: str, session: Any) -> str:
             "or retrieve a patient's diagnostic report."
         )
 
+    # 7c. Clinic Timings, Location, and Operating Hours
+    if any(k in q_lower for k in ["timing", "timings", "hours", "open", "location", "address", "where is", "contact", "phone", "email"]):
+        return (
+            "**Viscan Dental Imaging Center - Main Clinic (CLINIC-MAIN-01):**\n"
+            "• **Operating Hours**: Monday through Saturday, 09:00 AM – 06:00 PM (Closed Sundays & Public Holidays)\n"
+            "• **Location**: Viscan Dental Imaging Center, Diagnostic Radiology Wing, Main Campus\n"
+            "• **Facilities**: Radiology Suite 1 (3D CBCT Scanner), Panoramic Suite 2 (OPG Scanner), Intraoral Radiography Bay 3 (Bitewings & IOPA)\n"
+            "• **Services**: Cone Beam CT (CBCT), Panoramic (OPG), Bitewing, and Periapical imaging\n"
+            "• **Appointments & Scheduling**: You can check available scan slots directly (e.g. 'Check scan slots for CBCT')."
+        )
+
     # 8. Greetings
     if any(re.search(r"\b" + re.escape(g) + r"\b", q_lower) for g in ["hey", "hello", "hi", "good morning", "good afternoon", "good evening", "greetings"]):
         return (
@@ -1841,23 +1852,23 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
         findings = dictation_res.get("findings", [])
         impressions = dictation_res.get("impressions", [])
 
-        # Build readable clinical draft response for the clinician
-        findings_bullets = []
-        for idx, f in enumerate(findings, 1):
-            site_info = f.get("anatomical_site") or "Anatomical site"
-            t_num = f" (Tooth {f.get('tooth_number')})" if f.get("tooth_number") else ""
-            cat = f" [{f.get('category')}]" if f.get("category") else ""
-            cert = f.get("certainty", "definite observation")
-            findings_bullets.append(f"{idx}. **{site_info}**{t_num}{cat}:\n   Observation: {f.get('observation')}\n   *Diagnostic Certainty: {cert}*")
-
-        impressions_bullets = [f"• {imp}" for imp in impressions] if impressions else ["• Diagnostic review completed."]
+        # Build readable clinical draft response for the clinician from narrative draft
+        narrative = dictation_res.get("narrative_draft")
+        if not narrative:
+            from .report_service import compose_narrative
+            patient_label = session.booking_state.patient_name or "Pending Patient Linkage (Unassigned)"
+            narrative = compose_narrative(
+                patient_label,
+                findings,
+                impressions,
+                dictation_res.get("recommendations", []),
+                patient_details=dictation_res.get("patient_details")
+            )
+            dictation_res["narrative_draft"] = narrative
 
         draft_answer = (
-            f"📋 **Clinical Dictation Draft Report Generated**\n\n"
-            f"**Key Findings & Anatomical Sites:**\n"
-            f"{(chr(10) + chr(10)).join(findings_bullets) if findings_bullets else '• No specific clinical findings detected.'}\n\n"
-            f"**Radiologist Impression:**\n"
-            f"{chr(10).join(impressions_bullets)}\n\n"
+            f"📋 **Clinical Dictation Draft Report Generated** (Status: `DRAFT_PENDING_REVIEW`)\n\n"
+            f"{narrative}\n\n"
             f"⚠️ **Review Notice:** Status is `DRAFT_PENDING_REVIEW`. All observations require attending clinician verification and sign-off before permanent record entry."
         )
 
@@ -1870,6 +1881,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             "extraction_status": dictation_res.get("extraction_status", "COMPLETE" if is_complete else "INCOMPLETE_REQUIRES_REVIEW"),
             "message": dictation_res.get("message", "Clinical observations structured into validated draft report."),
             "answer": draft_answer,
+            "narrative_draft": narrative,
             "citations": citations,
             "dictation_result": dictation_res,
             "agent_trace": {
@@ -2035,6 +2047,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                 return {
                     "status": "confirmation_required",
                     "message": fail_msg,
+                    "answer": fail_msg,
                     "available_slots": fresh_slots,
                     "agent_trace": {
                         "orchestrator": "TriageAgent",
@@ -2087,6 +2100,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             return {
                 "status": "confirmation_required",
                 "message": summary_msg,
+                "answer": summary_msg,
                 "slot": slot,
                 "available_slots": session.booking_state.displayed_slots,
                 "agent_trace": {
@@ -2276,9 +2290,11 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             }
 
         elif tool_name == "booking_declined":
+            cancel_msg = "Appointment booking has been cancelled as requested. No appointment was booked."
             return {
                 "status": "cancelled",
-                "message": "Appointment booking has been cancelled as requested. No appointment was booked.",
+                "message": cancel_msg,
+                "answer": cancel_msg,
                 "agent_trace": {
                     "orchestrator": "TriageAgent",
                     "active_agent": "ScanBookingAgent",
@@ -2305,6 +2321,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             return {
                 "status": "confirmation_required",
                 "message": msg,
+                "answer": msg,
                 "available_slots": slots,
                 "agent_trace": {
                     "orchestrator": "TriageAgent",
@@ -2412,6 +2429,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             return {
                 "status": "confirmation_required",
                 "message": msg,
+                "answer": msg,
                 "modality": mod_title,
                 "available_slots": slots,
                 "agent_trace": {

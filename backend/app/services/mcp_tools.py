@@ -348,22 +348,38 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             return resolve_report_retrieval(query=patient_id or patient_name, patient_name=patient_name, modality=modality)
 
         elif tool_name == "structure_clinical_dictation":
+            from .report_service import compose_narrative
             dictation_text = arguments.get("dictation_text", "")
+            p_name = arguments.get("patient_name") or "Pending Patient Linkage (Unassigned)"
+            p_id = arguments.get("patient_id") or "None"
             parsed = parse_dictation_with_llm(dictation_text)
             findings = parsed.get("findings", [])
-            guardrails = verify_anti_hallucination(dictation_text, findings, impressions=parsed.get("impressions", []))
+            impressions = parsed.get("impressions", [])
+            recommendations = parsed.get("recommendations", [])
+            patient_details = parsed.get("patient_details") or {}
+            guardrails = verify_anti_hallucination(dictation_text, findings, impressions=impressions)
             has_findings = bool(findings)
             status_label = "success" if has_findings else "incomplete"
+
+            narrative = compose_narrative(
+                p_name,
+                findings,
+                impressions,
+                recommendations,
+                patient_details=patient_details
+            )
+
             return {
                 "status": status_label,
                 "extraction_status": parsed.get("extraction_status", "COMPLETE" if has_findings else "INCOMPLETE_REQUIRES_REVIEW"),
                 "message": "Clinical observations structured into validated draft report." if has_findings else "Dictation processed, but no clinical findings could be extracted with high confidence. Clinician review required.",
-                "patient_details": parsed.get("patient_details"),
+                "patient_details": patient_details,
                 "raw_dictation": dictation_text,
                 "anatomical_sites": parsed.get("anatomical_sites", []),
                 "findings": findings,
-                "impressions": parsed.get("impressions", []),
-                "recommendations": parsed.get("recommendations", []),
+                "impressions": impressions,
+                "recommendations": recommendations,
+                "narrative_draft": narrative,
                 "safety_guardrails": guardrails
             }
 

@@ -180,9 +180,10 @@ def is_general_or_assistant_query(query: str) -> bool:
         "her", "his", "she", "he", "patient", "priya", "vikram", "sharmila",
         "in this report", "in her report", "in the report", "her scan", "this scan",
         "the scan", "summarize", "summary", "findings", "finding", "impression",
-        "can you explain", "explain this", "what does this mean", "why is that"
+        "can you explain", "explain this", "what does this mean", "why is that",
+        "proximity", "relationship", "involvement", "margin", "status", "angulation"
     ]
-    if any(ind in q for ind in patient_indicators):
+    if any(re.search(r"\b" + re.escape(ind) + r"\b", q) for ind in patient_indicators):
         return False
 
     # Check for specific tooth references (e.g. "tooth 16", "teeth 16", "#29", "ur5", "48")
@@ -204,8 +205,15 @@ def is_general_or_assistant_query(query: str) -> bool:
     if is_starter and any(concept in q for concept in dental_concepts):
         return True
 
-    # Standalone concept inquiry (e.g. "CBCT scan", "caries")
-    if q_clean in dental_concepts or q_clean in [f"{c} scan" for c in dental_concepts]:
+    # 4. Clinic timings, location, and operational inquiries
+    clinic_keywords = [
+        "clinic timings", "clinic timing", "timings", "opening hours", "open hours", "working hours",
+        "hours of operation", "what time do you open", "what time do you close", "when are you open",
+        "where are you located", "clinic location", "clinic address", "where is the clinic",
+        "contact number", "phone number", "phone", "email", "appointment booking", "services offered",
+        "what services", "what scans do you do"
+    ]
+    if any(k in q for k in clinic_keywords):
         return True
 
     return False
