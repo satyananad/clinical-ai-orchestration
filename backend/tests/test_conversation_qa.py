@@ -361,3 +361,47 @@ def test_female_demographics_query():
     assert "Female" in ans3
 
 
+def test_report_aware_chatbot_grounded_followup_with_evidence():
+    """
+    Rubric Requirement:
+    - Report-aware chatbot: Answers grounded questions about the selected report.
+    - Conversational follow-up (mandatory): Support one context-dependent follow-up
+      such as 'Summarize her report' without asking for the patient again when the reference
+      is unambiguous.
+    - Show the source report or evidence used for each answer.
+    """
+    from backend.app.services.orchestrator_agent import run_multi_agent_pipeline
+    session_id = "test_rubric_followup_session"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    # Step 1: Open unambiguous report
+    r1 = run_multi_agent_pipeline("Open Priya Sharma PAT-1001 OPG report", session_id=session_id)
+    assert r1["status"] == "success"
+    assert session.active_patient_id == "PAT-1001"
+    assert session.active_report_id == "RPT-2001"
+
+    # Step 2: Context-dependent follow-up: 'Summarize her report'
+    # Must NOT ask for patient again! Must ground answer in the selected report (RPT-2001).
+    r2 = run_multi_agent_pipeline("Summarize her report", session_id=session_id)
+    assert r2["status"] == "success"
+    assert "Priya Sharma" in r2["answer"]
+    assert "RPT-2001" in r2["answer"]
+    assert "OPG" in r2["answer"]
+    # Must show source report and evidence
+    assert len(r2.get("citations", [])) > 0
+    assert any("RPT-2001" in c for c in r2["citations"])
+    assert "Source Evidence:" in r2["answer"]
+    assert "Source Report: [RPT-2001]" in r2["answer"]
+
+    # Step 3: Grounded clinical question: 'What did the radiologist say about tooth 48?'
+    r3 = run_multi_agent_pipeline("What did the radiologist say about tooth 48?", session_id=session_id)
+    assert r3["status"] == "success"
+    assert "Tooth 48" in r3["answer"]
+    assert any(term in r3["answer"].lower() for term in ["mesioangular", "impaction", "mandibular canal", "nerve"])
+    # Must cite evidence
+    assert len(r3.get("citations", [])) > 0
+    assert any("Tooth 48" in c for c in r3["citations"])
+
+
+

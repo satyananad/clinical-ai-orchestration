@@ -1033,12 +1033,16 @@ def answer_patient_reports_question(
 
     # 3. Broad cross-report synthesis queries
     # e.g. "summarize all her reports", "across her records", "full history", "complete summary"
-    is_multi_summary = (
+    is_explicit_all_reports = (
         bool(re.search(r"\b(?:all|across|entire|full|complete|every)\s+(?:her\s+|his\s+|their\s+|the\s+)?(?:reports?|scans?|records?|history)\b", q_lower))
-        or bool(re.search(r"\bsummarize\s+(?:all\s+)?(?:her\s+|his\s+|their\s+|the\s+)?(?:reports?|scans?)\b", q_lower))
-        or (not active_report_id and any(w in q_lower for w in ["summarize", "summary", "problem", "wrong", "findings", "finding", "diagnos"]))
+        or bool(re.search(r"\bsummarize\s+all\s+(?:her\s+|his\s+|their\s+|the\s+)?(?:reports?|scans?)\b", q_lower))
+        or "all reports" in q_lower
+        or "all her reports" in q_lower
+        or "all his reports" in q_lower
+        or "across reports" in q_lower
+        or "across all" in q_lower
     )
-    if is_multi_summary:
+    if is_explicit_all_reports or (not active_report_id and any(w in q_lower for w in ["summarize", "summary", "problem", "wrong", "findings", "finding", "diagnos"])):
         return generate_multi_report_summary(all_reports, patient, query)
 
     # 3. Cross-report condition/pathology queries
