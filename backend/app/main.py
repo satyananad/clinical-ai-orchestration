@@ -245,9 +245,10 @@ def get_dashboard_ui():
                                     <button onclick="sendChat('Summarize her report')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-600 px-2 py-0.5 rounded transition">
                                         Summarize Report
                                     </button>
-                                    <button onclick="sendChat('Check available scan slots')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-600 px-2 py-0.5 rounded transition">
-                                        Check Scan Slots
+                                    <button onclick="sendChat('Open Priya Sharma Periapical Radiograph')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-600 px-2 py-0.5 rounded transition">
+                                        Open Periapical
                                     </button>
+                                    <button onclick="sendChat('Check available scan slots')" class="hidden" style="display:none">Check Scan Slots</button>
                                     <button onclick="sendChat('Lower right third molar is horizontally impacted with roots approximating the inferior alveolar nerve canal.')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-600 px-2 py-0.5 rounded transition">
                                         <i class="fa-solid fa-microphone-lines mr-1 text-[9px]"></i> Dictate: LR8 Impaction
                                     </button>

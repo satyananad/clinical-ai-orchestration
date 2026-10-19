@@ -2364,7 +2364,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             actual_query = patient_id_arg
 
         session.last_retrieval_query = actual_query
-        retrieval_res = resolve_report_retrieval(actual_query, patient_name=patient_name_arg, modality=modality_arg)
+        retrieval_res = resolve_report_retrieval(actual_query, patient_name=patient_name_arg, modality=modality_arg, active_patient_id=session.active_patient_id)
         
         # Update active context upon verified retrieval
         if retrieval_res.get("status") == "success" and retrieval_res.get("report"):

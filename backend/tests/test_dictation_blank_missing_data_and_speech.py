@@ -118,3 +118,46 @@ def test_compound_3d_measurements_preserved():
     assert "8 by 7 by 6 mm" in f["observation"]
     assert "8 by 7 by 6 mm" in f["measurements"]
     assert f["certainty"] == "definite observation"
+
+
+def test_priya_sharma_periapical_and_bitewing_disambiguation_no_loop():
+    """
+    User Issue: 'it is stuck in loop fix this:
+    Open Priya Sharma -> 2 matching patients (PAT-1001, PAT-1012) -> select PAT-1012 ->
+    open priya sharma Periapical Radiograph -> asked for clarification again'
+    
+    Verifies that 'open priya sharma Periapical Radiograph' resolves unambiguously to PAT-1001
+    because only PAT-1001 has Periapical, and 'open her bitewing radiographs' resolves to PAT-1012
+    because only PAT-1012 has Bitewing.
+    """
+    session_id = "test-priya-loop-break"
+
+    # Test 1: Direct query with modality resolves to the only patient with that modality
+    res = client.post("/assistant/chat", json={
+        "query": "open priya sharma Periapical Radiograph",
+        "session_id": session_id
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert data["patient"]["patient_id"] == "PAT-1001"
+    assert data["report"]["report_id"] == "RPT-2002"
+    assert data["report"]["report_type"] == "Periapical Radiograph"
+
+    # Test 2: Select PAT-1012, then ask for bitewing radiographs
+    res2 = client.post("/assistant/chat", json={
+        "query": "Open Priya Sharma (PAT-1012)",
+        "session_id": session_id
+    })
+    assert res2.status_code == 200
+    assert res2.json()["patient"]["patient_id"] == "PAT-1012"
+
+    res3 = client.post("/assistant/chat", json={
+        "query": "open her bitewing radiographs",
+        "session_id": session_id
+    })
+    assert res3.status_code == 200
+    data3 = res3.json()
+    assert data3["status"] == "success"
+    assert data3["patient"]["patient_id"] == "PAT-1012"
+    assert data3["report"]["report_id"] == "RPT-2035"

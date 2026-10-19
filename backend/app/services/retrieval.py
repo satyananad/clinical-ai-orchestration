@@ -290,7 +290,12 @@ def get_patient_pronouns(sex: Optional[str]) -> Dict[str, str]:
     else:
         return {"possessive": "his/her", "subject": "he/she", "object": "him/her"}
 
-def resolve_report_retrieval(query: str, patient_name: Optional[str] = None, modality: Optional[str] = None) -> Dict[str, Any]:
+def resolve_report_retrieval(
+    query: str,
+    patient_name: Optional[str] = None,
+    modality: Optional[str] = None,
+    active_patient_id: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Feature A: Patient & Report Retrieval with strict safety ambiguity handling.
     """
@@ -337,23 +342,41 @@ def resolve_report_retrieval(query: str, patient_name: Optional[str] = None, mod
 
     # 1. Ambiguity Detection: Multiple patients match
     if len(candidates) > 1:
-        candidate_list = [
-            {
-                "patient_id": c["patient_id"],
-                "patient_name": c["patient_name"],
-                "date_of_birth": c["date_of_birth"],
-                "sex": c["sex"]
+        # 1a. Disambiguate by requested scan modality if unique
+        if requested_modality and requested_modality != "Any":
+            mod_candidates = []
+            for c in candidates:
+                c_reports = get_patient_reports(c["patient_id"], modality=requested_modality)
+                if c_reports:
+                    mod_candidates.append(c)
+            if len(mod_candidates) == 1:
+                candidates = mod_candidates
+
+        # 1b. If still ambiguous and an active patient is already selected in the session context
+        if len(candidates) > 1 and active_patient_id:
+            active_match = [c for c in candidates if c["patient_id"] == active_patient_id]
+            if len(active_match) == 1:
+                candidates = active_match
+
+        # 1c. If still multiple candidates, require explicit clinician clarification
+        if len(candidates) > 1:
+            candidate_list = [
+                {
+                    "patient_id": c["patient_id"],
+                    "patient_name": c["patient_name"],
+                    "date_of_birth": c["date_of_birth"],
+                    "sex": c["sex"]
+                }
+                for c in candidates
+            ]
+            display_name = target_name or query.strip()
+            return {
+                "status": "clarification_required",
+                "message": f"I found {len(candidates)} matching patients for '{display_name}'. Please clarify which patient you mean.",
+                "candidates": candidate_list,
+                "report": None,
+                "patient": None
             }
-            for c in candidates
-        ]
-        display_name = target_name or query.strip()
-        return {
-            "status": "clarification_required",
-            "message": f"I found {len(candidates)} matching patients for '{display_name}'. Please clarify which patient you mean.",
-            "candidates": candidate_list,
-            "report": None,
-            "patient": None
-        }
 
     # 2. Not Found
     if not candidates:
