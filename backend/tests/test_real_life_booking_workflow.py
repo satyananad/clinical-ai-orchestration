@@ -538,3 +538,51 @@ def test_incremental_new_patient_registration_flow():
         with open(DATA_FILE, "w") as f:
             f.write(original_data)
 
+def test_single_word_name_incremental_registration_flow():
+    """
+    Verifies that when a clinician/patient replies to new patient registration with just a single-word name
+    (e.g., 'satya'), the system:
+    1. Correctly identifies it as patient name and invokes prompt_patient_dob_and_contact
+    2. Does NOT loop back to prompt_existing_or_new_patient
+    3. Completes registration when DOB and phone number are supplied.
+    """
+    import json
+    from backend.app.services.retrieval import DATA_FILE
+    with open(DATA_FILE, "r") as f:
+        original_data = f.read()
+
+    try:
+        session_id = "test-single-name-satya"
+        sess = get_or_create_session(session_id)
+        sess.clear()
+
+        # Turn 1: User asks to book
+        r1 = run_multi_agent_pipeline("i want to book appointment", session_id=session_id)
+        assert r1["status"] == "clarification_required"
+        assert r1.get("agent_trace", {}).get("tool_called") == "prompt_existing_or_new_patient"
+
+        # Turn 2: User says first time
+        r2 = run_multi_agent_pipeline("first time", session_id=session_id)
+        assert r2["status"] == "clarification_required"
+        assert r2.get("agent_trace", {}).get("tool_called") == "prompt_new_patient_registration"
+        assert sess.booking_state.is_new_patient is True
+
+        # Turn 3: User replies with single name 'satya'
+        r3 = run_multi_agent_pipeline("satya", session_id=session_id)
+        assert r3["status"] == "clarification_required"
+        assert r3.get("agent_trace", {}).get("tool_called") == "prompt_patient_dob_and_contact"
+        assert "Satya" in r3["answer"]
+        assert "date of birth" in r3["answer"].lower() or "dob" in r3["answer"].lower()
+        assert sess.booking_state.patient_name == "Satya"
+
+        # Turn 4: User provides DOB and phone number
+        r4 = run_multi_agent_pipeline("14/02/1996, 9876543210", session_id=session_id)
+        assert r4["status"] == "clarification_required"
+        assert "Satya" in r4["answer"]
+        assert "registered as a new patient" in r4["answer"].lower()
+        assert r4.get("agent_trace", {}).get("tool_called") == "registration_completed_ask_service"
+    finally:
+        with open(DATA_FILE, "w") as f:
+            f.write(original_data)
+
+

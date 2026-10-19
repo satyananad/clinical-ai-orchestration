@@ -425,8 +425,8 @@ def extract_patient_registration_details(query: str) -> Dict[str, Optional[str]]
             "open", "view", "retrieve", "fetch", "load", "find", "search", "show", "check",
             "what", "where", "who", "which", "why", "tell", "explain", "is", "are"
         }
-        if 2 <= len(words) <= 4 and words[0].lower() not in stop_first:
-            cand = " ".join(words[:2])
+        if 1 <= len(words) <= 4 and words[0].lower() not in stop_first:
+            cand = " ".join(words[:2]) if len(words) >= 2 else words[0]
             if is_valid_patient_name(cand):
                 res["full_name"] = cand.title()
 
@@ -612,8 +612,10 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
                         args["query"] = query
 
                 if session.booking_state.stage in (BookingStage.COLLECTING_DETAILS, BookingStage.IDENTIFYING_PATIENT):
-                    if t_name in ("query_clinic_database", "conversation", "general_query"):
+                    if t_name in ("query_clinic_database", "conversation", "general_query", "prompt_existing_or_new_patient"):
                         cand_name = extract_patient_registration_details(query).get("full_name")
+                        if not cand_name and is_valid_patient_name(query.strip()) and not any(w in q_lower for w in ["yes", "no", "ok", "cancel"]):
+                            cand_name = query.strip().title()
                         if cand_name or is_valid_patient_name(query):
                             sel_agent = "ScanBookingAgent"
                             t_name = "prompt_patient_dob_and_contact"
@@ -697,8 +699,10 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
                 args["patient_name"] = p_name
 
             if session.booking_state.stage in (BookingStage.COLLECTING_DETAILS, BookingStage.IDENTIFYING_PATIENT):
-                if tool_name in ("query_clinic_database", "conversation", "general_query"):
+                if tool_name in ("query_clinic_database", "conversation", "general_query", "prompt_existing_or_new_patient"):
                     cand_name = extract_patient_registration_details(query).get("full_name")
+                    if not cand_name and is_valid_patient_name(query.strip()) and not any(w in q_lower for w in ["yes", "no", "ok", "cancel"]):
+                        cand_name = query.strip().title()
                     if cand_name or is_valid_patient_name(query):
                         tool_name = "prompt_patient_dob_and_contact"
                         p_name = cand_name or query.strip().title()
@@ -1067,6 +1071,8 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         # 0B.4.4 Registration Details Submission
         reg_info = extract_patient_registration_details(query)
         cand_name = reg_info.get("full_name") or b_state.patient_name
+        if not cand_name and is_valid_patient_name(query.strip()) and not any(w in q_lower for w in ["yes", "no", "ok", "cancel", "stop", "abort"]):
+            cand_name = query.strip().title()
         cand_dob = reg_info.get("date_of_birth") or b_state.patient_dob
         cand_phone = reg_info.get("contact_phone") or b_state.patient_phone
         cand_email = reg_info.get("email") or b_state.patient_email
