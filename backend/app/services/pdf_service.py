@@ -1,6 +1,7 @@
 import os
 import datetime
 from typing import Optional, List, Dict, Any
+from .report_service import is_symptom_or_history
 
 def sanitize_pdf(text: str) -> str:
     """Sanitize strings for PDF Type 1 encoding."""
@@ -304,35 +305,76 @@ def _generate_reportlab_pdf(
     story.append(card_table)
     story.append(Spacer(1, 10))
 
-    # 3. Section 1: Detailed Clinical Findings & Observations
-    story.append(Paragraph("1. DETAILED CLINICAL FINDINGS & OBSERVATIONS", section_heading))
-    story.append(HRFlowable(width="100%", thickness=0.75, color=colors.HexColor("#cbd5e1"), spaceAfter=6))
+    # Partition Findings: Separate Clinical History from Imaging Observations
+    history_items = [f.get("observation", "").strip() for f in findings if is_symptom_or_history(f) and f.get("observation")]
+    imaging_findings = [f for f in findings if not is_symptom_or_history(f)]
 
-    if findings:
-        for i, f in enumerate(findings, 1):
-            site = f.get("anatomical_site", "General")
-            cat = f.get("category", "General Observation")
-            obs = f.get("observation", "")
-            cert = f.get("certainty", "Confirmed")
+    sec_counter = 1
+    # 3. Optional Section: Clinical History & Patient-Reported Symptoms
+    if history_items:
+        story.append(Paragraph(f"{sec_counter}. CLINICAL HISTORY & PATIENT-REPORTED SYMPTOMS", section_heading))
+        story.append(HRFlowable(width="100%", thickness=0.75, color=colors.HexColor("#cbd5e1"), spaceAfter=6))
+        for h in history_items:
+            clean_h = h.strip()
+            if clean_h and not clean_h.endswith("."):
+                clean_h += "."
+            story.append(Paragraph(f"• {clean_h}", bullet_item))
+            story.append(Spacer(1, 2))
+        story.append(Spacer(1, 6))
+        sec_counter += 1
+
+    # 4. Section: Detailed Radiological Findings (Grouped by Anatomical Site)
+    story.append(Paragraph(f"{sec_counter}. DETAILED RADIOLOGICAL FINDINGS", section_heading))
+    story.append(HRFlowable(width="100%", thickness=0.75, color=colors.HexColor("#cbd5e1"), spaceAfter=6))
+    sec_counter += 1
+
+    if imaging_findings:
+        site_groups: Dict[str, List[Dict[str, Any]]] = {}
+        for f in imaging_findings:
+            raw_site = f.get("anatomical_site", "Dentition & Regional Anatomy")
+            tooth_num = f.get("tooth_number")
+            if tooth_num and f"tooth {tooth_num}".lower() not in raw_site.lower():
+                group_key = f"{raw_site} (Tooth {tooth_num})"
+            else:
+                group_key = raw_site
+            site_groups.setdefault(group_key, []).append(f)
+
+        for site_name, group in site_groups.items():
+            paragraph_sentences = []
+            for item in group:
+                obs = item.get("observation", "").strip()
+                cert = item.get("certainty", "")
+                if not obs:
+                    continue
+                clean_obs = obs[0].upper() + obs[1:]
+                if not clean_obs.endswith("."):
+                    clean_obs += "."
+                if cert in ("unclear / clinician review required", "indeterminate"):
+                    if "cannot be determined" not in clean_obs.lower() and "indeterminate" not in clean_obs.lower():
+                        clean_obs += " (Finding is indeterminate from provided data; clinician review required)."
+                    else:
+                        clean_obs += " (Indeterminate / clinician review required)."
+                paragraph_sentences.append(clean_obs)
 
             finding_block = [
-                Paragraph(f"{i}. [{site}] • {cat}:", finding_title),
-                Spacer(1, 1),
-                Paragraph(obs, finding_body),
-                Spacer(1, 1),
-                Paragraph(f"Diagnostic Certainty: {cert}", finding_meta),
-                Spacer(1, 4)
+                Paragraph(f"<b>[{site_name}]</b>", finding_title),
+                Spacer(1, 2),
+                Paragraph(" ".join(paragraph_sentences), finding_body),
+                Spacer(1, 6)
             ]
             story.append(KeepTogether(finding_block))
     else:
-        story.append(Paragraph("No discrete clinical findings documented. Complete clinical dictation review required.", card_text_dim))
+        story.append(Paragraph("No discrete radiological imaging findings documented. Complete clinical dictation review required.", card_text_dim))
         story.append(Spacer(1, 6))
 
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 2))
+    story.append(Paragraph("<i>[Dictation Source Note]: Findings are synthesized from supplied speech-to-text dictation and have not been independently verified against native radiological images.</i>", finding_meta))
+    story.append(Spacer(1, 8))
 
-    # 4. Section 2: Clinical Impressions
-    story.append(Paragraph("2. CLINICAL IMPRESSION", section_heading))
+    # 5. Section: Clinical Impressions
+    story.append(Paragraph(f"{sec_counter}. CLINICAL IMPRESSION", section_heading))
     story.append(HRFlowable(width="100%", thickness=0.75, color=colors.HexColor("#cbd5e1"), spaceAfter=6))
+    sec_counter += 1
 
     if impressions:
         for imp in impressions:
@@ -341,10 +383,10 @@ def _generate_reportlab_pdf(
     else:
         story.append(Paragraph("Pending attending clinician synthesis.", card_text_dim))
 
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
 
-    # 5. Section 3: Recommendations
-    story.append(Paragraph("3. RECOMMENDATIONS & REQUIRED ACTION", section_heading))
+    # 6. Section: Recommendations
+    story.append(Paragraph(f"{sec_counter}. RECOMMENDATIONS & REQUIRED ACTION", section_heading))
     story.append(HRFlowable(width="100%", thickness=0.75, color=colors.HexColor("#cbd5e1"), spaceAfter=6))
 
     if recommendations:
@@ -352,9 +394,13 @@ def _generate_reportlab_pdf(
             story.append(Paragraph(f"• {rec}", bullet_item))
             story.append(Spacer(1, 2))
     else:
-        story.append(Paragraph("No specific intervention recommended at this time.", card_text_dim))
+        has_indeterminate = any(f.get("certainty") in ("unclear / clinician review required", "indeterminate") for f in imaging_findings)
+        if has_indeterminate:
+            story.append(Paragraph("• Clinical correlation advised. Cross-sectional 3D CBCT imaging may be indicated to evaluate indeterminate canal proximity or anatomical relationships if surgical intervention is planned.", bullet_item))
+        else:
+            story.append(Paragraph("• None dictated. Attending clinician to determine management following clinical correlation.", card_text_dim))
 
-    story.append(Spacer(1, 16))
+    story.append(Spacer(1, 14))
 
     # 6. Attending Clinician Approval Block / Digital Signature
     if is_confirmed:
@@ -460,10 +506,6 @@ def _generate_manual_canvas_pdf(
         f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 310 718 Td ({sanitize_pdf('EXAM TYPE: ' + study_type[:30])}) Tj ET",
         f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 310 702 Td ({sanitize_pdf('DATE: ' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))}) Tj ET",
         f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 310 706 Td ({sanitize_pdf('VERIFICATION: Guardrail Verification Enforced')}) Tj ET",
-
-        # Section 1 Header
-        f"BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 660 Td ({sanitize_pdf('1. DETAILED CLINICAL FINDINGS & OBSERVATIONS')}) Tj ET",
-        "0.85 0.85 0.85 RG 1 w 50 653 495 0 m 545 653 l S"
     ]
     y = 638
 
@@ -479,29 +521,92 @@ def _generate_manual_canvas_pdf(
             ]
             y = 760
 
-    # Write Structured Findings cleanly
-    for i, f in enumerate(findings, 1):
-        check_page_overflow(needed_space=35)
-        site = f.get("anatomical_site", "General")
-        cat = f.get("category", "General Observation")
-        obs = f.get("observation", "")
-        cert = f.get("certainty", "Confirmed")
+    # Partition Findings
+    history_items = [f.get("observation", "").strip() for f in findings if is_symptom_or_history(f) and f.get("observation")]
+    imaging_findings = [f for f in findings if not is_symptom_or_history(f)]
 
-        curr_cmds.append(f"BT /F1 8.5 Tf 0.15 0.25 0.5 rg 55 {y} Td ({sanitize_pdf(f'{i}. [{site}] • {cat}:')}) Tj ET")
-        y -= 11
-        for o_line in wrap_lines(obs, max_chars=72):
-            check_page_overflow(needed_space=20)
-            curr_cmds.append(f"BT /F2 8.5 Tf 0 0 0 rg 65 {y} Td ({sanitize_pdf(o_line)}) Tj ET")
-            y -= 10
-        curr_cmds.append(f"BT /F3 7.5 Tf 0.4 0.4 0.4 rg 65 {y} Td ({sanitize_pdf('Diagnostic Certainty: ' + cert)}) Tj ET")
-        y -= 12
+    sec_idx = 1
+    if history_items:
+        curr_cmds.append(f"BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 660 Td ({sanitize_pdf(f'{sec_idx}. CLINICAL HISTORY & PATIENT-REPORTED SYMPTOMS')}) Tj ET")
+        curr_cmds.append("0.85 0.85 0.85 RG 1 w 50 653 495 0 m 545 653 l S")
+        y = 638
+        for h in history_items:
+            clean_h = h.strip()
+            if clean_h and not clean_h.endswith("."):
+                clean_h += "."
+            for h_line in wrap_lines(clean_h, max_chars=72):
+                check_page_overflow(needed_space=18)
+                curr_cmds.append(f"BT /F2 8.5 Tf 0 0 0 rg 60 {y} Td ({sanitize_pdf('• ' + h_line)}) Tj ET")
+                y -= 11
+            y -= 3
+        sec_idx += 1
+        y -= 6
+        check_page_overflow(needed_space=40)
+        curr_cmds.append(f"BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 {y} Td ({sanitize_pdf(f'{sec_idx}. DETAILED RADIOLOGICAL FINDINGS')}) Tj ET")
+        curr_cmds.append(f"0.85 0.85 0.85 RG 1 w 50 {y - 4} 495 0 m 545 {y - 4} l S")
+        y -= 16
+    else:
+        curr_cmds.append(f"BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 660 Td ({sanitize_pdf(f'{sec_idx}. DETAILED RADIOLOGICAL FINDINGS')}) Tj ET")
+        curr_cmds.append("0.85 0.85 0.85 RG 1 w 50 653 495 0 m 545 653 l S")
+        y = 638
 
-    # Section 2: Impressions
+    sec_idx += 1
+
+    # Write Site-Grouped Clinical Paragraphs
+    if imaging_findings:
+        site_groups_canvas: Dict[str, List[Dict[str, Any]]] = {}
+        for f in imaging_findings:
+            raw_site = f.get("anatomical_site", "Dentition & Regional Anatomy")
+            tooth_num = f.get("tooth_number")
+            if tooth_num and f"tooth {tooth_num}".lower() not in raw_site.lower():
+                group_key = f"{raw_site} (Tooth {tooth_num})"
+            else:
+                group_key = raw_site
+            site_groups_canvas.setdefault(group_key, []).append(f)
+
+        for site_name, group in site_groups_canvas.items():
+            check_page_overflow(needed_space=45)
+            curr_cmds.append(f"BT /F1 9 Tf 0.15 0.25 0.5 rg 55 {y} Td ({sanitize_pdf(f'[{site_name}]')}) Tj ET")
+            y -= 12
+
+            paragraph_sentences = []
+            for item in group:
+                obs = item.get("observation", "").strip()
+                cert = item.get("certainty", "")
+                if not obs:
+                    continue
+                clean_obs = obs[0].upper() + obs[1:]
+                if not clean_obs.endswith("."):
+                    clean_obs += "."
+                if cert in ("unclear / clinician review required", "indeterminate"):
+                    if "cannot be determined" not in clean_obs.lower() and "indeterminate" not in clean_obs.lower():
+                        clean_obs += " (Finding is indeterminate from provided data; clinician review required)."
+                    else:
+                        clean_obs += " (Indeterminate / clinician review required)."
+                paragraph_sentences.append(clean_obs)
+
+            para_text = " ".join(paragraph_sentences)
+            for p_line in wrap_lines(para_text, max_chars=72):
+                check_page_overflow(needed_space=18)
+                curr_cmds.append(f"BT /F2 8.5 Tf 0 0 0 rg 65 {y} Td ({sanitize_pdf(p_line)}) Tj ET")
+                y -= 11
+            y -= 6
+    else:
+        check_page_overflow(needed_space=25)
+        curr_cmds.append(f"BT /F3 8.5 Tf 0.4 0.4 0.4 rg 55 {y} Td ({sanitize_pdf('No discrete radiological findings dictated.')}) Tj ET")
+        y -= 14
+
+    check_page_overflow(needed_space=25)
+    curr_cmds.append(f"BT /F3 7.5 Tf 0.4 0.4 0.4 rg 55 {y} Td ({sanitize_pdf('[Source Note]: Findings are synthesized from supplied speech-to-text dictation and have not been independently verified against native images.')}) Tj ET")
+    y -= 14
+
+    # Section: Impressions
     check_page_overflow(needed_space=60)
     y -= 6
-    curr_cmds.append(f"BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 {y} Td ({sanitize_pdf('2. CLINICAL IMPRESSION')}) Tj ET")
+    curr_cmds.append(f"BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 {y} Td ({sanitize_pdf(f'{sec_idx}. CLINICAL IMPRESSION')}) Tj ET")
     curr_cmds.append(f"0.85 0.85 0.85 RG 1 w 50 {y - 4} 495 0 m 545 {y - 4} l S")
     y -= 16
+    sec_idx += 1
 
     for imp in impressions:
         for iline in wrap_lines(imp, max_chars=72):
@@ -510,17 +615,26 @@ def _generate_manual_canvas_pdf(
             y -= 11
         y -= 3
 
-    # Section 3: Recommendations
+    # Section: Recommendations
     check_page_overflow(needed_space=60)
     y -= 6
-    curr_cmds.append(f"BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 {y} Td ({sanitize_pdf('3. RECOMMENDATIONS & REQUIRED ACTION')}) Tj ET")
+    curr_cmds.append(f"BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 {y} Td ({sanitize_pdf(f'{sec_idx}. RECOMMENDATIONS & REQUIRED ACTION')}) Tj ET")
     curr_cmds.append(f"0.85 0.85 0.85 RG 1 w 50 {y - 4} 495 0 m 545 {y - 4} l S")
     y -= 16
 
-    for rec in recommendations:
-        for r_line in wrap_lines(rec, max_chars=72):
+    if recommendations:
+        for rec in recommendations:
+            for r_line in wrap_lines(rec, max_chars=72):
+                check_page_overflow(needed_space=20)
+                curr_cmds.append(f"BT /F2 8.5 Tf 0 0 0 rg 60 {y} Td ({sanitize_pdf('• ' + r_line)}) Tj ET")
+                y -= 11
+            y -= 2
+    else:
+        has_indeterminate = any(f.get("certainty") in ("unclear / clinician review required", "indeterminate") for f in imaging_findings)
+        rec_msg = "• Clinical correlation advised. Cross-sectional 3D CBCT imaging may be indicated if surgical intervention planned." if has_indeterminate else "• None dictated. Attending clinician to determine management following clinical correlation."
+        for r_line in wrap_lines(rec_msg, max_chars=72):
             check_page_overflow(needed_space=20)
-            curr_cmds.append(f"BT /F2 8.5 Tf 0 0 0 rg 60 {y} Td ({sanitize_pdf('• ' + r_line)}) Tj ET")
+            curr_cmds.append(f"BT /F2 8.5 Tf 0 0 0 rg 60 {y} Td ({sanitize_pdf(r_line)}) Tj ET")
             y -= 11
         y -= 2
 

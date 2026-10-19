@@ -2,6 +2,20 @@ import re
 import datetime
 from typing import List, Dict, Any, Optional
 
+def is_symptom_or_history(finding: Dict[str, Any]) -> bool:
+    """Identifies if a finding represents patient-reported symptoms or clinical history rather than an objective imaging observation."""
+    cat = str(finding.get("category", "")).lower()
+    site = str(finding.get("anatomical_site", "")).lower()
+    obs = str(finding.get("observation", "")).lower()
+    if "symptom" in cat or "history" in cat:
+        return True
+    if "symptom" in site or "history" in site:
+        return True
+    if re.search(r"\b(?:patient\s+reports?|patient\s+complains?|chief\s+complaint|history\s+of|presented\s+with|presents\s+with|experiencing\s+(?:pain|discomfort|swelling)|reports\s+discomfort|reports\s+pain)\b", obs):
+        return True
+    return False
+
+
 def compose_narrative(
     patient_name: str,
     findings: List[Dict[str, Any]],
@@ -10,54 +24,169 @@ def compose_narrative(
     patient_details: Optional[Dict[str, Any]] = None
 ) -> str:
     """
-    Composes a readable, standardized radiological narrative report for clinician review.
-    Enforces separation between administrative metadata, observations, impressions, and recommendations.
+    Composes a readable, standardized radiological consultation narrative report for clinician review.
+    Enforces separation between administrative metadata, patient symptoms, imaging observations, impressions, and recommendations.
+    Renders findings grouped into coherent clinical paragraphs by anatomical region rather than raw numbered lists.
     """
+    from .claim_verification import is_meta_or_instruction_sentence
+
     details = patient_details or {}
     supplied_name = details.get("patient_name")
     supplied_id = details.get("patient_id")
-    study_type = details.get("study_type")
+    study_type = details.get("study_type") or "Dictated Radiological Assessment"
+    status = details.get("status") or details.get("report_metadata", {}).get("status", "DRAFT")
+    is_confirmed = (status == "CONFIRMED_BY_CLINICIAN")
+    confirmed_at = details.get("confirmed_at") or details.get("report_metadata", {}).get("confirmed_at")
+    clinician_name = details.get("clinician_name") or "Dr. R. Mehta, MDS"
+
+    # Demographics formatting
+    demo_parts = []
+    if details.get("age"):
+        demo_parts.append(f"Age: {details['age']}")
+    if details.get("gender"):
+        demo_parts.append(f"Gender: {details['gender']}")
+    if details.get("date_of_birth"):
+        demo_parts.append(f"DOB: {details['date_of_birth']}")
+    demo_str = " | ".join(demo_parts) if demo_parts else "Not specified (Pending demographics verification)"
 
     lines = []
-    lines.append("=" * 68)
-    lines.append("*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***")
-    lines.append("=" * 68)
-    if "unassigned" in patient_name.lower():
+    lines.append("=" * 72)
+    lines.append("VISCAN MAXILLOFACIAL & DENTAL RADIOLOGY CLINIC")
+    lines.append("Department of Diagnostic Radiology & Oral Imaging")
+    if is_confirmed:
+        lines.append("*** RADIOLOGICAL CONSULTATION REPORT - CLINICALLY VERIFIED & FINAL ***")
+    else:
+        lines.append("*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***")
+    lines.append("=" * 72)
+
+    # 1. Compact Two-Column Patient & Examination Details
+    lines.append("PATIENT & EXAMINATION DETAILS:")
+    lines.append("-" * 72)
+    is_unassigned = ("unassigned" in patient_name.lower() or "pending" in patient_name.lower())
+    if is_unassigned:
         if supplied_name or supplied_id:
-            lines.append(f"Patient Name:    Unassigned (Supplied in transcript: {supplied_name or 'N/A'}; ID: {supplied_id or 'N/A'} - Pending Clinician Verification)")
-            lines.append("Patient ID:      None (Requires patient selection before permanent record entry)")
+            lines.append(f"Patient Name:    Pending Linkage (Supplied: {supplied_name or 'N/A'})")
+            lines.append(f"Patient ID:      Pending Linkage (Supplied: {supplied_id or 'N/A'})")
         else:
-            lines.append("Patient Name:    Unassigned (Transcript not linked to a registered patient)")
+            lines.append("Patient Name:    Pending Patient Linkage (Unassigned)")
             lines.append("Patient ID:      None (Requires patient selection before permanent record entry)")
+        lines.append(f"Demographics:    {demo_str}")
+        lines.append(f"Examination:     {study_type}")
+        lines.append(f"Date of Draft:   {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        lines.append("Linkage Status:  Unlinked (Pending Clinician Action)")
+        lines.append("Report Status:   DRAFT (AI Dictation Synthesis - Pending Clinician Review)")
     else:
         lines.append(f"Patient Name:    {patient_name}")
-        if supplied_id:
-            lines.append(f"Patient ID:      {supplied_id}")
-    if study_type:
-        lines.append(f"Study Type:      {study_type}")
-    lines.append("Status:          DRAFT (AI Dictation Synthesis - Pending Clinician Review)")
-    lines.append(f"Date of Draft:   {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        lines.append(f"Patient ID:      {supplied_id or details.get('patient_id') or 'PAT-RECORD'}")
+        lines.append(f"Demographics:    {demo_str}")
+        lines.append(f"Examination:     {study_type}")
+        date_str = confirmed_at if (is_confirmed and confirmed_at) else datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+        lines.append(f"Date of Draft:   {date_str}")
+        lines.append("Linkage Status:  Authorized Patient Record Linked")
+        if is_confirmed:
+            lines.append(f"Report Status:   FINAL / CLINICALLY VERIFIED ({clinician_name})")
+        else:
+            lines.append("Report Status:   DRAFT (AI Dictation Synthesis - Pending Clinician Review)")
+    lines.append("-" * 72)
     lines.append("")
-    lines.append("DETAILED FINDINGS:")
-    for i, f in enumerate(findings, 1):
-        site_str = f"[{f.get('anatomical_site', 'Dentition')}]"
-        if f.get("tooth_number"):
-            site_str += f" (Tooth {f['tooth_number']})"
-        lines.append(f"  {i}. {site_str} • {f.get('category', 'General Observation')}")
-        lines.append(f"     Observation: {f['observation']}")
-        lines.append(f"     Certainty:   {f['certainty']}")
+
+    # 2. Partition Findings: Separate Clinical History & Symptoms from Imaging Observations
+    history_items = []
+    imaging_findings = []
+    for f in findings:
+        obs = str(f.get("observation", "")).strip()
+        if not obs or is_meta_or_instruction_sentence(obs):
+            continue
+        if is_symptom_or_history(f):
+            history_items.append(obs)
+        else:
+            imaging_findings.append(f)
+
+    # Section: Clinical History
+    lines.append("CLINICAL HISTORY & PATIENT-REPORTED SYMPTOMS:")
+    if history_items:
+        for item in history_items:
+            clean_item = item.strip()
+            if clean_item and not clean_item.endswith("."):
+                clean_item += "."
+            lines.append(f"  • {clean_item}")
+    else:
+        lines.append("  • No prior clinical history or patient-reported symptoms were supplied in the dictation.")
     lines.append("")
+
+    # 3. Section: Detailed Radiological Findings (Grouped by Anatomical Site/Region as Clinical Paragraphs)
+    lines.append("DETAILED RADIOLOGICAL FINDINGS:")
+    if imaging_findings:
+        # Group findings by anatomical site / region
+        site_groups: Dict[str, List[Dict[str, Any]]] = {}
+        for f in imaging_findings:
+            raw_site = f.get("anatomical_site", "Dentition & Regional Anatomy")
+            tooth_num = f.get("tooth_number")
+            if tooth_num and f"tooth {tooth_num}".lower() not in raw_site.lower():
+                group_key = f"{raw_site} (Tooth {tooth_num})"
+            else:
+                group_key = raw_site
+            site_groups.setdefault(group_key, []).append(f)
+
+        for site_name, group in site_groups.items():
+            lines.append(f"  [{site_name}]")
+            paragraph_sentences = []
+            for item in group:
+                obs = item.get("observation", "").strip()
+                cert = item.get("certainty", "")
+                if not obs:
+                    continue
+                clean_obs = obs[0].upper() + obs[1:]
+                if not clean_obs.endswith("."):
+                    clean_obs += "."
+                if cert in ("unclear / clinician review required", "indeterminate"):
+                    if "cannot be determined" not in clean_obs.lower() and "indeterminate" not in clean_obs.lower():
+                        clean_obs += " (Finding is indeterminate from provided data; clinician review required)."
+                    else:
+                        clean_obs += " (Indeterminate / clinician review required)."
+                paragraph_sentences.append(clean_obs)
+            lines.append(f"    {' '.join(paragraph_sentences)}")
+            lines.append("")
+    else:
+        lines.append("  • No discrete radiological imaging findings dictated.")
+        lines.append("")
+
+    lines.append("  [Source Note]: Findings are synthesized from supplied speech-to-text dictation and have not been independently verified against native radiological images.")
+    lines.append("")
+
+    # 4. Section: Impression
     lines.append("IMPRESSION:")
-    for i, imp in enumerate(impressions, 1):
-        lines.append(f"  {i}. {imp}")
+    if impressions:
+        for i, imp in enumerate(impressions, 1):
+            clean_imp = imp.strip()
+            lines.append(f"  {i}. {clean_imp}")
+    else:
+        lines.append("  1. Incomplete clinical dictation; attending clinician to synthesize diagnostic impression.")
     lines.append("")
+
+    # 5. Section: Recommendations
     lines.append("RECOMMENDATIONS & CLINICAL CORRELATION:")
     if recommendations:
         for i, rec in enumerate(recommendations, 1):
             lines.append(f"  {i}. {rec}")
     else:
-        lines.append("  • None dictated. Attending clinician to determine management following clinical correlation.")
-    lines.append("=" * 68)
+        # Check if any indeterminate findings exist to provide conservative, indication-based guidance
+        has_indeterminate = any(f.get("certainty") in ("unclear / clinician review required", "indeterminate") for f in imaging_findings)
+        if has_indeterminate:
+            lines.append("  • Clinical correlation advised. Cross-sectional 3D CBCT imaging may be indicated to evaluate indeterminate canal proximity or anatomical relationships if surgical intervention is planned.")
+        else:
+            lines.append("  • None dictated. Attending clinician to determine management following clinical correlation.")
+    lines.append("")
+
+    # 6. Section: Clinician Review & Attestation
+    lines.append("CLINICIAN REVIEW & ATTESTATION STATEMENT:")
+    if is_confirmed:
+        lines.append(f"  [X] Confirmed & Electronically Signed by: {clinician_name} ({confirmed_at or datetime.datetime.now().strftime('%Y-%m-%d %H:%M')})")
+        lines.append("      Official Medical Record - Authenticated Diagnostic Consultation")
+    else:
+        lines.append("  [ ] I confirm that I have reviewed this AI-synthesized radiological draft report, verified all anatomical observations and indeterminate findings, and approve this report for clinical documentation.")
+        lines.append("      Attending Clinician / Radiologist: ___________________________   Date: _______________")
+    lines.append("=" * 72)
     return "\n".join(lines)
 
 
@@ -79,6 +208,7 @@ def synthesize_impression_from_findings(
         f for f in findings
         if f.get("certainty") in ("definite observation", "definite observation (etiology uncertain)", "suspected / differential diagnosis")
         and not f.get("requires_clarification")
+        and not is_symptom_or_history(f)
         and not is_meta_or_instruction_sentence(str(f.get("observation", "")))
         and not re.search(r"^(?:patient\s*id|patient\s*name|study|study\s*type|scan\s*type|mrn|name:|id:|serial\s*#?|radiology\s+report\s+details|conducted\s+by)\b", str(f.get("observation", "")).lower().strip())
         and not re.search(r"\b(further\s+evaluation\s+is\s+recommended|routine\s+follow-up\s+is\s+advised)\b", str(f.get("observation", "")).lower().strip())

@@ -216,6 +216,10 @@ def confirm_dictation_endpoint(payload: ConfirmDictationRequest):
     report_metadata["clinician_review_required"] = False
     report_metadata["confirmed_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    patient_context["status"] = "CONFIRMED_BY_CLINICIAN"
+    patient_context["confirmed_at"] = report_metadata["confirmed_at"]
+    patient_context["report_metadata"] = report_metadata
+
     # Re-compose narrative draft with confirmed details
     narrative = compose_narrative(p_name, findings, impressions, recommendations, patient_details=patient_context)
 
