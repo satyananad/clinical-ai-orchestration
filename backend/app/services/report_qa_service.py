@@ -62,7 +62,9 @@ def generate_report_summary(report: Dict[str, Any], patient: Dict[str, Any]) -> 
         f"Clinical Indication:\n• {indication}\n\n"
         f"Key Diagnostic Findings:\n{findings_content}\n\n"
         f"Radiologist Impression:\n{impressions_content}\n\n"
-        f"Recommendation:\n• {recommendations}"
+        f"Recommendation:\n• {recommendations}\n\n"
+        f"Source Evidence:\n• Source Report: [{report_id}] {report_type} ({report_date})\n"
+        f"• Citations: Verified findings and radiologist impressions from {report_id}."
     )
 
     citations = [
