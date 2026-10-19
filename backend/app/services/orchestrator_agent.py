@@ -14,9 +14,9 @@ import re
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from .mcp_tools import DENTAL_ASSISTANT_TOOLS, get_ollama_tool_definitions, execute_tool, handle_mcp_jsonrpc_request
-from .conversation_service import get_or_create_session, is_contextual_query, BookingStage
+from .conversation_service import get_or_create_session, is_contextual_query, is_general_or_assistant_query, BookingStage
 from .retrieval import resolve_report_retrieval, extract_retrieval_intent
-from .report_qa_service import answer_report_question
+from .report_qa_service import answer_report_question, answer_patient_reports_question, generate_multi_report_summary
 from .llm_service import query_llm, query_ollama, query_ollama_chat_tools
 
 TRIAGE_SYSTEM_PROMPT = """You are the Lead Clinical Triage AI Agent for a dental voice workstation.
@@ -887,8 +887,17 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "rationale": "Clinic Database Inquiry: Inquiring about registered patient directory or database statistics."
         }
 
-    # 0B.8 Deterministic Active Report Consultation & Contextual Follow-Up Gate
-    if session.active_report_id:
+    # 0B.8 Deterministic Active Report & Patient Consultation Gate
+    if session.active_report_id or session.active_patient_id:
+        # Check if this is a general knowledge question, workstation capability query, or greeting:
+        if is_general_or_assistant_query(query):
+            return {
+                "selected_agent": "GeneralAssistantAgent",
+                "tool_name": "conversation",
+                "arguments": {"query": query},
+                "rationale": f"General Assistant: Handled general knowledge or workstation inquiry '{query}'."
+            }
+
         intent = extract_retrieval_intent(query)
         extracted_cand_name = intent.get("patient_name", "").strip()
         non_patient_tokens = {
@@ -901,13 +910,13 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         has_retrieval_verb = bool(re.search(r"\b(open|retrieve|fetch|load|switch\s+to)\b", q_lower))
         has_new_patient_retrieval = has_retrieval_verb and has_new_patient_target
         
-        # Check if user is asking to switch to another report of the active patient (e.g. 'open her OPG', 'show periapical')
+        # Check if user is asking to switch or open another report of the active patient (e.g. 'open her OPG', 'show periapical', 'open her latest report')
         is_modality_switch = (
             not has_new_patient_target
-            and any(w in q_lower for w in ["opg", "cbct", "panoramic", "bitewing", "periapical", "examination", "rpt-"])
+            and any(w in q_lower for w in ["opg", "cbct", "panoramic", "bitewing", "periapical", "examination", "exam", "rpt-", "latest", "recent", "newest", "last"])
             and any(w in q_lower for w in ["open", "show", "switch", "view", "load", "her", "his", "the", "other"])
         )
-        if is_modality_switch:
+        if is_modality_switch and session.active_patient_id:
             target_mod = "Any"
             if any(m in q_lower for m in ["opg", "panoramic"]):
                 target_mod = "OPG"
@@ -917,7 +926,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 target_mod = "Bitewing"
             elif any(m in q_lower for m in ["periapical", "iopa"]):
                 target_mod = "Periapical"
-            elif "examination" in q_lower:
+            elif any(m in q_lower for m in ["examination", "exam"]):
                 target_mod = "Dental Examination"
 
             rid_match = re.search(r"\b(RPT-\d+)\b", query, re.IGNORECASE)
@@ -928,6 +937,8 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             matched_rep = None
             if target_rid:
                 matched_rep = get_report_by_id(target_rid)
+            elif any(w in q_lower for w in ["latest", "recent", "newest", "last"]) and p_reports:
+                matched_rep = p_reports[0]
             elif target_mod != "Any":
                 for r in p_reports:
                     if target_mod.lower() in r.get("report_type", "").lower():
@@ -946,19 +957,17 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     "rationale": f"Report Switch: Switched to {matched_rep.get('report_type')} ({matched_rep['report_id']}) for active patient."
                 }
 
-        # Active Report Consultation & Evidence-Grounded Follow-Up
-        # When an active report is open, any inquiry that is not a new patient retrieval,
-        # not an appointment booking command, and not a clinic-wide database count
-        # automatically belongs to this active report context.
+        # Active Report / Patient Consultation & Evidence-Grounded Follow-Up
         if not is_booking_request and not is_database_inquiry and not has_new_patient_retrieval:
             return {
                 "selected_agent": "ConsultationAgent",
                 "tool_name": "summarize_active_report",
                 "arguments": {
-                    "report_id": session.active_report_id,
+                    "report_id": session.active_report_id or "all",
+                    "patient_id": session.active_patient_id,
                     "query": query
                 },
-                "rationale": f"Active Report Consultation: Clinician inquiry on active report {session.active_report_id}."
+                "rationale": f"Report Consultation: Clinician inquiry for patient {session.active_patient_id} (active report: {session.active_report_id})."
             }
 
     # Step 1: LLM Dynamic Multi-Agent Triage (Groq / Ollama Clinical Orchestrator Agent)
@@ -1320,7 +1329,7 @@ def generate_dynamic_conversational_reply(query: str, session: Any) -> str:
     rather than a static repeated greeting.
     """
     q_lower = query.lower().strip()
-    if session.active_report_id and any(w in q_lower for w in [
+    if not is_general_or_assistant_query(query) and session.active_report_id and any(w in q_lower for w in [
         "problem", "wrong", "findings", "finding", "diagnos", "impression", "summar",
         "condition", "issue", "caries", "teeth", "tooth", "they have", "she have", "he have",
         "what they", "what do they", "what does", "what is", "report", "scan",
@@ -2183,50 +2192,88 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                 }
 
             # If patient is selected in session, but no specific report was chosen:
-            from .retrieval import get_patient
+            from .retrieval import get_patient, get_report_by_id
             if session.active_patient_id and not session.active_report_id:
                 p = get_patient(session.active_patient_id)
                 if p:
                     reps = p.get("reports", [])
                     if len(reps) == 1:
                         session.set_active(p["patient_id"], reps[0]["report_id"])
-                    elif len(reps) > 1:
-                        rep_str = " • ".join([f"[{r['report_id']}] {r['report_type']} ({r['report_date']})" for r in reps])
-                        return {
-                            "status": "clarification_required",
-                            "message": f"Patient {p['patient_name']} has {len(reps)} diagnostic reports on file: {rep_str}. Please specify which report to view or summarize (e.g. 'Open her {reps[0]['report_type']}').",
-                            "patient": p,
-                            "candidates": None,
-                            "report": None,
-                            "agent_trace": {
-                                "orchestrator": "TriageAgent",
-                                "active_agent": "ConsultationAgent",
-                                "tool_called": "summarize_active_report",
-                                "arguments": {"patient_id": p["patient_id"]},
-                                "rationale": "Clarification required: multiple reports available for selected patient."
+                    else:
+                        is_all_reports = any(w in query.lower() for w in ["all", "across", "every", "what reports", "list reports", "how many reports", "all her reports", "all reports"])
+                        is_single_report_ambiguous = (
+                            (any(v in query.lower() for v in ["open", "view", "load"]) and "report" in query.lower() and not is_all_reports)
+                            or (re.search(r"\b(?:summarize|summary)\b", query.lower()) and not is_all_reports and "reports" not in query.lower())
+                            or (re.search(r"\b(?:her|his|the)\s+report\b", query.lower()) and not is_all_reports)
+                        )
+                        if is_single_report_ambiguous:
+                            rep_str = " • ".join([f"[{r['report_id']}] {r['report_type']} ({r['report_date']})" for r in reps])
+                            return {
+                                "status": "clarification_required",
+                                "message": f"Patient {p['patient_name']} has {len(reps)} diagnostic reports on file: {rep_str}. Please specify which report to view or summarize (e.g. 'Open her {reps[0]['report_type']}').",
+                                "patient": p,
+                                "candidates": None,
+                                "report": None,
+                                "agent_trace": {
+                                    "orchestrator": "TriageAgent",
+                                    "active_agent": "ConsultationAgent",
+                                    "tool_called": "summarize_active_report",
+                                    "arguments": {"patient_id": p["patient_id"]},
+                                    "rationale": "Clarification required: multiple reports available for selected patient."
+                                }
                             }
-                        }
+                        else:
+                            qa_result = answer_patient_reports_question(session.active_patient_id, None, query, history=session.history)
+                            session.history.append({"user": query, "assistant": qa_result.get("answer", "")})
+                            return {
+                                "status": "success",
+                                "message": qa_result.get("answer"),
+                                "answer": qa_result.get("answer"),
+                                "citations": qa_result.get("citations", []),
+                                "pdf_url": qa_result.get("pdf_url"),
+                                "context_resolution": f"Active Context -> Patient ID: {session.active_patient_id}",
+                                "patient": p,
+                                "report": None,
+                                "agent_trace": {
+                                    "orchestrator": "TriageAgent",
+                                    "active_agent": "ConsultationAgent",
+                                    "tool_called": tool_name,
+                                    "arguments": arguments,
+                                    "rationale": "Multi-Report Consultation: Synthesized findings across patient's diagnostic reports.",
+                                    "mcp_jsonrpc": mcp_request
+                                }
+                            }
 
-            return {
-                "status": "clarification_required",
-                "message": "No active patient report is currently selected. Please select a patient from the directory above or ask me to open a specific report (e.g. 'Open Vikram Malhotra's CBCT').",
-                "candidates": None,
-                "report": None,
-                "agent_trace": {
-                    "orchestrator": "TriageAgent",
-                    "active_agent": "ConsultationAgent",
-                    "tool_called": tool_name,
-                    "arguments": arguments,
-                    "rationale": rationale,
-                    "mcp_jsonrpc": mcp_request
+            if not session.active_report_id and not session.active_patient_id:
+                return {
+                    "status": "clarification_required",
+                    "message": "No active patient report is currently selected. Please select a patient from the directory above or ask me to open a specific report (e.g. 'Open Vikram Malhotra's CBCT').",
+                    "candidates": None,
+                    "report": None,
+                    "agent_trace": {
+                        "orchestrator": "TriageAgent",
+                        "active_agent": "ConsultationAgent",
+                        "tool_called": tool_name,
+                        "arguments": arguments,
+                        "rationale": rationale,
+                        "mcp_jsonrpc": mcp_request
+                    }
                 }
-            }
 
-        # Answer question grounded in active report
+        # Answer question grounded in active report or cross-reports
         from .retrieval import get_patient, get_report_by_id
-        patient = get_patient(session.active_patient_id)
-        report = get_report_by_id(session.active_report_id)
-        qa_result = answer_report_question(session.active_report_id, query, history=session.history)
+        patient = get_patient(session.active_patient_id) if session.active_patient_id else None
+        report = get_report_by_id(session.active_report_id) if session.active_report_id else None
+        if not patient and report:
+            patient = get_patient(report.get("patient_id"))
+            if patient:
+                session.active_patient_id = patient["patient_id"]
+
+        if session.active_patient_id:
+            qa_result = answer_patient_reports_question(session.active_patient_id, session.active_report_id, query, history=session.history)
+        else:
+            qa_result = answer_report_question(session.active_report_id, query, history=session.history)
+
         session.history.append({"user": query, "assistant": qa_result.get("answer", "")})
         
         return {
@@ -2234,7 +2281,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             "message": qa_result.get("answer"),
             "answer": qa_result.get("answer"),
             "citations": qa_result.get("citations", []),
-            "pdf_url": qa_result.get("pdf_url"),
+            "pdf_url": qa_result.get("pdf_url") or (f"/patient-pdf/{report.get('pdf_filename')}" if report and report.get("pdf_filename") else None),
             "context_resolution": f"Active Context -> Patient ID: {session.active_patient_id}, Report ID: {session.active_report_id}",
             "patient": {
                 "patient_id": patient["patient_id"],

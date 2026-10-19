@@ -9,7 +9,7 @@ Guarantees zero clinical hallucination by answering solely from verified report 
 import json
 import re
 from typing import Dict, Any, List, Optional
-from .retrieval import get_report_by_id, get_patient
+from .retrieval import get_report_by_id, get_patient, get_patient_reports
 from .llm_service import query_llm
 
 REPORT_GROUNDED_QA_PROMPT = """You are a clinical dental radiology assistant.
@@ -399,6 +399,53 @@ def answer_report_question(report_id: str, query: str, history: Optional[List[Di
         ]
 
         if not tooth_findings and not tooth_impressions:
+            # Check if this tooth is documented in any of the patient's other reports
+            other_reports = get_patient_reports(patient_id) if patient_id and patient_id != "N/A" else []
+            other_matches = []
+            for other_rep in other_reports:
+                if other_rep.get("report_id") == report["report_id"]:
+                    continue
+                o_findings = [
+                    f for f in other_rep.get("findings", [])
+                    if target_tooth.lower() in (str(f.get("region", "")) + " " + str(f.get("observation", ""))).lower()
+                    or (target_tooth == "48" and any(k in (str(f.get("region", "")) + " " + str(f.get("observation", ""))).lower() for k in ["tooth 48", "48", "lr8", "third molar"]))
+                ]
+                o_impressions = [
+                    imp for imp in other_rep.get("impression", [])
+                    if target_tooth.lower() in imp.lower()
+                    or (target_tooth == "48" and any(k in imp.lower() for k in ["tooth 48", "48", "lr8", "third molar"]))
+                ]
+                if o_findings or o_impressions:
+                    other_matches.append((other_rep, o_findings, o_impressions))
+
+            if other_matches:
+                lines = [
+                    f"Tooth {target_tooth} is not documented in {report.get('report_type')} report ({report['report_id']}). No findings, observations, or pathology regarding Tooth {target_tooth} were evaluated.\n\n"
+                    f"*Clinical Note: Absence of documentation in this report indicates Tooth {target_tooth} was outside the evaluated scope or not examined in this specific consultation; it must not be assumed that the tooth is clinically normal.*\n\n"
+                    f"However, Tooth {target_tooth} is documented in {patient_name}'s other clinical records on file:\n"
+                ]
+                citations = []
+                for o_rep, o_f, o_imp in other_matches:
+                    o_rid = o_rep.get("report_id")
+                    o_type = o_rep.get("report_type")
+                    o_date = o_rep.get("report_date")
+                    lines.append(f"• **In {o_type} ({o_rid}, {o_date})**:")
+                    for f in o_f:
+                        lines.append(f"  - **{f.get('region')}**: {f.get('observation')} (Certainty: {f.get('certainty', 'Confirmed')})")
+                        citations.append(f"Source Report [{o_rid} {o_type}] Finding [{f.get('region')}]: \"{f.get('observation')}\"")
+                    if o_imp:
+                        lines.append(f"  - **Impression**: {'; '.join(o_imp)}")
+                        for imp in o_imp:
+                            citations.append(f"Source Report [{o_rid} {o_type}] Impression: \"{imp}\"")
+
+                return {
+                    "status": "success",
+                    "answer": "\n".join(lines),
+                    "citations": citations,
+                    "report_id": report["report_id"],
+                    "report_date": report.get("report_date")
+                }
+
             return {
                 "status": "success",
                 "answer": (
@@ -416,9 +463,38 @@ def answer_report_question(report_id: str, query: str, history: Optional[List[Di
             citations = [f"Report Finding [{f.get('region')}]: \"{f.get('observation')}\"" for f in tooth_findings]
             for imp in tooth_impressions:
                 citations.append(f"Report Impression: \"{imp}\"")
+
+            # Check if other reports of this patient ALSO contain relevant documentation for this tooth
+            other_reports = get_patient_reports(patient_id) if patient_id and patient_id != "N/A" else []
+            other_lines = []
+            for other_rep in other_reports:
+                if other_rep.get("report_id") == report["report_id"]:
+                    continue
+                o_findings = [
+                    f for f in other_rep.get("findings", [])
+                    if target_tooth.lower() in (str(f.get("region", "")) + " " + str(f.get("observation", ""))).lower()
+                ]
+                o_impressions = [
+                    imp for imp in other_rep.get("impression", [])
+                    if target_tooth.lower() in imp.lower()
+                ]
+                if o_findings or o_impressions:
+                    other_lines.append(f"• **Related Record in {other_rep.get('report_type')} ({other_rep.get('report_id')}, {other_rep.get('report_date')})**:")
+                    for f in o_findings:
+                        other_lines.append(f"  - {f.get('region')}: {f.get('observation')} (Certainty: {f.get('certainty', 'Confirmed')})")
+                        citations.append(f"Source Report [{other_rep.get('report_id')} {other_rep.get('report_type')}] Finding [{f.get('region')}]: \"{f.get('observation')}\"")
+                    if o_impressions:
+                        other_lines.append(f"  - Impression: {'; '.join(o_impressions)}")
+                        for imp in o_impressions:
+                            citations.append(f"Source Report [{other_rep.get('report_id')} {other_rep.get('report_type')}] Impression: \"{imp}\"")
+
+            full_answer = f"Regarding Tooth {target_tooth} in report {report['report_id']}:\n" + "\n".join(bullets)
+            if other_lines:
+                full_answer += "\n\n" + "\n".join(other_lines)
+
             return {
                 "status": "success",
-                "answer": f"Regarding Tooth {target_tooth} in report {report['report_id']}:\n" + "\n".join(bullets),
+                "answer": full_answer,
                 "citations": citations,
                 "report_id": report["report_id"],
                 "report_date": report.get("report_date")
@@ -577,3 +653,169 @@ def answer_report_question(report_id: str, query: str, history: Optional[List[Di
         "report_id": report["report_id"],
         "report_date": report.get("report_date")
     }
+
+
+def generate_multi_report_summary(reports: List[Dict[str, Any]], patient: Dict[str, Any], query: str = "") -> Dict[str, Any]:
+    """
+    Synthesizes diagnostic findings and impressions across ALL diagnostic reports for a patient.
+    Grounds all statements with explicit source report citations.
+    """
+    patient_name = patient.get("patient_name", "Patient")
+    patient_id = patient.get("patient_id", "N/A")
+    q_lower = query.lower()
+
+    # Check if inquiry is focused on a specific condition (e.g. caries, impaction, pain)
+    is_caries_focus = any(w in q_lower for w in ["caries", "cavity", "cavities", "decay"])
+    is_impaction_focus = any(w in q_lower for w in ["impact", "third molar", "wisdom"])
+
+    sections = []
+    citations = []
+
+    for rep in reports:
+        rid = rep.get("report_id")
+        rtype = rep.get("report_type")
+        rdate = rep.get("report_date")
+        findings = rep.get("findings", [])
+        impressions = rep.get("impression", [])
+        rec = rep.get("recommendation", "")
+
+        findings_lines = []
+        for f in findings:
+            obs = f.get("observation", "")
+            reg = f.get("region", "Tooth")
+            cert = f.get("certainty", "Confirmed")
+            if is_caries_focus and not any(w in (reg + " " + obs).lower() for w in ["carie", "cavity", "decay", "radiolucen"]):
+                continue
+            if is_impaction_focus and not any(w in (reg + " " + obs).lower() for w in ["impact", "molar", "wisdom", "erupt"]):
+                continue
+            findings_lines.append(f"  - [{reg}]: {obs} (Certainty: {cert})")
+            citations.append(f"Source Report [{rid} {rtype}] Finding: \"{obs}\"")
+
+        imp_lines = []
+        for imp in impressions:
+            if is_caries_focus and not any(w in imp.lower() for w in ["carie", "cavity", "decay"]):
+                continue
+            if is_impaction_focus and not any(w in imp.lower() for w in ["impact", "molar", "wisdom"]):
+                continue
+            imp_lines.append(f"  - {imp}")
+            citations.append(f"Source Report [{rid} {rtype}] Impression: \"{imp}\"")
+
+        rep_header = f"• **{rtype}** (Report ID: `{rid}`, Date: {rdate}):"
+        findings_str = "\n".join(findings_lines) if findings_lines else "  - No findings specific to this inquiry."
+        imp_str = "\n".join(imp_lines) if imp_lines else "  - No diagnostic impressions specific to this inquiry."
+        rec_str = f"  - Recommendation: {rec.strip()}" if rec and not is_caries_focus and not is_impaction_focus else ""
+
+        section = f"{rep_header}\n  Findings:\n{findings_str}\n  Impression:\n{imp_str}"
+        if rec_str:
+            section += f"\n{rec_str}"
+        sections.append(section)
+
+    answer_text = (
+        f"Diagnostic Summary across {len(reports)} reports for **{patient_name}** ({patient_id}):\n\n"
+        + "\n\n".join(sections)
+    )
+
+    return {
+        "status": "success",
+        "answer": answer_text,
+        "citations": citations,
+        "patient_id": patient_id,
+        "report_count": len(reports),
+        "report_id": reports[0].get("report_id") if reports else None,
+        "report_date": reports[0].get("report_date") if reports else None,
+        "report_type": f"Multi-Report ({len(reports)} records)"
+    }
+
+
+def answer_patient_reports_question(
+    patient_id: str,
+    active_report_id: Optional[str],
+    query: str,
+    history: Optional[List[Dict[str, str]]] = None
+) -> Dict[str, Any]:
+    """
+    Handles multi-report clinical question answering for a patient.
+    1. If the clinician's query targets a specific modality or report ID (e.g. 'What did her periapical radiograph show?'),
+       it routes directly to that report.
+    2. If the query asks for a cross-report synthesis (e.g. 'Summarize all her reports', 'Does she have caries across her records?'),
+       it synthesizes across all reports of the patient with source citations.
+    3. If a specific tooth or pathology is asked, it checks across all reports.
+    4. If active_report_id is set, it falls back to grounded report QA.
+    """
+    patient = get_patient(patient_id)
+    if not patient and active_report_id:
+        r_obj = get_report_by_id(active_report_id)
+        if r_obj:
+            patient = get_patient(r_obj.get("patient_id"))
+
+    if not patient:
+        return {
+            "status": "not_found",
+            "answer": "Patient record could not be found.",
+            "citations": []
+        }
+
+    all_reports = get_patient_reports(patient["patient_id"])
+    if not all_reports:
+        return {
+            "status": "not_found",
+            "answer": f"No diagnostic imaging reports on file for {patient.get('patient_name')}.",
+            "citations": []
+        }
+
+    q_lower = query.lower()
+
+    # 1. Target specific modality or report ID among the patient's reports
+    # (e.g. "What did her periapical scan show?", "What was found in her dental examination?", "Show findings in RPT-2002")
+    rid_match = re.search(r"\b(RPT-\d+)\b", query, re.IGNORECASE)
+    target_rid = rid_match.group(1).upper() if rid_match else None
+    
+    modality_keyword = None
+    if any(m in q_lower for m in ["periapical", "iopa"]):
+        modality_keyword = "periapical"
+    elif any(m in q_lower for m in ["dental exam", "dental examination", "clinical exam", "examination"]):
+        modality_keyword = "examination"
+    elif any(m in q_lower for m in ["opg", "panoramic", "orthopantomogram"]):
+        modality_keyword = "opg"
+    elif any(m in q_lower for m in ["cbct", "cone beam", "3d volume"]):
+        modality_keyword = "cbct"
+    elif "bitewing" in q_lower:
+        modality_keyword = "bitewing"
+
+    matched_report = None
+    if target_rid:
+        matched_report = next((r for r in all_reports if r["report_id"] == target_rid), None)
+    elif modality_keyword:
+        matched_report = next((r for r in all_reports if modality_keyword in r.get("report_type", "").lower()), None)
+
+    if matched_report:
+        # User explicitly asked about this modality/report
+        return answer_report_question(matched_report["report_id"], query, history=history)
+
+    # 2. Broad cross-report synthesis queries
+    # e.g. "summarize all her reports", "all reports", "across her records", "what reports does she have", "all scans", "summarize her reports"
+    is_multi_summary = (
+        any(w in q_lower for w in ["all her reports", "all reports", "all scans", "across her records", "across her reports", "entire history", "full history", "complete summary", "every report"])
+        or any(p in q_lower for p in ["what reports does she have", "what scans does she have", "what reports are on file", "list her reports", "how many reports", "summarize her reports", "summarize her scans", "summarize reports"])
+        or (not active_report_id and any(w in q_lower for w in ["summarize", "summary", "problem", "wrong", "findings", "finding", "diagnos"]))
+    )
+    if is_multi_summary:
+        return generate_multi_report_summary(all_reports, patient, query)
+
+    # 3. Cross-report condition/pathology queries
+    # e.g. "does she have caries across her reports", "any caries in her records", "is there caries in any report"
+    is_cross_pathology = any(w in q_lower for w in ["across", "in any", "all reports", "her records"]) and any(w in q_lower for w in ["caries", "cavity", "cavities", "decay", "impaction", "nerve", "periodont"])
+    if is_cross_pathology:
+        return generate_multi_report_summary(all_reports, patient, query)
+
+    # 4. If an active report is selected, use it with cross-reference fallback for teeth
+    if active_report_id:
+        return answer_report_question(active_report_id, query, history=history)
+
+    # 5. If no active report is selected yet, check if a single report exists
+    if len(all_reports) == 1:
+        return answer_report_question(all_reports[0]["report_id"], query, history=history)
+
+    # 6. Default across all reports
+    return generate_multi_report_summary(all_reports, patient, query)
+

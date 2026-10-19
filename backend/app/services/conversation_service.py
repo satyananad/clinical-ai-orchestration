@@ -130,12 +130,75 @@ def get_or_create_session(session_id: str) -> SessionState:
         SESSIONS[session_id] = SessionState(session_id)
     return SESSIONS[session_id]
 
+def is_general_or_assistant_query(query: str) -> bool:
+    """
+    Determines if a query is a general knowledge question (e.g. 'What is a CBCT scan?'),
+    a workstation/help query ('Who are you?', 'Help'), or conversational greeting ('Hi'),
+    which should NOT be treated as a contextual follow-up on an active patient report.
+    """
+    q = query.lower().strip()
+    q_clean = re.sub(r"[?!.,:]+", "", q).strip()
+
+    # 1. Greetings & Pleasantries
+    greetings = {
+        "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
+        "thanks", "thank you", "bye", "goodbye", "ok", "okay", "yes", "no"
+    }
+    if q_clean in greetings:
+        return True
+
+    # 2. Assistant identity, workstation help, capabilities
+    workstation_phrases = [
+        "who are you", "what are you", "what can you do", "help", "help me",
+        "how do you work", "how does this work", "what is this workstation",
+        "what are your features", "what can i do", "what are you doing",
+        "capabilities", "what functions", "tell me about yourself"
+    ]
+    if q_clean in workstation_phrases or any(q_clean.startswith(p) for p in workstation_phrases):
+        return True
+
+    # If query mentions a specific patient, pronouns, report, or specific tooth number, it's NOT a general query
+    patient_indicators = [
+        "her", "his", "she", "he", "patient", "priya", "vikram", "sharmila",
+        "in this report", "in her report", "in the report", "her scan", "this scan",
+        "the scan", "summarize", "summary", "findings", "finding", "impression",
+        "can you explain", "explain this", "what does this mean", "why is that"
+    ]
+    if any(ind in q for ind in patient_indicators):
+        return False
+
+    # Check for specific tooth references (e.g. "tooth 16", "teeth 16", "#29", "ur5", "48")
+    if re.search(r"\b(?:tooth|teeth|#)\s*([1-8][1-8]|[1-3]?[0-9])\b", q) or re.search(r"\b(?:ur|ul|ll|lr)\s*[1-8]\b", q):
+        return False
+
+    # 3. General educational dental & radiology definitions / concepts
+    edu_starters = ["what is a ", "what is an ", "what is ", "explain ", "tell me about ", "define ", "how does ", "how do "]
+    is_starter = any(q.startswith(s) for s in edu_starters) or "what does" in q
+    
+    dental_concepts = [
+        "cbct", "cone beam", "opg", "panoramic", "orthopantomogram", "bitewing", "periapical",
+        "iopa", "cephalogram", "cephalometric", "caries", "cavity", "decay", "demineralization",
+        "pulpitis", "apical periodontitis", "periapical rarefaction", "lamina dura",
+        "alveolar crest", "mandibular canal", "inferior alveolar nerve", "mesioangular",
+        "impaction", "impacted tooth", "wisdom tooth", "3d scan", "3d imaging",
+        "root canal", "fluoride", "scaling", "abfraction"
+    ]
+    if is_starter and any(concept in q for concept in dental_concepts):
+        return True
+
+    # Standalone concept inquiry (e.g. "CBCT scan", "caries")
+    if q_clean in dental_concepts or q_clean in [f"{c} scan" for c in dental_concepts]:
+        return True
+
+    return False
+
 def is_contextual_query(query: str, has_active_report: bool = False) -> bool:
     """
     Determines whether a clinician's query refers to an active report context:
     1. If a report is currently active:
        Any clinical question, inquiry about findings, teeth, impressions, or summary
-       refers to the active report unless the user explicitly requests to open another patient.
+       refers to the active report unless the user explicitly requests to open another patient
+       or asks a general knowledge/workstation question.
     2. If no report is active:
        Returns True only if the request explicitly asks for a summary or findings of an implied
        patient/report (e.g. 'summarize her report', 'what did the report say'), allowing the
@@ -143,6 +206,10 @@ def is_contextual_query(query: str, has_active_report: bool = False) -> bool:
     """
     q_lower = query.lower().strip()
     
+    # 0. General educational questions, greetings, or workstation help are NOT report follow-ups
+    if is_general_or_assistant_query(query):
+        return False
+
     # 1. Clinic-wide patient listings or database count questions are not report follow-ups
     if any(q_lower.startswith(w) for w in ["how many", "how much", "list", "total", "count"]):
         return False
