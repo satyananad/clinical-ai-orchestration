@@ -182,6 +182,28 @@ def resolve_pending_candidates_from_query(
 
     return {"status": "unmatched"}
 
+def is_valid_patient_name(name: Optional[str]) -> bool:
+    """Validates if a candidate string is a plausible patient name rather than command keywords or slot tokens."""
+    if not name or not isinstance(name, str):
+        return False
+    clean = name.strip()
+    if len(clean) < 3:
+        return False
+    # Patient name cannot contain digits or slot references
+    if re.search(r"\d", clean):
+        return False
+    invalid_keywords = {
+        "slot", "slots", "confirm", "confirmed", "booking", "book", "appointment",
+        "patient", "walk-in", "walk", "yes", "please", "tomorrow", "today", "yesterday",
+        "scan", "report", "opg", "cbct", "periapical", "xray", "x-ray", "ok", "okay",
+        "sure", "cancel", "open", "show", "view", "find", "load"
+    }
+    words = re.findall(r"[a-zA-Z]+", clean.lower())
+    if not words or any(w in invalid_keywords for w in words):
+        return False
+    return True
+
+
 def resolve_pending_slot_from_query(query: str, pending_slots: List[Dict[str, Any]]) -> Optional[str]:
     """
     Matches user's appointment confirmation input against pending slots by:
@@ -567,7 +589,11 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
 
     # 0B.3 Idempotency check if user repeats confirmation when already booked
     if b_state.stage == BookingStage.CONFIRMED and b_state.completed_booking:
-        if any(w in q_lower for w in ["confirm", "yes", "book"]):
+        is_repeat_confirm = (
+            any(p in q_lower for p in ["confirm", "already booked", "duplicate booking"])
+            and not any(w in q_lower for w in ["open", "find", "retrieve", "view", "what", "how", "tell", "explain", "who", "where", "which"])
+        ) or (b_ref and b_ref.startswith("BKG-"))
+        if is_repeat_confirm:
             cb = b_state.completed_booking
             return {
                 "selected_agent": "ScanBookingAgent",
@@ -577,6 +603,13 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 },
                 "rationale": "Idempotency: Appointment was already confirmed."
             }
+        else:
+            # User moved on to other conversation or new request; release confirmation lock
+            b_state.stage = BookingStage.IDLE
+            b_state.completed_booking = None
+            b_state.displayed_slots = []
+            session.pending_booking_slots = []
+
 
 
     # 0B.5 Workflow in SLOTS_PRESENTED or pending_booking_slots active
@@ -627,7 +660,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 if not pat_name:
                     q_intent = extract_retrieval_intent(query)
                     cand_name = q_intent.get("patient_name", "")
-                    if cand_name and cand_name.lower() not in ["patient", "slot", "appointment", "yes", "please"]:
+                    if cand_name and is_valid_patient_name(cand_name):
                         from .retrieval import search_patients
                         found_cands = search_patients(cand_name)
                         exact_cands = [c for c in found_cands if c["patient_name"].lower() == cand_name.lower()]
@@ -639,9 +672,9 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                             if len(same_f) == 1:
                                 pat_name = same_f[0]["patient_name"]
                                 pat_id = same_f[0]["patient_id"]
-                            else:
+                            elif found_cands:
                                 pat_name = cand_name.title()
-                        else:
+                        elif found_cands:
                             pat_name = cand_name.title()
 
                 if not pat_name:
@@ -1109,7 +1142,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         else:
             q_intent = extract_retrieval_intent(query)
             cand_name = q_intent.get("patient_name", "")
-            if cand_name and cand_name.lower() not in ["patient", "slot", "appointment", "booking", "scan", "any"]:
+            if cand_name and is_valid_patient_name(cand_name):
                 from .retrieval import search_patients
                 cands = search_patients(cand_name)
                 exact_cands = [c for c in cands if c["patient_name"].lower() == cand_name.lower()]
@@ -1290,10 +1323,11 @@ def generate_dynamic_conversational_reply(query: str, session: Any) -> str:
     if session.active_report_id and any(w in q_lower for w in [
         "problem", "wrong", "findings", "finding", "diagnos", "impression", "summar",
         "condition", "issue", "caries", "teeth", "tooth", "they have", "she have", "he have",
-        "what they", "what do they", "what does", "what is", "report", "scan"
+        "what they", "what do they", "what does", "what is", "report", "scan",
+        "explain", "elaborate", "clarify", "why", "meaning"
     ]):
         from .report_qa_service import answer_report_question
-        qa = answer_report_question(session.active_report_id, query)
+        qa = answer_report_question(session.active_report_id, query, history=session.history)
         if qa.get("answer"):
             return qa["answer"]
 
@@ -1673,8 +1707,8 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                 if p:
                     patient_name = p.get("patient_name")
                     patient_id = p.get("patient_id")
-            if not patient_name:
-                patient_name = "Walk-in Patient" if session.booking_state.patient_type == "walk_in" else "Walk-in Patient"
+            if not patient_name or not is_valid_patient_name(patient_name):
+                patient_name = "Walk-in Patient"
 
             confirm_res = execute_tool("confirm_scan_booking", {
                 "slot_id": slot_id,
@@ -1688,6 +1722,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                 session.booking_state.completed_booking = confirm_res.get("slot")
                 session.booking_state.displayed_slots = []
                 session.booking_state.selected_slot = None
+                session.pending_booking_slots = []
 
                 return {
                     "status": "success",
@@ -2191,7 +2226,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
         from .retrieval import get_patient, get_report_by_id
         patient = get_patient(session.active_patient_id)
         report = get_report_by_id(session.active_report_id)
-        qa_result = answer_report_question(session.active_report_id, query)
+        qa_result = answer_report_question(session.active_report_id, query, history=session.history)
         session.history.append({"user": query, "assistant": qa_result.get("answer", "")})
         
         return {

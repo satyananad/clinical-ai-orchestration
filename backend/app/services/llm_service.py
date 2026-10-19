@@ -206,6 +206,11 @@ def extract_retrieval_intent_with_llm(user_input: str) -> Dict[str, str]:
             break
 
     clean = lower
+    # Remove slot references like SLOT-106, BKG-101-1234, TK-106
+    clean = re.sub(r"\b(?:slot|bkg|tk)[- ]?[0-9a-z_-]+\b", " ", clean, flags=re.IGNORECASE)
+    # Remove standalone numbers/digits (e.g. 106, 101)
+    clean = re.sub(r"\b\d+\b", " ", clean)
+
     stop_tokens = [
         "can", "you", "could", "would", "please", "i", "want", "to", "need", "see",
         "open", "show", "get", "fetch", "view", "load", "find", "latest", "recent",
@@ -215,7 +220,8 @@ def extract_retrieval_intent_with_llm(user_input: str) -> Dict[str, str]:
         "panoramic", "orthopantomogram", "not", "saying",
         "book", "booking", "schedule", "reschedule", "reserve", "reservation",
         "appointment", "appoint", "ment", "slot", "slots", "tomorrow", "today",
-        "yesterday", "dr", "doctor", "check", "available", "availability", "time", "date"
+        "yesterday", "dr", "doctor", "check", "available", "availability", "time", "date",
+        "confirm", "confirmed", "confirmation", "yes", "ok", "sure", "proceed", "cancel"
     ]
     for token in stop_tokens:
         clean = re.sub(r"\b" + re.escape(token) + r"\b", " ", clean)

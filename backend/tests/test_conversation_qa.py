@@ -204,3 +204,72 @@ def test_dynamic_report_qa_intent_coverage():
     assert "1998-04-12" in res_age["answer"]
     assert "Master Patient Index" in res_age["answer"]
 
+
+def test_multiturn_explanation_of_specific_tooth_finding():
+    """
+    Verifies that when a clinician asks about a specific finding (e.g. Teeth 16 and 46)
+    and follows up with 'can you explain', the assistant provides a focused clinical
+    explanation of that exact finding (depth into mid-dentin, pulp vitality, caries)
+    instead of reciting the entire report from third molar impactions.
+    """
+    from backend.app.services.orchestrator_agent import run_multi_agent_pipeline
+
+    session_id = "test_explain_finding_session_101"
+    # 1. Open Priya's OPG
+    r1 = run_multi_agent_pipeline("i want to open the OPG report of priya sharma pat 1001", session_id=session_id)
+    assert r1["status"] == "success"
+    assert r1.get("report", {}).get("report_id") == "RPT-2001"
+
+    # 2. Ask about specific teeth
+    r2 = run_multi_agent_pipeline("what is this : Teeth 16 and 46", session_id=session_id)
+    assert r2["status"] == "success"
+    ans2 = r2.get("answer") or r2.get("message")
+    assert "16" in ans2
+    assert "radiolucency" in ans2.lower()
+
+    # 3. Follow up: "can you explain"
+    r3 = run_multi_agent_pipeline("can you explain", session_id=session_id)
+    assert r3["status"] == "success"
+    ans3 = r3.get("answer") or r3.get("message")
+    assert ans3 is not None
+    # Must explain the specific finding: tooth 16 / coronal radiolucency / caries / dentin
+    assert any(w in ans3.lower() for w in ["tooth 16", "teeth 16", "radiolucency", "caries", "dentin"])
+    # Must explain clinical significance of "without periapical rarefaction" or pulp status
+    assert any(w in ans3.lower() for w in ["pulp", "vital", "periapical", "restoration", "filling"])
+    # Must NOT dump or focus on tooth 48 third molar impaction
+    assert "tooth 48 is partially erupted" not in ans3.lower()
+
+
+def test_booking_slot_name_extraction_and_post_booking_transition():
+    """
+    Verifies that 'Confirm slot SLOT-106' does not extract 'Confirm -106' as the patient name,
+    and after confirmation, natural clinician replies ('ok', 'yes') do not trap the session
+    in repeat 'already confirmed' messages.
+    """
+    from backend.app.services.retrieval import extract_retrieval_intent
+    from backend.app.services.orchestrator_agent import run_multi_agent_pipeline, triage_clinician_request, is_valid_patient_name
+
+    # 1. Verification of name extraction & validation
+    intent = extract_retrieval_intent("Confirm slot SLOT-106")
+    extracted_name = intent.get("patient_name", "")
+    assert not is_valid_patient_name(extracted_name)
+    assert extracted_name.lower() not in ["confirm -106", "confirm 106"]
+
+    # 2. Session execution
+    session_id = "test_booking_name_session_202"
+    r1 = run_multi_agent_pipeline("Schedule a periapical scan for tomorrow", session_id=session_id)
+    assert r1["status"] in ["success", "awaiting_confirmation", "slots_presented", "confirmation_required"]
+
+    r2 = run_multi_agent_pipeline("Confirm slot SLOT-106", session_id=session_id)
+    assert r2["status"] == "success"
+    # Patient must NOT be 'Confirm -106'
+    assert r2.get("slot", {}).get("patient_name") != "Confirm -106"
+
+    # 3. Clinician says 'ok' - must transition out of confirmed stage
+    r3 = run_multi_agent_pipeline("ok", session_id=session_id)
+    # Should not re-trigger duplicate booking
+    assert r3.get("tool_called") != "booking_already_confirmed"
+    msg3 = r3.get("answer") or r3.get("message") or ""
+    assert "already confirmed" not in msg3.lower()
+
+

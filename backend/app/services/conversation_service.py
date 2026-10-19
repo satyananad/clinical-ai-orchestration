@@ -242,7 +242,7 @@ def handle_assistant_interaction(query: str, session_id: str = "default_session"
         )
 
         # Delegate answer generation directly to the evidence-grounded report_qa_service
-        qa_result = answer_report_question(session.active_report_id, query)
+        qa_result = answer_report_question(session.active_report_id, query, history=session.history)
 
         # Record conversation turn
         session.history.append({"user": query, "assistant": qa_result.get("answer", "")})
