@@ -42,7 +42,19 @@ def run_feature_a():
 
     print('\n[SCENARIO A2: Clinician clarifies: "Open Priya Sharma\'s latest OPG report"]')
     res2 = resolve_report_retrieval("Open Priya Sharma's latest OPG report")
-    if res2["status"] == "success":
+    if res2["status"] == "clarification_required":
+        print(f"[!] SAFETY CHECK: Multiple patients share the name 'Priya Sharma'. Disambiguation required:")
+        for c in res2["candidates"]:
+            print(f"    • {c['patient_name']} (DOB: {c['date_of_birth']}, ID: {c['patient_id']})")
+        print('\n[SCENARIO A2b: Clinician specifies exact Patient ID: "Open Priya Sharma (PAT-1001)\'s latest OPG report"]')
+        res2b = resolve_report_retrieval("Open Priya Sharma (PAT-1001)'s latest OPG report")
+        if res2b["status"] == "success":
+            p = res2b["patient"]
+            r = res2b["report"]
+            print(f"[✓] RETRIEVED: {p['patient_name']} ({p['patient_id']}) - {r['report_type']} ({r['report_id']})")
+            print(f"    Primary Indication: {r.get('clinical_indication')}")
+            print(f"    Impression: {'; '.join(r.get('impression', []))}")
+    elif res2["status"] == "success":
         p = res2["patient"]
         r = res2["report"]
         print(f"[✓] RETRIEVED: {p['patient_name']} ({p['patient_id']}) - {r['report_type']} ({r['report_id']})")
