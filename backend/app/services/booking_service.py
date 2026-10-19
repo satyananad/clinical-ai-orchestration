@@ -486,6 +486,14 @@ def confirm_booking(
         except Exception:
             pass
 
+        guest_note = ""
+        if patient_status == "UNREGISTERED":
+            guest_note = (
+                "\n\n💡 *Note: Booked as Walk-in / Guest Booking. "
+                "To link this booking to a patient record, you can reply: "
+                "'Patient is [Name]' (e.g. 'Patient is Arjun Mehta') or open a patient chart.*"
+            )
+
         return {
             "status": "success",
             "booking_reference": booking_ref,
@@ -494,7 +502,58 @@ def confirm_booking(
             "queue_token": token_no,
             "patient_status": patient_status,
             "slot": decorated_slot,
-            "message": arrival_msg
+            "message": arrival_msg + guest_note
+        }
+
+
+def update_booking_patient(
+    booking_identifier: str,
+    patient_name_or_id: str
+) -> Dict[str, Any]:
+    """Updates the patient attribution on an existing confirmed booking."""
+    with _BOOKING_LOCK:
+        slots = load_slots()
+        clean_id = booking_identifier.strip().upper()
+        target_idx = -1
+        for idx, s in enumerate(slots):
+            if (s.get("booking_reference", "").upper() == clean_id or
+                s.get("booking_id", "").upper() == clean_id or
+                s.get("slot_id", "").upper() == clean_id):
+                target_idx = idx
+                break
+
+        if target_idx == -1:
+            return {"status": "not_found", "message": f"Booking '{booking_identifier}' not found."}
+
+        target = slots[target_idx]
+
+        from .retrieval import get_patient, get_all_patients
+        p_record = None
+        if re.search(r"\bPAT-\d+\b", patient_name_or_id, re.IGNORECASE):
+            p_record = get_patient(patient_name_or_id.upper())
+        else:
+            for p in get_all_patients():
+                if p.get("patient_name", "").lower() == patient_name_or_id.strip().lower() or p.get("patient_name", "").split()[0].lower() == patient_name_or_id.strip().lower():
+                    p_record = p
+                    break
+
+        if p_record:
+            target["patient_name"] = p_record["patient_name"]
+            target["patient_id"] = p_record["patient_id"]
+            target["patient_status"] = "REGISTERED"
+            dob = p_record.get("date_of_birth")
+            if dob:
+                target["patient_age"] = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
+        else:
+            target["patient_name"] = patient_name_or_id.title()
+            target["patient_status"] = "REGISTERED"
+
+        save_slots(slots)
+        dec_slot = _decorate_slot_datetime(target)
+        return {
+            "status": "success",
+            "message": f"Booking {dec_slot.get('booking_reference')} successfully updated for patient {dec_slot.get('patient_name')}.",
+            "slot": dec_slot
         }
 
 

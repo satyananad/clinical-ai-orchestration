@@ -238,3 +238,44 @@ def test_get_patient_pronouns_mentions_both_if_unspecified():
     empty_res = get_patient_pronouns("")
     assert empty_res["possessive"] == "his/her"
 
+
+def test_arjun_mehta_conversation_flow_report_aware_and_booking():
+    """
+    Verifies the exact scenario reported by the clinician:
+    1. 'open arjun mehta report' opens Arjun Mehta's Bitewing report (RPT-2015).
+    2. 'how many report have they' recognizes that Arjun Mehta is the active patient,
+       answering with his 3 diagnostic reports (RPT-2015, RPT-2014, RPT-2013),
+       and NEVER queries the entire clinic database (35 reports across 12 patients).
+    3. Confirms that subsequent booking actions attribute to the active patient Arjun Mehta (PAT-1005).
+    """
+    from backend.app.services.booking_service import reset_slots
+    reset_slots()
+    session_id = "test-arjun-mehta-flow"
+    get_or_create_session(session_id).clear()
+
+    # Step 1: Open Arjun Mehta report
+    r1 = client.post("/assistant/chat", json={"query": "open arjun mehta report", "session_id": session_id}).json()
+    assert r1["status"] == "success"
+    assert r1["patient"]["patient_name"] == "Arjun Mehta"
+    assert r1["report"]["report_id"] == "RPT-2015"
+
+    # Step 2: Clinician asks "how many report have they"
+    r2 = client.post("/assistant/chat", json={"query": "how many report have they", "session_id": session_id}).json()
+    assert r2["status"] == "success"
+    ans2 = r2.get("answer") or r2.get("message")
+    # MUST report Arjun Mehta's 3 reports, NOT the 35 reports across 12 patients
+    assert "3 diagnostic reports" in ans2 or "3 diagnostic report" in ans2 or "3 reports" in ans2
+    assert "35" not in ans2
+    assert "across 12 registered patients" not in ans2
+    assert "RPT-2015" in ans2
+    assert "RPT-2014" in ans2
+    assert "RPT-2013" in ans2
+
+    # Step 3: Clinician books a slot for the active patient
+    r3 = client.post("/assistant/chat", json={"query": "Confirm slot SLOT-105", "session_id": session_id}).json()
+    assert r3["status"] == "success"
+    assert r3["slot"]["patient_name"] == "Arjun Mehta"
+    assert r3["slot"]["patient_id"] == "PAT-1005"
+    assert r3["slot"]["patient_status"] == "REGISTERED"
+
+

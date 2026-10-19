@@ -994,11 +994,51 @@ def answer_patient_reports_question(
         # User explicitly asked about this modality/report
         return answer_report_question(matched_report["report_id"], query, history=history)
 
-    # 2. Broad cross-report synthesis queries
+    # 2. Patient Report Inventory / Count Queries
+    # e.g. "how many report have they", "how many reports do they have", "how many reports does he have", "what reports are on file"
+    is_report_inventory = (
+        bool(re.search(r"\b(?:how\s+many|count|number\s+of)\s+(?:diagnostic\s+)?(?:reports?|scans?)\b", q_lower))
+        or bool(re.search(r"\breports?\s+(?:have\s+they|do\s+they\s+have|does\s+(?:he|she)\s+have|on\s+file|available)\b", q_lower))
+        or any(p in q_lower for p in [
+            "what reports", "list reports", "how many reports", "how many report",
+            "what scans", "list scans", "reports on file", "scans on file"
+        ])
+    )
+    if is_report_inventory and all_reports:
+        p_name = patient.get("patient_name", "The patient")
+        p_id = patient.get("patient_id", "")
+        id_str = f" ({p_id})" if p_id else ""
+        from .retrieval import get_patient_pronouns
+        pronouns = get_patient_pronouns(patient.get("sex"))
+        pronoun_pos = pronouns["possessive"]
+
+        rep_bullets = [
+            f"• **[{r['report_id']}] {r['report_type']}** ({r['report_date']})"
+            + (f": {r.get('clinical_indication')}" if r.get('clinical_indication') else "")
+            for r in all_reports
+        ]
+        answer_text = (
+            f"**{p_name}**{id_str} has **{len(all_reports)} diagnostic report{'s' if len(all_reports) != 1 else ''}** on file:\n\n"
+            + "\n".join(rep_bullets)
+            + f"\n\nYou can ask to view any of these reports (e.g. 'Open {pronoun_pos} {all_reports[0]['report_type']}' or 'Show {all_reports[0]['report_id']}'), or ask clinical questions about any specific report."
+        )
+        citations = [f"[{r['report_id']}] {r['report_type']} ({r['report_date']})" for r in all_reports]
+        return {
+            "status": "success",
+            "answer": answer_text,
+            "citations": citations,
+            "patient_id": patient["patient_id"],
+            "report_count": len(all_reports),
+            "report_id": active_report_id or all_reports[0]["report_id"],
+            "report_date": all_reports[0].get("report_date"),
+            "report_type": f"Patient Reports Summary ({len(all_reports)} on file)"
+        }
+
+    # 3. Broad cross-report synthesis queries
     # e.g. "summarize all her reports", "all reports", "across her records", "what reports does she have", "all scans", "summarize her reports"
     is_multi_summary = (
         any(w in q_lower for w in ["all her reports", "all reports", "all scans", "across her records", "across her reports", "entire history", "full history", "complete summary", "every report"])
-        or any(p in q_lower for p in ["what reports does she have", "what scans does she have", "what reports are on file", "list her reports", "how many reports", "summarize her reports", "summarize her scans", "summarize reports"])
+        or any(p in q_lower for p in ["summarize her reports", "summarize her scans", "summarize reports"])
         or (not active_report_id and any(w in q_lower for w in ["summarize", "summary", "problem", "wrong", "findings", "finding", "diagnos"]))
     )
     if is_multi_summary:

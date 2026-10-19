@@ -807,8 +807,41 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "rationale": "Clinician requested lookup of existing appointment booking."
         }
 
-    # 0B.3 Idempotency check if user repeats confirmation when already booked
+    # 0B.3 Idempotency check or patient linkage if user specifies patient after guest booking
     if b_state.stage == BookingStage.CONFIRMED and b_state.completed_booking:
+        cb = b_state.completed_booking
+        is_guest_booking = cb.get("patient_status") == "UNREGISTERED" or cb.get("patient_name") in ("Walk-in Patient", "Guest Patient")
+        pat_link_match = re.search(r"\b(?:patient\s+is|patient\s*[:=]|assign\s+to|link\s+to|for\s+patient|for)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)\b", query, re.IGNORECASE)
+        cand_link_name = pat_link_match.group(1).strip() if pat_link_match else None
+
+        if not cand_link_name and is_guest_booking:
+            pid_m = re.search(r"\b(PAT-\d+)\b", query, re.IGNORECASE)
+            if pid_m:
+                cand_link_name = pid_m.group(1).upper()
+            elif is_valid_patient_name(query.strip()) and not any(w in q_lower for w in ["open", "retrieve", "view", "show", "what", "how", "why"]):
+                from .retrieval import search_patients
+                cands = search_patients(query.strip())
+                if cands:
+                    cand_link_name = cands[0]["patient_name"]
+
+        if is_guest_booking and cand_link_name:
+            from .booking_service import update_booking_patient
+            upd_res = update_booking_patient(cb.get("booking_reference") or cb.get("slot_id"), cand_link_name)
+            if upd_res.get("status") == "success":
+                b_state.completed_booking = upd_res.get("slot")
+                upd_slot = upd_res.get("slot", {})
+                return {
+                    "selected_agent": "ScanBookingAgent",
+                    "tool_name": "patient_linked_to_booking",
+                    "arguments": {
+                        "booking_reference": upd_slot.get("booking_reference"),
+                        "patient_name": upd_slot.get("patient_name"),
+                        "patient_id": upd_slot.get("patient_id"),
+                        "slot": upd_slot
+                    },
+                    "rationale": f"Linked patient '{cand_link_name}' to booking {upd_slot.get('booking_reference')}."
+                }
+
         is_repeat_confirm = (
             any(p in q_lower for p in ["confirm", "already booked", "duplicate booking"])
             and not any(w in q_lower for w in ["open", "find", "retrieve", "view", "what", "how", "tell", "explain", "who", "where", "which"])
@@ -1322,11 +1355,31 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             }
 
     # 0B.7 Deterministic Clinic Database Inquiry Gate
+    has_active_patient = bool(session.active_patient_id or session.active_report_id)
+    is_explicit_clinic_scope = any(w in q_lower for w in [
+        "clinic database", "database statistics", "across all", "all patients",
+        "total patients", "in the clinic", "in the database", "whole clinic", "entire clinic",
+        "registered patients"
+    ])
+    has_patient_pronoun = any(re.search(r"\b" + re.escape(p) + r"\b", q_lower) for p in [
+        "they", "he", "she", "him", "her", "his", "hir", "their", "this patient", "the patient"
+    ]) or any(p in q_lower for p in ["have they", "do they", "does he", "does she", "has he", "has she"])
+
+    is_active_patient_report_count = (
+        has_active_patient
+        and (has_patient_pronoun or not is_explicit_clinic_scope)
+        and any(w in q_lower for w in ["report", "reports", "scan", "scans"])
+    )
+
     is_database_inquiry = (
-        (any(w in q_lower for w in ["many", "manu", "mani", "much", "total", "count", "number of"]) and any(w in q_lower for w in ["patient", "report", "scan"]))
-        or any(w in q_lower for w in ["clinic database", "database statistics"])
-        or bool(re.search(r"\b(?:patient\s+names?|list\s+(?:out\s+)?(?:only\s+)?(?:the\s+)?patient\s+names?|list\s+(?:of\s+)?patients?|who\s+are\s+the\s+patients?|all\s+patients?|registered\s+patients?|which\s+patients?|know\s+the\s+patient|tell\s+me\s+(?:the\s+)?patient\s+names?)\b", q_lower))
-    ) and not any(verb in q_lower for verb in ["open", "retrieve", "view", "load"])
+        not is_active_patient_report_count
+        and (
+            (any(w in q_lower for w in ["many", "manu", "mani", "much", "total", "count", "number of"]) and any(w in q_lower for w in ["patient", "report", "scan"]))
+            or any(w in q_lower for w in ["clinic database", "database statistics"])
+            or bool(re.search(r"\b(?:patient\s+names?|list\s+(?:out\s+)?(?:only\s+)?(?:the\s+)?patient\s+names?|list\s+(?:of\s+)?patients?|who\s+are\s+the\s+patients?|all\s+patients?|registered\s+patients?|which\s+patients?|know\s+the\s+patient|tell\s+me\s+(?:the\s+)?patient\s+names?)\b", q_lower))
+        )
+        and not any(verb in q_lower for verb in ["open", "retrieve", "view", "load"])
+    )
     if is_database_inquiry and not is_booking_request:
         return {
             "selected_agent": "GeneralAssistantAgent",
@@ -2536,6 +2589,32 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                 "message": msg,
                 "booking_reference": cb.get("booking_reference"),
                 "slot": cb,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
+        elif tool_name == "patient_linked_to_booking":
+            slot = arguments.get("slot") or {}
+            msg = (
+                f"✅ **Booking Linked to Patient Record!**\n\n"
+                f"Appointment **{arguments.get('booking_reference')}** has been successfully assigned to "
+                f"**{arguments.get('patient_name')}** ({arguments.get('patient_id') or 'Registered Patient'}).\n"
+                f"• Scheduled Time: {slot.get('datetime_str')}\n"
+                f"• Modality: {slot.get('modality')}\n"
+                f"• Location: {slot.get('room')}\n"
+                f"• Token #: {slot.get('queue_token') or slot.get('token_number')}"
+            )
+            return {
+                "status": "success",
+                "message": msg,
+                "booking_reference": arguments.get("booking_reference"),
+                "slot": slot,
                 "agent_trace": {
                     "orchestrator": "TriageAgent",
                     "active_agent": "ScanBookingAgent",
