@@ -243,8 +243,14 @@ def confirm_dictation_endpoint(payload: ConfirmDictationRequest):
     with open(json_path, "w") as f:
         json.dump(confirmed_data, f, indent=2)
 
-    # Re-render authentic PDF report from confirmed data
-    generate_dictation_pdf(pdf_path, p_name, p_id, raw_dictation, findings, impressions, recommendations, patient_details=patient_context)
+    # Re-render authentic PDF report from confirmed data with digital signature
+    pdf_details = {
+        **patient_context,
+        "status": report_metadata.get("status"),
+        "confirmed_at": report_metadata.get("confirmed_at"),
+        "report_metadata": report_metadata
+    }
+    generate_dictation_pdf(pdf_path, p_name, p_id, raw_dictation, findings, impressions, recommendations, patient_details=pdf_details)
 
     return confirmed_data
 

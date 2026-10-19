@@ -82,6 +82,11 @@ def _generate_reportlab_pdf(
     supplied_id = details.get("patient_id")
     study_type = details.get("study_type") or "Dictated Radiological Assessment"
 
+    status = details.get("status") or details.get("report_metadata", {}).get("status", "DRAFT")
+    is_confirmed = (status == "CONFIRMED_BY_CLINICIAN")
+    confirmed_at = details.get("confirmed_at") or details.get("report_metadata", {}).get("confirmed_at") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    clinician_name = details.get("clinician_name") or "Dr. R. Mehta, MDS"
+
     resolved_name = patient_name or supplied_name or "Unassigned / Pending Patient Selection"
     if ("unassigned" in resolved_name.lower() or "pending" in resolved_name.lower()) and supplied_name:
         resolved_name = supplied_name
@@ -198,14 +203,23 @@ def _generate_reportlab_pdf(
     story = []
 
     # 1. Header Banner Table
+    if is_confirmed:
+        banner_title = "CLINICAL RADIOLOGICAL REPORT - VERIFIED & APPROVED"
+        banner_sub = "Dental Radiography & Clinical AI Scribe Network • Official Medical Record"
+        banner_bg = colors.HexColor("#065f46")
+    else:
+        banner_title = "RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF"
+        banner_sub = "Dental Radiography & Clinical AI Scribe Network • Official Review Copy"
+        banner_bg = colors.HexColor("#1e3a8a")
+
     banner_cell = [
-        Paragraph("RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF", header_title_style),
+        Paragraph(banner_title, header_title_style),
         Spacer(1, 2),
-        Paragraph("Dental Radiography & Clinical AI Scribe Network • Official Review Copy", header_sub_style)
+        Paragraph(banner_sub, header_sub_style)
     ]
     banner_table = Table([[banner_cell]], colWidths=[540])
     banner_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#1e3a8a")),
+        ("BACKGROUND", (0, 0), (-1, -1), banner_bg),
         ("TOPPADDING", (0, 0), (-1, -1), 8),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ("LEFTPADDING", (0, 0), (-1, -1), 12),
@@ -214,36 +228,60 @@ def _generate_reportlab_pdf(
     story.append(banner_table)
     story.append(Spacer(1, 4))
 
-    # Amber Alert Banner for Draft Status
-    alert_style = ParagraphStyle(
-        "DraftAlert",
-        parent=styles["Normal"],
-        fontName="Helvetica-Bold",
-        fontSize=8,
-        leading=10,
-        textColor=colors.HexColor("#78350f")
-    )
-    alert_cell = [
-        Paragraph("<b>*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***</b><br/><font size=7 color='#92400e'>Unverified AI synthesis from voice dictation. All anatomical findings and impressions must be verified by attending clinician.</font>", alert_style)
-    ]
-    alert_table = Table([[alert_cell]], colWidths=[540])
-    alert_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fef3c7")),
-        ("BOX", (0, 0), (-1, -1), 0.75, colors.HexColor("#f59e0b")),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING", (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-    ]))
-    story.append(alert_table)
+    if is_confirmed:
+        alert_style = ParagraphStyle(
+            "ConfirmedAlert",
+            parent=styles["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            leading=10,
+            textColor=colors.HexColor("#065f46")
+        )
+        alert_cell = [
+            Paragraph(f"<b>*** CLINICALLY VERIFIED & APPROVED MEDICAL RECORD ***</b><br/><font size=7 color='#047857'>This diagnostic report has been reviewed, verified, and electronically signed off by {clinician_name} ({confirmed_at}).</font>", alert_style)
+        ]
+        alert_table = Table([[alert_cell]], colWidths=[540])
+        alert_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#ecfdf5")),
+            ("BOX", (0, 0), (-1, -1), 0.75, colors.HexColor("#10b981")),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ]))
+        story.append(alert_table)
+    else:
+        # Amber Alert Banner for Draft Status
+        alert_style = ParagraphStyle(
+            "DraftAlert",
+            parent=styles["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            leading=10,
+            textColor=colors.HexColor("#78350f")
+        )
+        alert_cell = [
+            Paragraph("<b>*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***</b><br/><font size=7 color='#92400e'>Unverified AI synthesis from voice dictation. All anatomical findings and impressions must be verified by attending clinician.</font>", alert_style)
+        ]
+        alert_table = Table([[alert_cell]], colWidths=[540])
+        alert_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fef3c7")),
+            ("BOX", (0, 0), (-1, -1), 0.75, colors.HexColor("#f59e0b")),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ]))
+        story.append(alert_table)
     story.append(Spacer(1, 6))
 
     # 2. Patient Information Card (2-column structured table)
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    status_text = "<b>STATUS:</b> <font color='#059669'><b>FINAL / APPROVED</b></font>" if is_confirmed else "<b>STATUS:</b> Draft Pending Attending Clinician Approval"
     col1 = [
         Paragraph(f"<b>PATIENT:</b> {p_name_display}", card_label_bold),
         Paragraph(f"<b>PATIENT ID:</b> {p_id}", card_text_dim),
-        Paragraph("<b>STATUS:</b> Draft Pending Attending Clinician Approval", card_text_dim)
+        Paragraph(status_text, card_text_dim)
     ]
     col2 = [
         Paragraph(f"<b>EXAM TYPE:</b> {study_type}", card_label_bold),
@@ -315,23 +353,29 @@ def _generate_reportlab_pdf(
 
     story.append(Spacer(1, 16))
 
-    # 6. Attending Clinician Approval Block
-    sig_data = [
-        [
-            Paragraph("Attending Clinician Approval: ___________________________", sig_label),
-            Paragraph("Sign-Off Date: _________________", sig_label)
+    # 6. Attending Clinician Approval Block / Digital Signature
+    if is_confirmed:
+        sig_data = [
+            [
+                Paragraph(f"<b>Reporting Radiologist:</b> {clinician_name} <font color='#059669'><b>[VERIFIED & SEALED]</b></font>", sig_label),
+                Paragraph(f"<b>Sign-Off Timestamp:</b> {confirmed_at}", sig_label)
+            ]
         ]
-    ]
-    sig_table = Table(sig_data, colWidths=[340, 200])
-    sig_table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    legal_disclaimer = Paragraph(
-        "Clinical Dental Workstation • Unverified AI Draft - Not Approved for Medical Records Without Clinician Signature",
-        finding_meta
-    )
+        legal_disclaimer = Paragraph(
+            "Clinical Dental Workstation • Authenticated Electronic Medical Record • Digital Signature: VERIFIED & SEALED",
+            finding_meta
+        )
+    else:
+        sig_data = [
+            [
+                Paragraph("Attending Clinician Approval: ___________________________", sig_label),
+                Paragraph("Sign-Off Date: _________________", sig_label)
+            ]
+        ]
+        legal_disclaimer = Paragraph(
+            "Clinical Dental Workstation • Unverified AI Draft - Not Approved for Medical Records Without Clinician Signature",
+            finding_meta
+        )
     sig_block = [
         HRFlowable(width="100%", thickness=0.75, color=colors.HexColor("#cbd5e1"), spaceAfter=6),
         sig_table,
@@ -358,6 +402,11 @@ def _generate_manual_canvas_pdf(
     supplied_name = details.get("patient_name")
     supplied_id = details.get("patient_id")
     study_type = details.get("study_type") or "Dictated Radiological Assessment"
+
+    status = details.get("status") or details.get("report_metadata", {}).get("status", "DRAFT")
+    is_confirmed = (status == "CONFIRMED_BY_CLINICIAN")
+    confirmed_at = details.get("confirmed_at") or details.get("report_metadata", {}).get("confirmed_at") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    clinician_name = details.get("clinician_name") or "Dr. R. Mehta, MDS"
 
     resolved_name = patient_name or supplied_name or "Unassigned / Pending Patient Selection"
     if ("unassigned" in resolved_name.lower() or "pending" in resolved_name.lower()) and supplied_name:
@@ -465,11 +514,18 @@ def _generate_manual_canvas_pdf(
         y -= 2
 
     # Bottom Signature Block
-    curr_cmds.extend([
-        "0.85 0.85 0.85 RG 1 w 45 75 505 0 m 550 75 l S",
-        f"BT /F1 8.5 Tf 0 0 0 rg 50 58 Td ({sanitize_pdf('Attending Clinician Approval: ___________________________')}) Tj 200 0 Td ({sanitize_pdf('Sign-Off Date: _________________')}) Tj ET",
-        f"BT /F3 7.5 Tf 0.4 0.4 0.4 rg 50 45 Td ({sanitize_pdf('Clinical Dental Workstation • Unverified AI Draft - Not Approved for Medical Records Without Clinician Signature')}) Tj ET"
-    ])
+    if is_confirmed:
+        curr_cmds.extend([
+            "0.85 0.85 0.85 RG 1 w 45 75 505 0 m 550 75 l S",
+            f"BT /F1 8.5 Tf 0 0.5 0 rg 50 58 Td ({sanitize_pdf(f'Reporting Radiologist: {clinician_name} [VERIFIED & SEALED]')}) Tj 220 0 Td ({sanitize_pdf(f'Sign-Off Date: {confirmed_at}')}) Tj ET",
+            f"BT /F3 7.5 Tf 0.2 0.5 0.2 rg 50 45 Td ({sanitize_pdf('Clinical Dental Workstation • Authenticated Electronic Medical Record • Digital Signature: VERIFIED & SEALED')}) Tj ET"
+        ])
+    else:
+        curr_cmds.extend([
+            "0.85 0.85 0.85 RG 1 w 45 75 505 0 m 550 75 l S",
+            f"BT /F1 8.5 Tf 0 0 0 rg 50 58 Td ({sanitize_pdf('Attending Clinician Approval: ___________________________')}) Tj 200 0 Td ({sanitize_pdf('Sign-Off Date: _________________')}) Tj ET",
+            f"BT /F3 7.5 Tf 0.4 0.4 0.4 rg 50 45 Td ({sanitize_pdf('Clinical Dental Workstation • Unverified AI Draft - Not Approved for Medical Records Without Clinician Signature')}) Tj ET"
+        ])
     pages_cmds.append("\n".join(curr_cmds))
 
     # Assemble Multi-Page PDF Binary

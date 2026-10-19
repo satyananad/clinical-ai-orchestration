@@ -113,3 +113,33 @@ def test_reportlab_pdf_generation_layout_and_pagination():
     with open(pdf_out, "rb") as f:
         header = f.read(5)
         assert header == b"%PDF-"
+
+
+def test_confirmed_pdf_includes_digital_signature_and_verification_badge():
+    """
+    Verifies that when a report is confirmed by the clinician, the generated PDF
+    contains the verified digital signature block and approved status rather than
+    blank placeholder underscores or unverified draft warnings.
+    """
+    tmp_pdf = tempfile.mktemp(suffix=".pdf")
+    confirmed_details = {
+        "patient_name": "Priya Sharma",
+        "patient_id": "PAT-1001",
+        "status": "CONFIRMED_BY_CLINICIAN",
+        "confirmed_at": "2026-10-19 10:00:00",
+        "clinician_name": "Dr. R. Mehta, MDS"
+    }
+    pdf_out = generate_dictation_pdf(
+        pdf_path=tmp_pdf,
+        patient_name="Priya Sharma",
+        patient_id="PAT-1001",
+        raw_dictation="Tooth 16 caries.",
+        findings=[{"anatomical_site": "Tooth 16", "category": "Caries", "observation": "Coronal radiolucency", "certainty": "definite observation", "measurements": []}],
+        impressions=["Coronal dental caries on tooth 16."],
+        recommendations=["Restoration advised."],
+        patient_details=confirmed_details
+    )
+    assert os.path.exists(pdf_out)
+    with open(pdf_out, "rb") as f:
+        content = f.read().decode("latin1", errors="ignore")
+    assert "VERIFIED" in content or "APPROVED" in content

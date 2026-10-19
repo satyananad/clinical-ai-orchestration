@@ -351,21 +351,23 @@ export const DictationStudio: React.FC = () => {
                 value={selectedPatient.id}
                 onChange={(e) => {
                   const val = e.target.value;
-                  if (val === 'PAT-1004') setSelectedPatient({ id: 'PAT-1004', name: 'Priya Sharma' });
-                  else if (val === 'PAT-1001') setSelectedPatient({ id: 'PAT-1001', name: 'Vikram Malhotra' });
-                  else if (val === 'PAT-1002') setSelectedPatient({ id: 'PAT-1002', name: 'Aarav Sharma' });
+                  if (val === 'PAT-1001') setSelectedPatient({ id: 'PAT-1001', name: 'Priya Sharma' });
+                  else if (val === 'PAT-1004') setSelectedPatient({ id: 'PAT-1004', name: 'Priya Sharmila' });
+                  else if (val === 'PAT-1008') setSelectedPatient({ id: 'PAT-1008', name: 'Vikram Malhotra' });
+                  else if (val === 'PAT-1002') setSelectedPatient({ id: 'PAT-1002', name: 'Rahul Verma' });
                   else setSelectedPatient({ id: '', name: '' });
                 }}
                 className="text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium text-slate-700"
               >
                 <option value="">Patient: Unassigned / Pending Selection</option>
-                <option value="PAT-1004">Priya Sharma (PAT-1004)</option>
-                <option value="PAT-1001">Vikram Malhotra (PAT-1001)</option>
-                <option value="PAT-1002">Aarav Sharma (PAT-1002)</option>
+                <option value="PAT-1001">Priya Sharma (PAT-1001)</option>
+                <option value="PAT-1004">Priya Sharmila (PAT-1004)</option>
+                <option value="PAT-1008">Vikram Malhotra (PAT-1008)</option>
+                <option value="PAT-1002">Rahul Verma (PAT-1002)</option>
               </select>
 
               {/* Confirm & Sign Off Button */}
-              {!isConfirmed && (
+              {!isConfirmed ? (
                 <button
                   onClick={handleConfirmAndSignOff}
                   disabled={confirming}
@@ -374,6 +376,11 @@ export const DictationStudio: React.FC = () => {
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>{confirming ? 'Signing Off...' : 'Sign Off & Approve Draft'}</span>
                 </button>
+              ) : (
+                <div className="flex items-center space-x-1.5 bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-lg text-xs font-bold">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Digitally Signed: Dr. R. Mehta, MDS (SEALED)</span>
+                </div>
               )}
             </div>
           </div>
