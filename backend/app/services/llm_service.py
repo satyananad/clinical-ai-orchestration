@@ -615,28 +615,10 @@ def analyze_sentence_anatomy(sentence: str, anatomical_sites: List[Dict[str, Any
     if re.search(r"\b(?:upper\s+front\s+region|maxillary\s+anterior\s+region|maxillary\s+anterior)\b", s_l):
         return "Maxillary Anterior Region", None, []
 
-    # 1. Adjacent teeth / surrounding dentition
-    if re.search(r"\b(adjacent\s+teeth|surrounding\s+teeth|adjacent\s+structures|adjacent\s+dentition|surrounding\s+dentition)\b", s_l):
-        return "Adjacent Teeth", None, []
-
-    # 2. Regional non-dental structures
-    if re.search(r"\b(?:inferior\s+alveolar\s+(?:nerve\s+)?canal|ianc|mandibular\s+canal)\b", s_l):
-        return "Inferior Alveolar Canal & Alveolar Crest", None, []
-    if re.search(r"\b(?:temporomandibular|tmj)\b", s_l) and re.search(r"\b(?:sinus|sinuses)\b", s_l):
-        return "Temporomandibular Joints & Paranasal Sinuses", None, []
-    if re.search(r"\b(?:temporomandibular|tmj|condyle)\b", s_l):
-        return "Temporomandibular Joints", None, []
-    if re.search(r"\b(?:paranasal\s+sinuses?|maxillary\s+sinuses?|sinuses?)\b", s_l):
-        return "Maxillary & Paranasal Sinuses", None, []
-    if re.search(r"\b(?:airway|cervical\s+spine)\b", s_l):
-        return "Regional Anatomy", None, []
-    if re.search(r"\b(?:calcifications?|tonsilloliths?)\b", s_l):
-        return "Soft Tissue", None, []
-
-    # 3. Edentulous / missing tooth site
+    # 1. Edentulous / missing tooth site
     is_edentulous = bool(re.search(r"\b(?:edentulous|missing\s+teeth|missing\s+crowns|extraction\s+socket|edentulous\s+space|edentulous\s+ridge)\b", s_l)) and not re.search(r"\bdentate\s+adult\b", s_l)
 
-    # 4. Extract tooth tokens
+    # 2. Extract tooth tokens (Palmer notation and Tooth #)
     palmer_matches = re.findall(r"\b(UR|UL|LL|LR)[\s_-]*([1-8]|[A-E])\b", sentence, re.IGNORECASE)
     tooth_num_matches = re.findall(r"\b(?:teeth|tooth)\s*#?(\d{1,2})\b", sentence, re.IGNORECASE)
 
@@ -671,12 +653,14 @@ def analyze_sentence_anatomy(sentence: str, anatomical_sites: List[Dict[str, Any
                 s_quad = "LL"
             elif re.search(r"\b(mandibular\s+right|lower\s+right|quadrant\s+4|lr)\b", s_l):
                 s_quad = "LR"
-            else:
-                s_quad = active_quad or "LL"
-            p_code = f"{s_quad}{pos_idx}"
-            norm = normalize_dental_site({"anatomical_name": p_code})
-            if norm.get("fdi_number") and not any(dt.get("fdi_number") == norm["fdi_number"] for dt in detected_teeth):
-                detected_teeth.append(norm)
+            elif active_quad:
+                s_quad = active_quad
+
+            if s_quad:
+                p_code = f"{s_quad}{pos_idx}"
+                norm = normalize_dental_site({"anatomical_name": p_code})
+                if norm.get("fdi_number") and not any(dt.get("fdi_number") == norm["fdi_number"] for dt in detected_teeth):
+                    detected_teeth.append(norm)
 
     unique_fdi = {}
     for dt in detected_teeth:
@@ -706,6 +690,24 @@ def analyze_sentence_anatomy(sentence: str, anatomical_sites: List[Dict[str, Any
     if len(unique_fdi) == 1:
         st = list(unique_fdi.values())[0]
         return st.get("anatomical_name"), str(st.get("fdi_number")), [st.get("anatomical_name")]
+
+    # 3. If no specific tooth detected, evaluate regional non-dental structures
+    if re.search(r"\b(?:inferior\s+alveolar\s+(?:nerve\s+)?canal|ianc|mandibular\s+canal)\b", s_l):
+        return "Inferior Alveolar Canal & Alveolar Crest", None, []
+    if re.search(r"\b(?:temporomandibular|tmj)\b", s_l) and re.search(r"\b(?:sinus|sinuses)\b", s_l):
+        return "Temporomandibular Joints & Paranasal Sinuses", None, []
+    if re.search(r"\b(?:temporomandibular|tmj|condyle)\b", s_l):
+        return "Temporomandibular Joints", None, []
+    if re.search(r"\b(?:paranasal\s+sinuses?|maxillary\s+sinuses?|sinuses?)\b", s_l):
+        return "Maxillary & Paranasal Sinuses", None, []
+    if re.search(r"\b(?:airway|cervical\s+spine)\b", s_l):
+        return "Regional Anatomy", None, []
+    if re.search(r"\b(?:calcifications?|tonsilloliths?)\b", s_l):
+        return "Soft Tissue", None, []
+
+    # 4. Adjacent teeth / surrounding dentition
+    if re.search(r"\b(adjacent\s+teeth|surrounding\s+teeth|adjacent\s+structures|adjacent\s+dentition|surrounding\s+dentition)\b", s_l):
+        return "Adjacent Teeth", None, []
 
     if re.search(r"\b(?:alveolar\s+ridge|buccal\s+cortical\s+plate|cortical\s+plate)\b", s_l):
         for st in anatomical_sites:

@@ -1240,10 +1240,19 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
 
     # 0B.6 Deterministic Booking Safety Gates
     detected_date = extract_date_from_query(query)
+    is_clinical_scan_query = bool(re.search(
+        r"\b(?:in\s+(?:this|the)\s+(?:scan|report|image|radiograph)|documented|fracture|cyst|caries|lesion|bone\s+loss|root|canal|nerve|impaction|pathology|abscess|infection|finding|findings)\b",
+        q_lower
+    )) and not any(w in q_lower for w in ["book", "booking", "schedule", "reschedule", "appointment", "appoint ment", "reserve", "slot", "slots"])
+
     is_booking_request = (
-        any(w in q_lower for w in ["book", "booking", "schedule", "reschedule", "appointment", "appoint ment", "reserve", "slots", "slot"])
-        or (any(w in q_lower for w in ["dr", "doctor", "radiologist", "scan"]) and any(w in q_lower for w in ["have", "available", "free", "open", "slot", "slots", "schedule", "appointment", "oct", "october", "nov", "dec", "tomorrow", "today", "any", "is there", "are there"]))
-        or (bool(detected_date) and any(w in q_lower for w in ["have", "available", "slot", "slots", "appointment", "dr", "doctor", "scan", "can i"]))
+        not is_clinical_scan_query
+        and (
+            any(w in q_lower for w in ["book", "booking", "schedule", "reschedule", "appointment", "appoint ment", "reserve", "slots", "slot"])
+            or (any(w in q_lower for w in ["dr", "doctor", "radiologist"]) and any(w in q_lower for w in ["have", "available", "free", "open", "slot", "slots", "schedule", "appointment", "oct", "october", "nov", "dec", "tomorrow", "today", "any", "is there", "are there"]))
+            or (bool(detected_date) and any(w in q_lower for w in ["have", "available", "slot", "slots", "appointment", "dr", "doctor", "can i"]))
+            or (any(w in q_lower for w in ["scan", "scans"]) and any(w in q_lower for w in ["slot", "slots", "appointment", "schedule", "book", "reserve"]))
+        )
     )
     has_booking_keyword = any(w in q_lower for w in ["slot", "slots", "appointment", "appoint ment", "booking", "schedule", "reschedule"])
     is_retrieval_override = (
