@@ -106,6 +106,10 @@ export async function structureDictation(text: string, patientId?: string, patie
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, patient_id: patientId, patient_name: patientName })
   });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Dictation structure error (${res.status})`);
+  }
   return res.json();
 }
 
@@ -115,6 +119,10 @@ export async function confirmDictation(payload: any): Promise<DictationResponse>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Dictation confirm error (${res.status})`);
+  }
   return res.json();
 }
 
@@ -129,6 +137,10 @@ export async function uploadAudioDictation(audioFile: File, transcript?: string,
     method: 'POST',
     body: formData
   });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Audio dictation error (${res.status})`);
+  }
   return res.json();
 }
 

@@ -42,7 +42,7 @@ export const Dashboard: React.FC = () => {
         {/* Right Column: Report Viewer & Dictation Studio */}
         <div className="lg:col-span-7 flex flex-col space-y-6">
           <ReportViewer report={activeReport} patient={activePatient} onSelectReport={setActiveReport} />
-          <DictationStudio />
+          <DictationStudio activePatient={activePatient} />
         </div>
       </main>
     </div>

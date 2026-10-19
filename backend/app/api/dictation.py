@@ -36,8 +36,10 @@ async def process_audio_dictation_endpoint(
     # Resolve transcription
     final_text = (transcript or "").strip()
     if not final_text:
-        # If no client transcript is passed, use standard audio dictation fallback
-        final_text = "Lower right third molar is horizontally impacted with roots approximating the inferior alveolar nerve canal."
+        raise HTTPException(
+            status_code=400,
+            detail="No speech or transcript detected from audio dictation. Please speak clearly into the microphone or provide clinical observations."
+        )
 
     payload = DictationRequest(text=final_text, patient_id=patient_id, patient_name=patient_name)
     return structure_dictation_endpoint(payload)

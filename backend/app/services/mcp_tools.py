@@ -560,19 +560,56 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             from .pdf_service import generate_dictation_pdf
             raw_input = arguments.get("dictation_text", "")
             dictation_text = re.sub(r"^(?:dictate\s*[:\-]?\s*|dictation\s*[:\-]?\s*|please\s+dictate\s*[:\-]?\s*)", "", raw_input.strip(), flags=re.IGNORECASE).strip() or raw_input.strip()
-            p_name = arguments.get("patient_name") or "Pending Patient Linkage (Unassigned)"
-            p_id = arguments.get("patient_id") or "None"
+            raw_pname = arguments.get("patient_name")
+            raw_pid = arguments.get("patient_id")
             parsed = parse_dictation_with_llm(dictation_text)
             findings = parsed.get("findings", [])
             impressions = parsed.get("impressions", [])
             recommendations = parsed.get("recommendations", [])
             patient_details = parsed.get("patient_details") or {}
+
+            p_name = raw_pname or patient_details.get("patient_name") or ""
+            p_id = raw_pid or patient_details.get("patient_id") or ""
+            if p_id in ("None", "null", "UNASSIGNED"):
+                p_id = ""
+
+            # Check if patient exists in database to pull verified demographics
+            from .retrieval import get_patient, search_patients
+            pt_record = None
+            if p_id:
+                pt_record = get_patient(p_id)
+            if not pt_record and p_name and "unassigned" not in p_name.lower() and "pending" not in p_name.lower():
+                matches = search_patients(p_name)
+                if len(matches) == 1:
+                    pt_record = matches[0]
+
+            if pt_record:
+                if not p_name:
+                    p_name = pt_record.get("patient_name", "")
+                if not p_id:
+                    p_id = pt_record.get("patient_id", "")
+                if not patient_details.get("gender") and pt_record.get("sex"):
+                    patient_details["gender"] = pt_record["sex"]
+                if not patient_details.get("date_of_birth") and pt_record.get("date_of_birth"):
+                    patient_details["date_of_birth"] = pt_record["date_of_birth"]
+                if not patient_details.get("age") and pt_record.get("date_of_birth"):
+                    try:
+                        dob_year = int(pt_record["date_of_birth"][:4])
+                        patient_details["age"] = datetime.datetime.now().year - dob_year
+                    except Exception:
+                        pass
+
+            if p_name:
+                patient_details["patient_name"] = p_name
+            if p_id:
+                patient_details["patient_id"] = p_id
+
             guardrails = verify_anti_hallucination(dictation_text, findings, impressions=impressions)
             has_findings = bool(findings)
             status_label = "success" if has_findings else "incomplete"
 
             narrative = compose_narrative(
-                p_name,
+                p_name or "Pending Patient Linkage (Unassigned)",
                 findings,
                 impressions,
                 recommendations,

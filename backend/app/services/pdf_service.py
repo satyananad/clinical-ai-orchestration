@@ -90,16 +90,20 @@ def _generate_reportlab_pdf(
     confirmed_at = details.get("confirmed_at") or details.get("report_metadata", {}).get("confirmed_at") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     clinician_name = details.get("clinician_name") or "Dr. R. Mehta, MDS"
 
-    resolved_name = patient_name or supplied_name or "Unassigned / Pending Patient Selection"
+    resolved_name = (patient_name or supplied_name or "").strip()
     if ("unassigned" in resolved_name.lower() or "pending" in resolved_name.lower()) and supplied_name:
         resolved_name = supplied_name
-    p_name = resolved_name.upper()
+    elif "unassigned" in resolved_name.lower():
+        resolved_name = ""
+    p_name = resolved_name.upper() if resolved_name else ""
 
-    p_id = patient_id or supplied_id or "Pending Patient Assignment"
-    if str(p_id).strip() in ("None", "null", ""):
-        p_id = f"Supplied: {supplied_id}" if supplied_id else "Pending Patient Assignment"
+    raw_pid = str(patient_id or supplied_id or "").strip()
+    if raw_pid.lower() in ("none", "null", "pending patient assignment", "unassigned", "pat-record"):
+        p_id = supplied_id or ""
+    else:
+        p_id = raw_pid
 
-    # Demographics tag
+    # Demographics tag (blank if missing)
     demo_tags = []
     if details.get("age"):
         demo_tags.append(f"Age: {details['age']}")
@@ -107,7 +111,7 @@ def _generate_reportlab_pdf(
         demo_tags.append(str(details['gender']))
     if details.get("date_of_birth"):
         demo_tags.append(f"DOB: {details['date_of_birth']}")
-    p_name_display = f"{p_name} ({', '.join(demo_tags)})" if demo_tags else p_name
+    p_name_display = f"{p_name} ({', '.join(demo_tags)})" if (p_name and demo_tags) else (p_name or (', '.join(demo_tags) if demo_tags else ""))
 
     doc = SimpleDocTemplate(
         pdf_path,

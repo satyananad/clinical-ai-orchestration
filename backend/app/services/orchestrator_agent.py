@@ -1995,21 +1995,39 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
     clinical_keywords = [
         "impacted", "radiolucency", "root treated", "carious", "caries",
         "periapical", "canal", "osteitis", "follicle", "supernumerary",
-        "alveolar ridge", "condyle", "tonsillolith", "bone loss"
+        "alveolar ridge", "condyle", "tonsillolith", "bone loss",
+        "missing tooth", "missing teeth", "unerupted", "resorption",
+        "crown fracture", "lesion", "lucency", "mobility", "horizontal bone loss",
+        "vertical bone loss", "furcation", "pulpitis", "apical periodontitis"
     ]
+    is_explicit_dictation = any(k in q_lower for k in [
+        "dictate", "dictation", "clinical dictation", "draft report", "generate draft report",
+        "generate report for", "speech-to-text transcript"
+    ])
     is_question_intent = any(q_lower.startswith(w) for w in [
         "what is", "what are", "what does", "how does", "how do", "why does", "why is",
         "explain", "tell me about", "can you explain", "who are you", "what are you doing",
         "what can you do", "help me", "how to", "difference between"
     ]) or q_lower.endswith("?")
 
-    if any(kw in q_lower for kw in clinical_keywords) and not is_question_intent and not any(verb in q_lower for verb in ["open", "show", "find", "get", "retrieve", "search"]):
+    if (is_explicit_dictation or any(kw in q_lower for kw in clinical_keywords)) and not is_question_intent and not any(verb in q_lower for verb in ["open", "show", "find", "get", "retrieve", "search"]):
+        from .claim_verification import extract_patient_demographics
+        pt_demo = extract_patient_demographics(query)
+        target_pid = pt_demo.get("patient_id") or session.active_patient_id
+        target_pname = pt_demo.get("patient_name")
+        if not target_pname and target_pid:
+            from .retrieval import get_patient
+            rec = get_patient(target_pid)
+            if rec:
+                target_pname = rec.get("patient_name")
+
         return {
             "selected_agent": "ClinicalScribeAgent",
             "tool_name": "structure_clinical_dictation",
             "arguments": {
                 "dictation_text": query,
-                "patient_id": session.active_patient_id
+                "patient_id": target_pid,
+                "patient_name": target_pname
             },
             "rationale": "Fallback: Input describes clinical pathology findings."
         }
@@ -2429,7 +2447,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
         narrative = dictation_res.get("narrative_draft")
         if not narrative:
             from .report_service import compose_narrative
-            patient_label = session.booking_state.patient_name or "Pending Patient Linkage (Unassigned)"
+            patient_label = arguments.get("patient_name") or (dictation_res.get("patient_details") or {}).get("patient_name") or "Pending Patient Linkage (Unassigned)"
             narrative = compose_narrative(
                 patient_label,
                 findings,

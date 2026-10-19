@@ -514,8 +514,8 @@ def extract_tooth_numbers(text: str) -> List[int]:
     return sorted(list(teeth))
 
 def extract_measurements(text: str) -> List[str]:
-    """Extracts measurements and units (e.g. '8 mm', '1.5 mm', '8 x 7 mm', '5.2 mm', '10.8 mm')."""
-    return re.findall(r"\b\d+(?:\.\d+)?\s*(?:mm|cm|x\s*\d+(?:\.\d+)?\s*mm)\b", text.lower())
+    """Extracts measurements, ranges, and 3D dimensions (e.g. '8 by 7 by 6 mm', '1 to 2 mm', '8 x 7 mm', '5.2 mm')."""
+    return re.findall(r"\b\d+(?:\.\d+)?(?:\s*(?:by|x|-|to)\s*\d+(?:\.\d+)?)*\s*(?:mm|cm)\b", text.lower())
 
 def extract_laterality(text: str) -> Optional[str]:
     """Extracts laterality (left vs right) using strict word boundaries."""

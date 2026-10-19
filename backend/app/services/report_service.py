@@ -43,7 +43,7 @@ def compose_narrative(
     confirmed_at = details.get("confirmed_at") or details.get("report_metadata", {}).get("confirmed_at")
     clinician_name = details.get("clinician_name") or "Dr. R. Mehta, MDS"
 
-    # Demographics formatting
+    # Demographics formatting (blank if missing)
     demo_parts = []
     if details.get("age"):
         demo_parts.append(f"Age: {details['age']}")
@@ -51,7 +51,7 @@ def compose_narrative(
         demo_parts.append(f"Gender: {details['gender']}")
     if details.get("date_of_birth"):
         demo_parts.append(f"DOB: {details['date_of_birth']}")
-    demo_str = " | ".join(demo_parts) if demo_parts else "Not specified (Pending demographics verification)"
+    demo_str = " | ".join(demo_parts) if demo_parts else ""
 
     lines = []
     lines.append("=" * 72)
@@ -63,34 +63,43 @@ def compose_narrative(
         lines.append("*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***")
     lines.append("=" * 72)
 
-    # 1. Compact Two-Column Patient & Examination Details
+    # 1. Compact Two-Column Patient & Examination Details (blank missing fields)
     lines.append("PATIENT & EXAMINATION DETAILS:")
     lines.append("-" * 72)
-    is_unassigned = ("unassigned" in patient_name.lower() or "pending" in patient_name.lower())
-    if is_unassigned:
-        if supplied_name or supplied_id:
-            lines.append(f"Patient Name:    Pending Linkage (Supplied: {supplied_name or 'N/A'})")
-            lines.append(f"Patient ID:      Pending Linkage (Supplied: {supplied_id or 'N/A'})")
-        else:
-            lines.append("Patient Name:    Pending Patient Linkage (Unassigned)")
-            lines.append("Patient ID:      None (Requires patient selection before permanent record entry)")
-        lines.append(f"Demographics:    {demo_str}")
-        lines.append(f"Examination:     {study_type}")
-        lines.append(f"Date of Draft:   {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
-        lines.append("Linkage Status:  Unlinked (Pending Clinician Action)")
-        lines.append("Report Status:   DRAFT (AI Dictation Synthesis - Pending Clinician Review)")
+    
+    # Resolve clean display values: blank if missing or generic placeholder
+    raw_pname = str(patient_name or "").strip()
+    raw_pid = str(details.get("patient_id") or "").strip()
+    if raw_pid.lower() in ("none", "null", "pat-record", "unassigned", "pending patient assignment"):
+        raw_pid = ""
+
+    if supplied_name:
+        p_name_display = supplied_name
+    elif raw_pname and "unassigned" not in raw_pname.lower():
+        p_name_display = raw_pname
+    elif "pending" in raw_pname.lower():
+        p_name_display = raw_pname
     else:
-        lines.append(f"Patient Name:    {patient_name}")
-        lines.append(f"Patient ID:      {supplied_id or details.get('patient_id') or 'PAT-RECORD'}")
-        lines.append(f"Demographics:    {demo_str}")
-        lines.append(f"Examination:     {study_type}")
-        date_str = confirmed_at if (is_confirmed and confirmed_at) else datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-        lines.append(f"Date of Draft:   {date_str}")
-        lines.append("Linkage Status:  Authorized Patient Record Linked")
-        if is_confirmed:
-            lines.append(f"Report Status:   FINAL / CLINICALLY VERIFIED ({clinician_name})")
-        else:
-            lines.append("Report Status:   DRAFT (AI Dictation Synthesis - Pending Clinician Review)")
+        p_name_display = ""
+
+    if supplied_id:
+        p_id_display = supplied_id
+    elif raw_pid:
+        p_id_display = raw_pid
+    else:
+        p_id_display = ""
+
+    date_str = confirmed_at if (is_confirmed and confirmed_at) else datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    lines.append(f"Patient Name:    {p_name_display}")
+    lines.append(f"Patient ID:      {p_id_display}")
+    lines.append(f"Demographics:    {demo_str}")
+    lines.append(f"Examination:     {study_type}")
+    lines.append(f"Date of Draft:   {date_str}")
+    if is_confirmed:
+        lines.append(f"Report Status:   FINAL / CLINICALLY VERIFIED ({clinician_name})")
+    else:
+        lines.append("Report Status:   DRAFT (AI Dictation Synthesis - Pending Clinician Review)")
     lines.append("-" * 72)
     lines.append("")
 

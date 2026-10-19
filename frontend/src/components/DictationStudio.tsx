@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { structureDictation, confirmDictation, uploadAudioDictation, DictationResponse } from '../services/api';
+import React, { useState, useRef, useEffect } from 'react';
+import { structureDictation, confirmDictation, uploadAudioDictation, DictationResponse, Patient } from '../services/api';
 import { Mic, MicOff, Upload, CheckCircle2, AlertTriangle, FileText, Code2, Edit3, Plus, Trash2, ExternalLink } from 'lucide-react';
 
 interface FindingEdit {
@@ -12,7 +12,11 @@ interface FindingEdit {
   source_quote?: string;
 }
 
-export const DictationStudio: React.FC = () => {
+interface DictationStudioProps {
+  activePatient?: Patient | null;
+}
+
+export const DictationStudio: React.FC<DictationStudioProps> = ({ activePatient }) => {
   const [dictationText, setDictationText] = useState('');
   const [result, setResult] = useState<DictationResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -22,9 +26,15 @@ export const DictationStudio: React.FC = () => {
   const [rawJsonText, setRawJsonText] = useState('');
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<{ id: string; name: string }>({
-    id: '',
-    name: ''
+    id: activePatient ? activePatient.patient_id : '',
+    name: activePatient ? activePatient.patient_name : ''
   });
+
+  useEffect(() => {
+    if (activePatient) {
+      setSelectedPatient({ id: activePatient.patient_id, name: activePatient.patient_name });
+    }
+  }, [activePatient]);
 
   // Audio file ref
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -44,8 +54,8 @@ export const DictationStudio: React.FC = () => {
       setResult(data);
       setRawJsonText(JSON.stringify(data, null, 2));
       setJsonError(null);
-    } catch (err) {
-      alert('Failed to process clinical dictation.');
+    } catch (err: any) {
+      alert('Clinical Dictation Notice: ' + (err.message || 'Failed to process clinical dictation.'));
     } finally {
       setLoading(false);
     }
@@ -120,8 +130,8 @@ export const DictationStudio: React.FC = () => {
       if (!dictationText && data.raw_dictation) {
         setDictationText(data.raw_dictation);
       }
-    } catch (err) {
-      alert('Failed to upload and process audio dictation file.');
+    } catch (err: any) {
+      alert('Audio Dictation Notice: ' + (err.message || 'Failed to upload and process audio dictation file.'));
     } finally {
       setLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

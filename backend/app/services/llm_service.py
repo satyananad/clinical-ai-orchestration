@@ -305,7 +305,8 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
     """
     cleaned_text = clean_conversational_dictation(dictation_text)
     from .claim_verification import is_clinically_relevant_dictation, extract_patient_demographics
-    if not is_clinically_relevant_dictation(cleaned_text):
+    clinical_body = extract_clinical_body(cleaned_text)
+    if not is_clinically_relevant_dictation(cleaned_text) and not is_clinically_relevant_dictation(clinical_body):
         patient_details = extract_patient_demographics(cleaned_text)
         return {
             "anatomical_sites": [],
@@ -526,7 +527,7 @@ def extract_clinical_body(text: str) -> str:
     and separating clinical dictation from surrounding prompt instructions, directives,
     and report formatting requests.
     """
-    from .claim_verification import is_meta_or_instruction_sentence, is_clinical_observation_sentence
+    from .claim_verification import is_meta_or_instruction_sentence, is_clinical_observation_sentence, is_clinically_relevant_dictation
 
     raw_text = text.strip()
 
@@ -608,7 +609,7 @@ def split_clinical_sentences(clinical_text: str) -> List[str]:
     if len(sentences) <= 1 and len(cleaned.split()) > 7:
         sentences = [
             s.strip() for s in re.split(
-                r"\s+(?=(?:and\s+|with\s+|it\s+is\s+|the\s+surrounding\s+|no\s+other\s+))",
+                r"\s+(?=(?:it\s+is\s+|the\s+surrounding\s+|no\s+other\s+))",
                 cleaned,
                 flags=re.IGNORECASE
             ) if len(s.strip()) > 3
