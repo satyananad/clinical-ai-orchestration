@@ -640,10 +640,13 @@ def get_dashboard_ui():
                         html += `
                             <div class="flex items-center justify-between p-2.5 bg-slate-800 hover:bg-slate-700/80 border border-slate-700 rounded-xl transition">
                                 <div>
-                                    <span class="font-bold text-white text-xs">${c.patient_name}</span>
-                                    <span class="text-slate-400 text-[11px] ml-1.5">(DOB: ${c.date_of_birth} | ${c.sex})</span>
+                                    <div class="flex items-center space-x-2">
+                                        <span class="font-bold text-white text-xs">${c.patient_name}</span>
+                                        <span class="text-[10px] bg-emerald-500/10 text-emerald-300 font-mono px-1.5 py-0.5 rounded border border-emerald-500/20">${c.patient_id}</span>
+                                    </div>
+                                    <div class="text-slate-400 text-[11px] mt-0.5">DOB: ${c.date_of_birth} • Sex: ${c.sex}</div>
                                 </div>
-                                <button onclick="sendChat('Open ${c.patient_name}\\'s latest report')" 
+                                <button onclick="selectPatientById('${c.patient_id}')" 
                                         class="text-[11px] bg-sky-600 hover:bg-sky-500 text-white font-semibold px-2.5 py-1 rounded-lg transition shadow-sm">
                                     Select Patient
                                 </button>
