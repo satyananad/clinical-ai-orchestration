@@ -913,7 +913,47 @@ def get_dashboard_ui():
                     return;
                 }
 
-                // CASE 2: Scan Booking Confirmation Required (Synthetic Appointment Slots)
+                // CASE 2A: Review Appointment Summary (Slot Selected, Awaiting Final Confirmation)
+                if (data.status === "confirmation_required" && data.slot) {
+                    const slot = data.slot;
+                    let html = `${agentBadgeHtml}`;
+                    html += `
+                        <div class="p-3 bg-slate-800 border border-sky-500/40 rounded-xl text-slate-200">
+                            <div class="flex items-center justify-between mb-2 pb-2 border-b border-slate-700">
+                                <span class="font-bold text-sky-400 text-xs sm:text-sm flex items-center">
+                                    <i class="fa-solid fa-clipboard-check mr-1.5"></i> Review Appointment
+                                </span>
+                                <span class="text-[10px] bg-amber-500/20 text-amber-300 font-medium px-2 py-0.5 rounded border border-amber-500/30">
+                                    Pending Confirmation
+                                </span>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 text-xs mb-3">
+                                <div><span class="text-slate-400">Patient:</span> <span class="font-semibold text-white">${slot.patient_name || 'Patient'}</span></div>
+                                <div><span class="text-slate-400">Slot ID:</span> <span class="font-mono text-sky-300">${slot.slot_id}</span></div>
+                                <div><span class="text-slate-400">Scan / Modality:</span> <span class="text-white">${slot.modality || slot.service || 'Radiology'}</span></div>
+                                <div><span class="text-slate-400">Date & Time:</span> <span class="text-white">${slot.datetime_str}</span></div>
+                                <div class="col-span-2"><span class="text-slate-400">Location:</span> <span class="text-slate-300">${slot.room || 'Radiology Suite'}</span></div>
+                            </div>
+                            <div class="p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[11px] text-amber-300 mb-3 flex items-center">
+                                <i class="fa-solid fa-circle-question mr-1.5 text-xs"></i> Would you like to confirm and book this appointment?
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button onclick="sendChat('Confirm slot ${slot.slot_id}')" 
+                                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2 px-3 rounded-lg text-xs transition shadow-sm flex items-center justify-center">
+                                    <i class="fa-solid fa-check mr-1.5"></i> Yes, Confirm Booking
+                                </button>
+                                <button onclick="sendChat('Cancel')" 
+                                        class="bg-slate-700 hover:bg-slate-600 text-slate-300 font-semibold py-2 px-3 rounded-lg text-xs transition border border-slate-600">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    appendCustomMessage("assistant", html, "bg-slate-700/60 border border-sky-500/40");
+                    return;
+                }
+
+                // CASE 2B: Scan Booking Selection Required (Available Appointment Slots)
                 if (data.status === "confirmation_required" && data.available_slots) {
                     let html = `${agentBadgeHtml}<p class="font-semibold text-sky-300 text-xs mb-2"><i class="fa-solid fa-calendar-check mr-1.5"></i> Available Appointment Slots (${data.modality || 'Scan'}):</p>`;
                     html += `<div class="space-y-2 mt-2">`;
@@ -927,9 +967,9 @@ def get_dashboard_ui():
                                     </div>
                                     <span class="text-slate-400 text-[11px]">${s.room} • [${s.slot_id}]</span>
                                 </div>
-                                <button onclick="sendChat('Confirm slot ${s.slot_id}')" 
-                                        class="text-[11px] bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1.5 rounded-lg transition shadow-sm flex items-center">
-                                    <i class="fa-solid fa-check mr-1"></i> Confirm & Book
+                                <button onclick="sendChat('Select slot ${s.slot_id}')" 
+                                        class="text-[11px] bg-sky-600 hover:bg-sky-500 text-white font-semibold px-3 py-1.5 rounded-lg transition shadow-sm flex items-center">
+                                    <i class="fa-solid fa-calendar-check mr-1"></i> Select Slot
                                 </button>
                             </div>
                         `;

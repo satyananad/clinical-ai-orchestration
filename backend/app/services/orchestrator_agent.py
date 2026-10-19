@@ -35,26 +35,30 @@ AVAILABLE TOOLS & SPECIALIZED AGENTS:
    Agent: "ConsultationAgent"
    Arguments: {"report_id": "active", "query": "string"}
 
-4. "check_appointment_slots": Use when checking or booking available appointment slots for a scan (e.g. "Book a CBCT scan", "Schedule an OPG appointment", "What slots are available for CBCT?", "How many slots on 20 October?").
+4. "prompt_existing_or_new_patient": Use when someone asks to book or schedule an appointment (e.g. "i want to book appointment", "how can i book the appointment", "book an appointment", "I need to schedule an appointment", "can I book an appointment", "appointment booking") when NO patient is active in the session and NO patient name was specified. This starts Step 1 (Patient Identification) of the real-life booking workflow.
+   Agent: "ScanBookingAgent"
+   Arguments: {"query": "string"}
+
+5. "check_appointment_slots": Use when checking or booking available appointment slots for a scan when a specific modality, date, or patient is known (e.g. "Book a CBCT scan", "Schedule an OPG appointment", "What slots are available for CBCT?", "How many slots on 20 October?").
    Agent: "ScanBookingAgent"
    Arguments: {"modality": "CBCT"|"OPG"|"Bitewing"|"Periapical"|"Any", "preferred_date": "optional date string"}
 
-5. "confirm_scan_booking": Use when confirming a slot booking (e.g. "Confirm slot SLOT-101", "Yes, book slot 1", "Book it for Priya").
+6. "confirm_scan_booking": Use when confirming a slot booking (e.g. "Confirm slot SLOT-101", "Yes, book slot 1", "Book it for Priya").
    Agent: "ScanBookingAgent"
    Arguments: {"slot_id": "string", "patient_name": "string", "patient_id": "optional string"}
 
-6. "conversation": Use ONLY for pure greetings, small talk, or general dental concepts when NO patient, report retrieval, booking, or clinical dictation is requested (e.g. "hello", "who are you?", "what is a CBCT scan?"). If the clinician asks to open or view a report or mentions a patient (e.g. "hey i want to open the report of arjun mehta"), NEVER use 'conversation'!
+7. "conversation": Use ONLY for pure greetings, small talk, or general dental concepts when NO patient, report retrieval, booking, or clinical dictation is requested (e.g. "hello", "who are you?", "what is a CBCT scan?"). If the clinician asks to open or view a report or mentions a patient (e.g. "hey i want to open the report of arjun mehta"), NEVER use 'conversation'!
    Agent: "GeneralAssistantAgent"
    Arguments: {"query": "string"}
 
-7. "query_clinic_database": Use when inquiring about registered patients, listing patient names, total scans, patient counts, or database breakdowns (e.g. "can you list out only patient name", "first tell me the patient names", "how many reports are in the database?", "how many patients do we have?", "what scans exist in the system?").
+8. "query_clinic_database": Use when inquiring about registered patients, listing patient names, total scans, patient counts, or database breakdowns (e.g. "can you list out only patient name", "first tell me the patient names", "how many reports are in the database?", "how many patients do we have?", "what scans exist in the system?").
    Agent: "GeneralAssistantAgent"
    Arguments: {"question": "string", "patient_name": "optional string", "modality": "optional string"}
 
 Output strictly a JSON object with this format:
 {
   "selected_agent": "RetrievalAgent" | "ClinicalScribeAgent" | "ConsultationAgent" | "ScanBookingAgent" | "GeneralAssistantAgent",
-  "tool_name": "search_patient_reports" | "structure_clinical_dictation" | "summarize_active_report" | "check_appointment_slots" | "confirm_scan_booking" | "conversation" | "query_clinic_database",
+  "tool_name": "search_patient_reports" | "structure_clinical_dictation" | "summarize_active_report" | "prompt_existing_or_new_patient" | "check_appointment_slots" | "confirm_scan_booking" | "conversation" | "query_clinic_database",
   "arguments": { ... },
   "rationale": "Brief reason for agent selection"
 }
@@ -541,11 +545,24 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
                     args["report_id"] = session.active_report_id or "unselected"
                     if "query" not in args:
                         args["query"] = query
+                elif t_name == "prompt_existing_or_new_patient":
+                    sel_agent = "ScanBookingAgent"
+                    session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+                    if "query" not in args:
+                        args["query"] = query
                 elif t_name == "check_appointment_slots":
-                    if not args.get("preferred_date"):
-                        extracted_d = extract_date_from_query(query)
-                        if extracted_d:
-                            args["preferred_date"] = extracted_d
+                    cand_p_name, cand_p_id, cand_p_age, cand_doc = extract_patient_details_for_booking(query, session)
+                    has_explicit_scan_or_slot = any(m in q_lower for m in ["cbct", "opg", "panoramic", "bitewing", "periapical", "iopa", "slot-", "slots", "slot "])
+                    if not cand_p_name and not session.active_patient_id and not session.booking_state.patient_name and not has_explicit_scan_or_slot:
+                        sel_agent = "ScanBookingAgent"
+                        t_name = "prompt_existing_or_new_patient"
+                        args = {"query": query}
+                        session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+                    else:
+                        if not args.get("preferred_date"):
+                            extracted_d = extract_date_from_query(query)
+                            if extracted_d:
+                                args["preferred_date"] = extracted_d
                 elif t_name == "conversation":
                     has_retrieval = (
                         any(v in q_lower for v in ["open", "view", "retrieve", "fetch", "load", "find"])
@@ -560,6 +577,11 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
                             "patient_name": cand_name or "Patient",
                             "modality": intent.get("report_type", "Any")
                         }
+                    elif any(b_phrase in q_lower for b_phrase in ["book appointment", "book an appointment", "schedule appointment", "schedule an appointment", "want to book", "how can i book", "need to book"]):
+                        sel_agent = "ScanBookingAgent"
+                        t_name = "prompt_existing_or_new_patient"
+                        args = {"query": query}
+                        session.booking_state.stage = BookingStage.COLLECTING_DETAILS
                     elif "query" not in args:
                         args["query"] = query
                 return {
@@ -600,6 +622,7 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
             "query_clinic_database": "GeneralAssistantAgent",
             "general_query": "GeneralAssistantAgent",
             "verify_clinical_claim": "ConsultationAgent",
+            "prompt_existing_or_new_patient": "ScanBookingAgent",
             "check_appointment_slots": "ScanBookingAgent",
             "confirm_scan_booking": "ScanBookingAgent",
             "lookup_existing_booking": "ScanBookingAgent",
@@ -608,6 +631,17 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
             "conversation": "GeneralAssistantAgent"
         }
         if tool_name in agent_map:
+            if tool_name == "check_appointment_slots":
+                cand_p_name, cand_p_id, cand_p_age, cand_doc = extract_patient_details_for_booking(query, session)
+                has_explicit_scan_or_slot = any(m in q_lower for m in ["cbct", "opg", "panoramic", "bitewing", "periapical", "iopa", "slot-", "slots", "slot "])
+                if not cand_p_name and not session.active_patient_id and not session.booking_state.patient_name and not has_explicit_scan_or_slot:
+                    tool_name = "prompt_existing_or_new_patient"
+                    args = {"query": query}
+                    session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+            elif tool_name == "prompt_existing_or_new_patient":
+                session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+                if "query" not in args:
+                    args["query"] = query
             return {
                 "selected_agent": agent_map[tool_name],
                 "tool_name": "general_query" if tool_name == "query_clinic_database" else tool_name,
@@ -2492,7 +2526,14 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             )
             session.booking_state.stage = BookingStage.AWAITING_CONFIRMATION
             session.booking_state.summary_displayed = True
-            session.booking_state.selected_slot = slot
+            slot_summary = dict(slot) if slot else {}
+            slot_summary["patient_name"] = patient_name
+            slot_summary["patient_id"] = patient_id
+            slot_summary["patient_age"] = patient_age
+            slot_summary["doctor_name"] = doctor_name
+            slot_summary["service"] = service_title
+            slot_summary["specialization"] = spec_title
+            session.booking_state.selected_slot = slot_summary
             if patient_name:
                 session.booking_state.patient_name = patient_name
             if patient_id:
@@ -2506,7 +2547,7 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                 "status": "confirmation_required",
                 "message": summary_msg,
                 "answer": summary_msg,
-                "slot": slot,
+                "slot": slot_summary,
                 "available_slots": session.booking_state.displayed_slots,
                 "agent_trace": {
                     "orchestrator": "TriageAgent",

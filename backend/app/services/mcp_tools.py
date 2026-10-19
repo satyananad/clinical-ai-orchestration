@@ -117,6 +117,20 @@ DENTAL_ASSISTANT_TOOLS = [
         }
     },
     {
+        "name": "prompt_existing_or_new_patient",
+        "description": "Initiates Step 1 of appointment booking by asking whether the patient is an existing registered patient or visiting for the first time.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The natural language appointment request."
+                }
+            },
+            "required": []
+        }
+    },
+    {
         "name": "check_appointment_slots",
         "description": "Checks available synthetic radiological appointment slots (CBCT, OPG, Bitewing, Periapical) and presents options for clinician/patient confirmation.",
         "inputSchema": {
@@ -605,6 +619,14 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             p_name = arguments.get("patient_name")
             mod = arguments.get("modality")
             return execute_clinic_database_query(question=question, patient_name=p_name, modality=mod)
+
+        elif tool_name == "prompt_existing_or_new_patient":
+            msg = "I'd be happy to help you book an appointment. Are you an existing patient at Viscan Dental, or is this your first visit with us?"
+            return {
+                "status": "clarification_required",
+                "message": msg,
+                "answer": msg
+            }
 
         elif tool_name == "check_appointment_slots":
             from .booking_service import check_available_slots
