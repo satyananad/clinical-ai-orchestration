@@ -1332,6 +1332,7 @@ ${dResult.narrative_draft}
         }
 
         async function resetSession() {
+            clearPatientSelection();
             try {
                 localStorage.removeItem("viscan_active_patient_id");
                 localStorage.removeItem("viscan_active_report_id");

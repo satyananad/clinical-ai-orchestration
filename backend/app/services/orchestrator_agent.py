@@ -14,7 +14,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from .mcp_tools import DENTAL_ASSISTANT_TOOLS, get_ollama_tool_definitions, execute_tool, handle_mcp_jsonrpc_request
-from .conversation_service import get_or_create_session, is_contextual_query, is_general_or_assistant_query, BookingStage
+from .conversation_service import get_or_create_session, save_session, is_contextual_query, is_general_or_assistant_query, BookingStage
 from .retrieval import resolve_report_retrieval, extract_retrieval_intent
 from .report_qa_service import answer_report_question, answer_patient_reports_question, generate_multi_report_summary
 from .llm_service import query_llm, query_ollama, query_ollama_chat_tools
@@ -624,6 +624,18 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
                         args = {"query": query}
                         session.booking_state.stage = BookingStage.COLLECTING_DETAILS
                     else:
+                        if cand_p_name:
+                            args["patient_name"] = cand_p_name
+                            session.booking_state.patient_name = cand_p_name
+                        if cand_p_id:
+                            args["patient_id"] = cand_p_id
+                            session.booking_state.patient_id = cand_p_id
+                        if cand_p_age:
+                            args["patient_age"] = cand_p_age
+                            session.booking_state.patient_age = cand_p_age
+                        if cand_doc:
+                            args["doctor_name"] = cand_doc
+                            session.booking_state.doctor_name = cand_doc
                         if not args.get("preferred_date"):
                             extracted_d = extract_date_from_query(query)
                             if extracted_d:
@@ -717,6 +729,19 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
                     tool_name = "prompt_existing_or_new_patient"
                     args = {"query": query}
                     session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+                else:
+                    if cand_p_name:
+                        args["patient_name"] = cand_p_name
+                        session.booking_state.patient_name = cand_p_name
+                    if cand_p_id:
+                        args["patient_id"] = cand_p_id
+                        session.booking_state.patient_id = cand_p_id
+                    if cand_p_age:
+                        args["patient_age"] = cand_p_age
+                        session.booking_state.patient_age = cand_p_age
+                    if cand_doc:
+                        args["doctor_name"] = cand_doc
+                        session.booking_state.doctor_name = cand_doc
             elif tool_name == "prompt_existing_or_new_patient":
                 has_retrieval_intent = any(v in q_lower for v in ["open", "retrieve", "view", "fetch", "load", "find report", "show report"]) or bool(re.search(r"\b(pat-\d+|rpt-\d+)\b", q_lower))
                 intent = extract_retrieval_intent(query)
@@ -1327,12 +1352,27 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 # Determine patient identity
                 cand_p_name, cand_p_id, cand_p_age, cand_doc = extract_patient_details_for_booking(query, session)
                 pat_name = cand_p_name or b_state.patient_name
-                pat_id = cand_p_id or b_state.patient_id or session.active_patient_id
-                if not pat_name and pat_id:
+                pat_id = cand_p_id or b_state.patient_id
+                if not pat_id and session.active_patient_id:
                     from .retrieval import get_patient
-                    p = get_patient(pat_id)
-                    if p:
-                        pat_name = p.get("patient_name")
+                    p_active = get_patient(session.active_patient_id)
+                    if p_active and (not pat_name or p_active.get("patient_name", "").lower() == (pat_name or "").lower()):
+                        pat_id = session.active_patient_id
+                        if not pat_name:
+                            pat_name = p_active.get("patient_name")
+
+                if pat_name and not pat_id and pat_name != "Walk-in Patient":
+                    from .retrieval import search_patients
+                    p_matches = search_patients(pat_name)
+                    if len(p_matches) == 1:
+                        pat_id = p_matches[0]["patient_id"]
+                        b_state.patient_id = pat_id
+                        dob = p_matches[0].get("date_of_birth")
+                        if dob and not cand_p_age:
+                            try:
+                                b_state.patient_age = f"{2026 - int(dob.split('-')[0])} years"
+                            except Exception:
+                                pass
 
                 if not pat_name:
                     pat_name = "Walk-in Patient" if (b_state.patient_type == "walk_in" or "walk" in q_lower) else "Walk-in Patient"
@@ -1344,9 +1384,12 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     p_rec = get_patient(pat_id)
                     if p_rec and p_rec.get("date_of_birth"):
                         try:
-                            b_state.patient_age = f"{2026 - int(p_rec['date_of_birth'].split('-')[0])} years (DOB: {p_rec['date_of_birth']})"
+                            b_state.patient_age = f"{2026 - int(p_rec['date_of_birth'].split('-')[0])} years"
                         except Exception:
                             b_state.patient_age = f"DOB: {p_rec['date_of_birth']}"
+
+                if cand_doc:
+                    b_state.doctor_name = cand_doc
 
                 if cand_doc:
                     b_state.doctor_name = cand_doc
@@ -1894,11 +1937,19 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 pat_name_for_booking = p.get("patient_name")
                 pat_id_for_booking = p.get("patient_id")
                 dob = p.get("date_of_birth")
-                if dob and not session.booking_state.patient_age:
+                if dob:
                     try:
-                        session.booking_state.patient_age = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
+                        session.booking_state.patient_age = f"{2026 - int(dob.split('-')[0])} years"
                     except Exception:
-                        session.booking_state.patient_age = f"DOB: {dob}"
+                        pass
+        elif pat_id_for_booking and not extract_age_from_query(query):
+            from .retrieval import get_patient
+            p = get_patient(pat_id_for_booking)
+            if p and p.get("date_of_birth"):
+                try:
+                    session.booking_state.patient_age = f"{2026 - int(p['date_of_birth'].split('-')[0])} years"
+                except Exception:
+                    pass
 
         cand_age = extract_age_from_query(query)
         if cand_age:
@@ -1912,6 +1963,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         session.booking_state.modality = detected_mod
         session.booking_state.preferred_date = detected_date
         session.booking_state.stage = BookingStage.SLOTS_PRESENTED
+        save_session(session)
 
         return {
             "selected_agent": "ScanBookingAgent",

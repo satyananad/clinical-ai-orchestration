@@ -283,4 +283,47 @@ def test_ambiguity_direct_modality_disambiguation_to_pat1012():
     assert d2["patient"]["patient_id"] == "PAT-1012"
 
 
+def test_booking_vikram_malhotra_slot_selection_preserves_patient_identity():
+    """
+    Test booking flow reported by clinician:
+    1. Session is reset.
+    2. Clinician queries: 'Book a CBCT scan tomorrow for Vikram Malhotra'.
+    3. Clinician selects slot: 'Select slot SLOT-107' (even if client passes active_patient_id: PAT-1001).
+    4. Review appointment card MUST display Vikram Malhotra (PAT-1009) and NOT Priya Sharma!
+    """
+    session_id = "test_vikram_booking_patient_preservation"
+
+    # Reset session
+    r0 = client.post(f"/sessions/{session_id}/reset")
+    assert r0.status_code == 200
+
+    # Book for Vikram Malhotra with client sending background active_patient_id
+    r1 = client.post("/assistant/chat", json={
+        "query": "Book a CBCT scan tomorrow for Vikram Malhotra",
+        "session_id": session_id,
+        "active_patient_id": "PAT-1001"
+    })
+    assert r1.status_code == 200
+    d1 = r1.json()
+    assert d1["agent_trace"]["active_agent"] == "ScanBookingAgent"
+    assert d1["agent_trace"]["tool_called"] == "check_appointment_slots"
+
+    # Select slot SLOT-107
+    r2 = client.post("/assistant/chat", json={
+        "query": "Select slot SLOT-107",
+        "session_id": session_id,
+        "active_patient_id": "PAT-1001"
+    })
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2["status"] == "confirmation_required"
+    assert d2["agent_trace"]["tool_called"] == "show_booking_summary"
+    slot = d2.get("slot", {})
+    assert slot.get("patient_name") == "Vikram Malhotra"
+    assert slot.get("patient_id") == "PAT-1009"
+    assert "Priya" not in str(d2.get("message"))
+    assert "Vikram Malhotra" in str(d2.get("message"))
+
+
+
 
