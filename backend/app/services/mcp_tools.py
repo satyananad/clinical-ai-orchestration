@@ -131,6 +131,20 @@ DENTAL_ASSISTANT_TOOLS = [
         }
     },
     {
+        "name": "prompt_patient_dob_and_contact",
+        "description": "Prompts for patient date of birth and contact number during new patient registration after receiving the patient name.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "patient_name": {
+                    "type": "string",
+                    "description": "The patient full name."
+                }
+            },
+            "required": ["patient_name"]
+        }
+    },
+    {
         "name": "check_appointment_slots",
         "description": "Checks available synthetic radiological appointment slots (CBCT, OPG, Bitewing, Periapical) and presents options for clinician/patient confirmation.",
         "inputSchema": {
@@ -622,6 +636,15 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
 
         elif tool_name == "prompt_existing_or_new_patient":
             msg = "I'd be happy to help you book an appointment. Are you an existing patient at Viscan Dental, or is this your first visit with us?"
+            return {
+                "status": "clarification_required",
+                "message": msg,
+                "answer": msg
+            }
+
+        elif tool_name == "prompt_patient_dob_and_contact":
+            p_name = arguments.get("patient_name", "there")
+            msg = f"Thank you, {p_name}! Could you please provide your Date of Birth (or age) and a contact phone number to complete your registration?"
             return {
                 "status": "clarification_required",
                 "message": msg,

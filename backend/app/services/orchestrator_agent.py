@@ -39,26 +39,30 @@ AVAILABLE TOOLS & SPECIALIZED AGENTS:
    Agent: "ScanBookingAgent"
    Arguments: {"query": "string"}
 
-5. "check_appointment_slots": Use when checking or booking available appointment slots for a scan when a specific modality, date, or patient is known (e.g. "Book a CBCT scan", "Schedule an OPG appointment", "What slots are available for CBCT?", "How many slots on 20 October?").
+5. "prompt_patient_dob_and_contact": Use during new patient registration when a patient provides their name (e.g. "Satyanand Shukla", "My name is John Doe") and we need their date of birth / age and contact number to complete registration.
+   Agent: "ScanBookingAgent"
+   Arguments: {"patient_name": "string"}
+
+6. "check_appointment_slots": Use when checking or booking available appointment slots for a scan when a specific modality, date, or patient is known (e.g. "Book a CBCT scan", "Schedule an OPG appointment", "What slots are available for CBCT?", "How many slots on 20 October?").
    Agent: "ScanBookingAgent"
    Arguments: {"modality": "CBCT"|"OPG"|"Bitewing"|"Periapical"|"Any", "preferred_date": "optional date string"}
 
-6. "confirm_scan_booking": Use when confirming a slot booking (e.g. "Confirm slot SLOT-101", "Yes, book slot 1", "Book it for Priya").
+7. "confirm_scan_booking": Use when confirming a slot booking (e.g. "Confirm slot SLOT-101", "Yes, book slot 1", "Book it for Priya").
    Agent: "ScanBookingAgent"
    Arguments: {"slot_id": "string", "patient_name": "string", "patient_id": "optional string"}
 
-7. "conversation": Use ONLY for pure greetings, small talk, or general dental concepts when NO patient, report retrieval, booking, or clinical dictation is requested (e.g. "hello", "who are you?", "what is a CBCT scan?"). If the clinician asks to open or view a report or mentions a patient (e.g. "hey i want to open the report of arjun mehta"), NEVER use 'conversation'!
+8. "conversation": Use ONLY for pure greetings, small talk, or general dental concepts when NO patient, report retrieval, booking, or clinical dictation is requested (e.g. "hello", "who are you?", "what is a CBCT scan?"). If the clinician asks to open or view a report or mentions a patient (e.g. "hey i want to open the report of arjun mehta"), NEVER use 'conversation'!
    Agent: "GeneralAssistantAgent"
    Arguments: {"query": "string"}
 
-8. "query_clinic_database": Use when inquiring about registered patients, listing patient names, total scans, patient counts, or database breakdowns (e.g. "can you list out only patient name", "first tell me the patient names", "how many reports are in the database?", "how many patients do we have?", "what scans exist in the system?").
+9. "query_clinic_database": Use when inquiring about registered patients, listing patient names, total scans, patient counts, or database breakdowns (e.g. "can you list out only patient name", "first tell me the patient names", "how many reports are in the database?", "how many patients do we have?", "what scans exist in the system?").
    Agent: "GeneralAssistantAgent"
    Arguments: {"question": "string", "patient_name": "optional string", "modality": "optional string"}
 
 Output strictly a JSON object with this format:
 {
   "selected_agent": "RetrievalAgent" | "ClinicalScribeAgent" | "ConsultationAgent" | "ScanBookingAgent" | "GeneralAssistantAgent",
-  "tool_name": "search_patient_reports" | "structure_clinical_dictation" | "summarize_active_report" | "prompt_existing_or_new_patient" | "check_appointment_slots" | "confirm_scan_booking" | "conversation" | "query_clinic_database",
+  "tool_name": "search_patient_reports" | "structure_clinical_dictation" | "summarize_active_report" | "prompt_existing_or_new_patient" | "prompt_patient_dob_and_contact" | "check_appointment_slots" | "confirm_scan_booking" | "conversation" | "query_clinic_database",
   "arguments": { ... },
   "rationale": "Brief reason for agent selection"
 }
@@ -235,10 +239,11 @@ def resolve_pending_slot_from_query(query: str, pending_slots: List[Dict[str, An
             return s["slot_id"]
 
     # 2. Ordinal match (first, second, etc.)
-    ordinal_map = {"first": 0, "1st": 0, "second": 1, "2nd": 1, "third": 2, "3rd": 2, "fourth": 3, "4th": 3, "fifth": 4, "5th": 4}
-    for word, idx in ordinal_map.items():
-        if re.search(r"\b" + re.escape(word) + r"\b", q_norm) and idx < len(pending_slots):
-            return pending_slots[idx]["slot_id"]
+    if not any(w in q_norm for w in ["first time", "first visit", "my first", "first name"]):
+        ordinal_map = {"first": 0, "1st": 0, "second": 1, "2nd": 1, "third": 2, "3rd": 2, "fourth": 3, "4th": 3, "fifth": 4, "5th": 4}
+        for word, idx in ordinal_map.items():
+            if re.search(r"\b" + re.escape(word) + r"\b", q_norm) and idx < len(pending_slots):
+                return pending_slots[idx]["slot_id"]
 
     # 3. Match by time / date in datetime_str
     matched = []
@@ -412,14 +417,16 @@ def extract_patient_registration_details(query: str) -> Dict[str, Optional[str]]
         if is_valid_patient_name(cand_name):
             res["full_name"] = cand_name.title()
     else:
-        # Only fallback to 2 words if registration signals (dob, phone, or email) are present
-        if res["date_of_birth"] or res["contact_phone"] or res["email"]:
-            words = [w for w in q_clean.split() if w.isalpha()]
-            stop_first = {"i", "need", "want", "we", "can", "could", "would", "like", "schedule", "tomorrow", "today", "yesterday", "scan", "have", "yes", "no", "this", "my", "please", "book", "the"}
-            if len(words) >= 2 and words[0].lower() not in stop_first:
-                cand = f"{words[0]} {words[1]}"
-                if is_valid_patient_name(cand):
-                    res["full_name"] = cand.title()
+        words = [w for w in q_clean.split() if w.isalpha()]
+        stop_first = {
+            "i", "need", "want", "we", "can", "could", "would", "like", "schedule",
+            "tomorrow", "today", "yesterday", "scan", "have", "yes", "no", "this",
+            "my", "please", "book", "the", "first", "new", "hello", "hey", "hi", "how"
+        }
+        if 2 <= len(words) <= 4 and words[0].lower() not in stop_first:
+            cand = " ".join(words[:2])
+            if is_valid_patient_name(cand):
+                res["full_name"] = cand.title()
 
     return res
 
@@ -550,6 +557,12 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
                     session.booking_state.stage = BookingStage.COLLECTING_DETAILS
                     if "query" not in args:
                         args["query"] = query
+                elif t_name == "prompt_patient_dob_and_contact":
+                    sel_agent = "ScanBookingAgent"
+                    session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+                    p_name = args.get("patient_name") or session.booking_state.patient_name or query.strip().title()
+                    session.booking_state.patient_name = p_name
+                    args["patient_name"] = p_name
                 elif t_name == "check_appointment_slots":
                     cand_p_name, cand_p_id, cand_p_age, cand_doc = extract_patient_details_for_booking(query, session)
                     has_explicit_scan_or_slot = any(m in q_lower for m in ["cbct", "opg", "panoramic", "bitewing", "periapical", "iopa", "slot-", "slots", "slot "])
@@ -584,6 +597,17 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
                         session.booking_state.stage = BookingStage.COLLECTING_DETAILS
                     elif "query" not in args:
                         args["query"] = query
+
+                if session.booking_state.stage in (BookingStage.COLLECTING_DETAILS, BookingStage.IDENTIFYING_PATIENT):
+                    if t_name in ("query_clinic_database", "conversation", "general_query"):
+                        cand_name = extract_patient_registration_details(query).get("full_name")
+                        if cand_name or is_valid_patient_name(query):
+                            sel_agent = "ScanBookingAgent"
+                            t_name = "prompt_patient_dob_and_contact"
+                            p_name = cand_name or query.strip().title()
+                            session.booking_state.patient_name = p_name
+                            args = {"patient_name": p_name}
+
                 return {
                     "selected_agent": sel_agent,
                     "tool_name": t_name,
@@ -623,6 +647,7 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
             "general_query": "GeneralAssistantAgent",
             "verify_clinical_claim": "ConsultationAgent",
             "prompt_existing_or_new_patient": "ScanBookingAgent",
+            "prompt_patient_dob_and_contact": "ScanBookingAgent",
             "check_appointment_slots": "ScanBookingAgent",
             "confirm_scan_booking": "ScanBookingAgent",
             "lookup_existing_booking": "ScanBookingAgent",
@@ -642,6 +667,20 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
                 session.booking_state.stage = BookingStage.COLLECTING_DETAILS
                 if "query" not in args:
                     args["query"] = query
+            elif tool_name == "prompt_patient_dob_and_contact":
+                session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+                p_name = args.get("patient_name") or session.booking_state.patient_name or query.strip().title()
+                session.booking_state.patient_name = p_name
+                args["patient_name"] = p_name
+
+            if session.booking_state.stage in (BookingStage.COLLECTING_DETAILS, BookingStage.IDENTIFYING_PATIENT):
+                if tool_name in ("query_clinic_database", "conversation", "general_query"):
+                    cand_name = extract_patient_registration_details(query).get("full_name")
+                    if cand_name or is_valid_patient_name(query):
+                        tool_name = "prompt_patient_dob_and_contact"
+                        p_name = cand_name or query.strip().title()
+                        session.booking_state.patient_name = p_name
+                        args = {"patient_name": p_name}
             return {
                 "selected_agent": agent_map[tool_name],
                 "tool_name": "general_query" if tool_name == "query_clinic_database" else tool_name,
@@ -897,6 +936,33 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             b_state.displayed_slots = []
             session.pending_booking_slots = []
 
+    # 0B.3.5 New Patient vs Existing Patient Intent Inquiry (handles direct replies like 'first time' or 'existing patient')
+    if any(w in q_lower for w in ["first visit", "new patient", "i am new", "first time", "not registered", "my first"]):
+        b_state.is_new_patient = True
+        b_state.stage = BookingStage.COLLECTING_DETAILS
+        session.active_patient_id = None
+        session.active_report_id = None
+        b_state.patient_name = None
+        b_state.patient_id = None
+        b_state.displayed_slots = []
+        session.pending_booking_slots = []
+        return {
+            "selected_agent": "ScanBookingAgent",
+            "tool_name": "prompt_new_patient_registration",
+            "arguments": {},
+            "rationale": "User confirmed new patient status. Prompting for registration details."
+        }
+
+    if any(w in q_lower for w in ["existing patient", "i am an existing", "visited before", "already registered", "have an account", "existing"]):
+        b_state.is_new_patient = False
+        b_state.stage = BookingStage.IDENTIFYING_PATIENT
+        return {
+            "selected_agent": "ScanBookingAgent",
+            "tool_name": "prompt_existing_patient_identifier",
+            "arguments": {},
+            "rationale": "User indicated existing patient status. Prompting for patient ID or phone number."
+        }
+
     # 0B.4 Workflow in Multi-Step Booking (IDENTIFYING_PATIENT, COLLECTING_DETAILS, SELECTING_SERVICE, SELECTING_SPECIALIZATION, SELECTING_DOCTOR)
     if b_state.stage in (
         BookingStage.IDENTIFYING_PATIENT,
@@ -946,58 +1012,57 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "rationale": f"Fast-Path Booking: Direct patient '{direct_p_name}' and modality '{d_mod}' provided."
             }
 
-        # 0B.4.3 New Patient vs Existing Patient Intent Inquiry
-        if any(w in q_lower for w in ["first visit", "new patient", "i am new", "first time", "not registered", "my first"]):
-            b_state.is_new_patient = True
-            b_state.stage = BookingStage.COLLECTING_DETAILS
-            return {
-                "selected_agent": "ScanBookingAgent",
-                "tool_name": "prompt_new_patient_registration",
-                "arguments": {},
-                "rationale": "User confirmed new patient status. Prompting for registration details."
-            }
-
-        if any(w in q_lower for w in ["existing patient", "i am an existing", "visited before", "already registered", "have an account", "existing"]):
-            b_state.is_new_patient = False
-            b_state.stage = BookingStage.IDENTIFYING_PATIENT
-            return {
-                "selected_agent": "ScanBookingAgent",
-                "tool_name": "prompt_existing_patient_identifier",
-                "arguments": {},
-                "rationale": "User indicated existing patient status. Prompting for patient ID or phone number."
-            }
-
         # 0B.4.4 Registration Details Submission
         reg_info = extract_patient_registration_details(query)
-        if reg_info.get("full_name") and (reg_info.get("date_of_birth") or reg_info.get("contact_phone")):
-            from .patient_registration import register_patient
-            reg_res = register_patient(
-                full_name=reg_info.get("full_name"),
-                date_of_birth=reg_info.get("date_of_birth") or "1996-02-14",
-                contact_number=reg_info.get("contact_phone") or "+91-98765-43210",
-                email=reg_info.get("email"),
-                sex=reg_info.get("sex")
-            )
-            p_data = reg_res.get("patient", {})
-            b_state.patient_name = p_data.get("patient_name") or reg_info.get("full_name")
-            b_state.patient_id = p_data.get("patient_id")
-            b_state.patient_dob = p_data.get("date_of_birth")
-            b_state.patient_phone = p_data.get("contact_number")
-            b_state.patient_email = p_data.get("email")
-            b_state.patient_sex = p_data.get("sex")
-            b_state.patient_age = f"{p_data.get('age', 30)} years"
-            b_state.is_new_patient = False
-            b_state.stage = BookingStage.SELECTING_SERVICE
-            return {
-                "selected_agent": "ScanBookingAgent",
-                "tool_name": "registration_completed_ask_service",
-                "arguments": {
-                    "patient_name": b_state.patient_name,
-                    "patient_id": b_state.patient_id,
-                    "age": p_data.get("age", 30)
-                },
-                "rationale": f"Registered patient {b_state.patient_name} ({b_state.patient_id}). Inquiring visit reason."
-            }
+        cand_name = reg_info.get("full_name") or b_state.patient_name
+        cand_dob = reg_info.get("date_of_birth") or b_state.patient_dob
+        cand_phone = reg_info.get("contact_phone") or b_state.patient_phone
+        cand_email = reg_info.get("email") or b_state.patient_email
+        cand_sex = reg_info.get("sex") or b_state.patient_sex
+
+        if (b_state.is_new_patient or b_state.stage == BookingStage.COLLECTING_DETAILS) and not b_state.patient_id:
+            # Case A: Complete registration details provided (Name + DOB or Phone)
+            if cand_name and (cand_dob or cand_phone):
+                from .patient_registration import register_patient
+                reg_res = register_patient(
+                    full_name=cand_name,
+                    date_of_birth=cand_dob or "1996-02-14",
+                    contact_number=cand_phone or "+91-98765-43210",
+                    email=cand_email,
+                    sex=cand_sex
+                )
+                p_data = reg_res.get("patient", {})
+                b_state.patient_name = p_data.get("patient_name") or cand_name
+                b_state.patient_id = p_data.get("patient_id")
+                b_state.patient_dob = p_data.get("date_of_birth")
+                b_state.patient_phone = p_data.get("contact_number")
+                b_state.patient_email = p_data.get("email")
+                b_state.patient_sex = p_data.get("sex")
+                b_state.patient_age = f"{p_data.get('age', 30)} years"
+                b_state.is_new_patient = False
+                b_state.stage = BookingStage.SELECTING_SERVICE
+                return {
+                    "selected_agent": "ScanBookingAgent",
+                    "tool_name": "registration_completed_ask_service",
+                    "arguments": {
+                        "patient_name": b_state.patient_name,
+                        "patient_id": b_state.patient_id,
+                        "age": p_data.get("age", 30)
+                    },
+                    "rationale": f"Registered patient {b_state.patient_name} ({b_state.patient_id}). Inquiring visit reason."
+                }
+            # Case B: Only patient name provided so far
+            elif cand_name and not any(w in q_lower for w in ["cbct", "opg", "scan", "consultation", "implant", "slot", "tomorrow", "today"]):
+                b_state.patient_name = cand_name
+                b_state.stage = BookingStage.COLLECTING_DETAILS
+                return {
+                    "selected_agent": "ScanBookingAgent",
+                    "tool_name": "prompt_patient_dob_and_contact",
+                    "arguments": {
+                        "patient_name": cand_name
+                    },
+                    "rationale": f"Received patient name '{cand_name}'. Prompting for DOB and contact phone number to complete registration."
+                }
 
         # 0B.4.5 Existing Patient Identifier Lookup
         if b_state.stage == BookingStage.IDENTIFYING_PATIENT or not b_state.patient_id:
@@ -1052,6 +1117,20 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
 
             if "implant" in q_lower:
                 b_state.notes = "implant planning in the lower jaw"
+
+            if not b_state.patient_id and b_state.patient_name:
+                from .patient_registration import register_patient
+                reg_res = register_patient(
+                    full_name=b_state.patient_name,
+                    date_of_birth=b_state.patient_dob or "1996-02-14",
+                    contact_number=b_state.patient_phone or "+91-98765-43210",
+                    email=b_state.patient_email,
+                    sex=b_state.patient_sex
+                )
+                p_data = reg_res.get("patient", {})
+                b_state.patient_id = p_data.get("patient_id")
+                if not b_state.patient_age:
+                    b_state.patient_age = f"{p_data.get('age', 30)} years"
 
             matching_docs = [d["name"] for d in DOCTORS_DIRECTORY if d["specialization"] == b_state.specialization]
             doc_str = " and ".join(matching_docs[:2]) if matching_docs else "Dr. Rajesh Mehta and Dr. Anjali Deshmukh"
@@ -1490,7 +1569,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 }
 
         # Active Report / Patient Consultation & Evidence-Grounded Follow-Up
-        if not is_booking_request and not has_new_patient_retrieval and not is_explicit_clinic_scope:
+        if not is_booking_request and b_state.stage == BookingStage.IDLE and not has_new_patient_retrieval and not is_explicit_clinic_scope:
             return {
                 "selected_agent": "ConsultationAgent",
                 "tool_name": "summarize_active_report",
@@ -1505,6 +1584,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
     # 0B.8 Deterministic Clinic Database Inquiry Gate (when no active patient or explicit clinic scope)
     is_database_inquiry = (
         not is_booking_request
+        and b_state.stage == BookingStage.IDLE
         and not any(verb in q_lower for verb in ["open", "retrieve", "view", "load"])
         and (
             bool(re.search(r"\b(?:how\s+man[yu]|total|count|number\s+of)\b.*\b(?:patients?|reports?|scans?)\b", q_lower))
@@ -1521,99 +1601,9 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         }
 
     # Step 1: LLM Dynamic Multi-Agent Triage (Groq / Ollama Clinical Orchestrator Agent)
-    prompt = (
-        f"Clinician request: \"{query}\"\n"
-        f"Active Patient in session: {session.active_patient_id or 'None'}\n"
-        f"Active Report in session: {session.active_report_id or 'None'}\n"
-        f"Pending Booking Slots: {'Yes (' + str(len(session.pending_booking_slots)) + ' slots)' if session.pending_booking_slots else 'No'}\n"
-    )
-    if session.history:
-        prompt += "Recent dialogue:\n"
-        for turn in session.history[-2:]:
-            prompt += f"  Clinician: {turn.get('user', '')}\n  Assistant: {turn.get('assistant', '')[:100]}\n"
-
-    raw_triage = query_llm(prompt, system_prompt=TRIAGE_SYSTEM_PROMPT, json_format=True)
-    if raw_triage:
-        try:
-            parsed_triage = json.loads(raw_triage)
-            sel_agent = parsed_triage.get("selected_agent")
-            t_name = parsed_triage.get("tool_name")
-            args = parsed_triage.get("arguments", {})
-            if sel_agent and t_name:
-                if t_name == "summarize_active_report" and args.get("report_id") in ["active", None]:
-                    args["report_id"] = session.active_report_id or "unselected"
-                    if "query" not in args:
-                        args["query"] = query
-                elif t_name == "check_appointment_slots":
-                    if not args.get("preferred_date"):
-                        if re.search(r"\b(20(?:th)?\s+oct(?:ober)?|oct(?:ober)?\s+20(?:th)?|2026-10-20)\b", q_lower):
-                            args["preferred_date"] = "2026-10-20"
-                        elif re.search(r"\b(19(?:th)?\s+oct(?:ober)?|oct(?:ober)?\s+19(?:th)?|tomorrow|2026-10-19)\b", q_lower):
-                            args["preferred_date"] = "2026-10-19"
-                elif t_name == "conversation":
-                    has_retrieval = (
-                        any(v in q_lower for v in ["open", "view", "retrieve", "fetch", "load", "find"])
-                        and any(w in q_lower for w in ["report", "scan", "opg", "cbct", "bitewing", "periapical", "examination", "record", "patient"])
-                    ) or bool(re.search(r"\b(pat-\d+|pt-\d+|rpt-\d+)\b", q_lower))
-                    intent = extract_retrieval_intent(query)
-                    cand_name = intent.get("patient_name", "").strip()
-                    if has_retrieval or (cand_name and is_valid_patient_name(cand_name) and any(v in q_lower for v in ["open", "view", "retrieve", "fetch", "load", "find", "show", "get"])):
-                        sel_agent = "RetrievalAgent"
-                        t_name = "search_patient_reports"
-                        args = {
-                            "patient_name": cand_name or "Patient",
-                            "modality": intent.get("report_type", "Any")
-                        }
-                    elif "query" not in args:
-                        args["query"] = query
-                return {
-                    "selected_agent": sel_agent,
-                    "tool_name": t_name,
-                    "arguments": args,
-                    "rationale": f"LLM Multi-Agent Reasoning: {parsed_triage.get('rationale', 'Dynamic triage by Clinical Orchestrator Agent.')}"
-                }
-        except Exception:
-            pass
-
-    # Secondary: Native LLM Tool Calling (Ollama chat tools interface)
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are the Dental Clinical Workstation Orchestrator. "
-                "Select and invoke the appropriate clinical tool for the clinician's request.\n"
-                f"Active Patient in session: {session.active_patient_id or 'None'}\n"
-                f"Active Report in session: {session.active_report_id or 'None'}"
-            )
-        }
-    ]
-    if session.history:
-        for turn in session.history[-3:]:
-            messages.append({"role": "user", "content": turn.get("user", "")})
-            messages.append({"role": "assistant", "content": turn.get("assistant", "")[:150]})
-    messages.append({"role": "user", "content": query})
-
-    tool_call = query_ollama_chat_tools(messages, get_ollama_tool_definitions())
-    if tool_call and tool_call.get("tool_name"):
-        tool_name = tool_call.get("tool_name")
-        args = tool_call.get("arguments", {})
-        agent_map = {
-            "search_patient_reports": "RetrievalAgent",
-            "structure_clinical_dictation": "ClinicalScribeAgent",
-            "summarize_active_report": "ConsultationAgent",
-            "query_clinic_database": "GeneralAssistantAgent",
-            "general_query": "GeneralAssistantAgent",
-            "verify_clinical_claim": "ConsultationAgent",
-            "check_appointment_slots": "ScanBookingAgent",
-            "confirm_scan_booking": "ScanBookingAgent"
-        }
-        if tool_name in agent_map:
-            return {
-                "selected_agent": agent_map[tool_name],
-                "tool_name": "general_query" if tool_name == "query_clinic_database" else tool_name,
-                "arguments": args,
-                "rationale": f"Native LLM Tool Call: Selected {tool_name}."
-            }
+    llm_decision = select_tool_with_llm(query, session)
+    if llm_decision and llm_decision.get("selected_agent") and llm_decision.get("tool_name"):
+        return llm_decision
 
     # Step 2: Fallback routing (When local LLM is offline or initializing)
     # 2A. Speech repair fallback when clinician corrects a misheard term
@@ -2834,6 +2824,27 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                 "• Contact phone number\n"
                 "• Email address\n"
                 "• Sex / Gender"
+            )
+            return {
+                "status": "clarification_required",
+                "message": msg,
+                "answer": msg,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
+        elif tool_name == "prompt_patient_dob_and_contact":
+            session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+            p_name = arguments.get("patient_name") or session.booking_state.patient_name or "there"
+            session.booking_state.patient_name = p_name
+            msg = (
+                f"Thank you, {p_name}! Could you please provide your Date of Birth (or age) and a contact phone number to complete your registration?"
             )
             return {
                 "status": "clarification_required",

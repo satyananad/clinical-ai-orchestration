@@ -875,7 +875,14 @@ def get_dashboard_ui():
                         "summarize_active_report": "Report Consultation & Summary",
                         "general_query": "Clinical Database Query",
                         "query_clinic_database": "Clinical Database Query",
+                        "prompt_existing_or_new_patient": "Appointment Scheduling",
+                        "prompt_new_patient_registration": "New Patient Registration",
+                        "prompt_patient_dob_and_contact": "New Patient Registration",
+                        "prompt_existing_patient_identifier": "Patient Identification",
+                        "registration_completed_ask_service": "New Patient Registration",
+                        "service_selected_ask_preference": "Scan Appointment Scheduling",
                         "check_appointment_slots": "Scan Appointment Scheduling",
+                        "show_booking_summary": "Review Appointment Card",
                         "confirm_scan_booking": "Appointment Booking Confirmed"
                     };
                     const actionName = actionMap[data.agent_trace.tool_called] || "Clinical Task Executed";
