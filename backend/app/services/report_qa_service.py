@@ -687,7 +687,7 @@ def answer_report_question(report_id: str, query: str, history: Optional[List[Di
     if is_general_summary_query:
         return generate_report_summary(report, patient or {})
 
-    # Construct Grounded Prompt for LLM (Llama 3.1 / Qwen)
+    # Construct Grounded Prompt for LLM (Llama 3.1 via Ollama)
     prompt = REPORT_GROUNDED_QA_PROMPT.format(
         report_id=report.get("report_id"),
         patient_name=patient_name,

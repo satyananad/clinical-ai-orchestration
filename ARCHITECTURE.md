@@ -25,7 +25,7 @@ The **Viscan Voice-First Dental Assistant** is an agentic, clinical-grade assist
 |                                                                                                    |
 |   +------------------------------------+          +--------------------------------------------+   |
 |   |   A. Local LLM Reasoning Engine    |          |   B. Deterministic Clinical Engine         |   |
-|   |   (Ollama: Llama-3.1 / Qwen-2.5)   | <======> |   (Zero-dependency fallback & validator)   |   |
+|   |   (Ollama: Llama-3.1)              | <======> |   (Zero-dependency fallback & validator)   |   |
 |   |   • Few-shot JSON Schema extraction|          |   • Regex & token-boundary normalization   |   |
 |   |   • Semantic intent routing        |          |   • Full tooth mapping (FDI/Palmer/Univ)   |   |
 |   +------------------------------------+          +--------------------------------------------+   |
@@ -91,7 +91,7 @@ The system includes a bidirectional cross-reference matrix that maps any of thes
 The application strictly decouples probabilistic intelligence from deterministic clinical execution across 3 standard layers:
 
 #### A. LLM Engine (`backend/app/services/llm_service.py`)
-- **Model Choice:** Connects to local instruction-tuned models via Ollama (`llama3.1:8b`, `qwen2.5:7b`, `mistral`, or OpenAI-compatible backends).
+- **Model Choice:** Connects to local instruction-tuned **Llama 3.1** via Ollama (`llama3.1`).
 - **Zero Cloud Leakage:** All inference runs locally on the clinician's machine (`http://localhost:11434/api/generate`), eliminating third-party cloud data egress. Note that while local inference and session isolation prevent data transmission, full production HIPAA/GDPR compliance requires enterprise data encryption at rest, RBAC authentication, and audit logging.
 - **System Prompt Engineering:**
   1. `DICTATION_SYSTEM_PROMPT`: Instructs the LLM to ingest radiologist speech/dictation transcripts and output validated structured JSON (anatomical sites, FDI tooth numbering, observations, certainty ratings).
@@ -117,7 +117,7 @@ The application strictly decouples probabilistic intelligence from deterministic
 
 #### A. Privacy & Data Security (Zero PHI Egress)
 - Clinical imaging and dictated observations contain Protected Health Information (PHI) subject to HIPAA, GDPR, and regional medical privacy statutes.
-- By utilizing a **local LLM (Ollama / Llama-3.1 / Qwen-2.5)** or a zero-dependency deterministic engine, **zero PHI leaves the clinical workstation or local hospital intranet**.
+- By utilizing a **local LLM (Ollama / Llama-3.1)** or a zero-dependency deterministic engine, **zero PHI leaves the clinical workstation or local hospital intranet**.
 - No external cloud API calls are required for daily operation. Synthetic patient datasets are used for local development and demonstration.
 - **Compliance Distinction:** Session isolation alone does not establish HIPAA or GDPR compliance; full clinical deployment mandates enterprise access controls, encryption at rest/transit, comprehensive audit trails, and strict data-retention policies.
 

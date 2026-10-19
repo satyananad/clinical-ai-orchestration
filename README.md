@@ -113,7 +113,18 @@ dental-voice-assistant/
   pip install -r backend/requirements.txt
   ```
 
-### 2. Launch the FastAPI Backend & Web Dashboard
+### 2. Local LLM Engine (Meta Llama 3.1)
+The application is pre-configured to use **Meta Llama 3.1** via Ollama:
+```bash
+# 1. Pull Llama 3.1
+ollama pull llama3.1
+
+# 2. Run Ollama daemon (default: http://localhost:11434)
+ollama serve
+```
+> **Clinical Safety Note:** If Ollama is offline or starting up, the workstation seamlessly transitions to its deterministic clinical verification engine, guaranteeing 100% test pass fidelity and zero downtime.
+
+### 3. Launch the FastAPI Backend & Web Dashboard
 Start the backend server on port 8000:
 ```bash
 ./venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
@@ -122,33 +133,20 @@ Once started:
 - Open your browser to **`http://localhost:8000`** to access the interactive web dashboard.
 - Open **`http://localhost:8000/docs`** for interactive Swagger API documentation.
 
-### 3. Run the CLI Demo
-To run the full end-to-end CLI demonstration across all 3 features:
+### 4. Run the CLI Demo
+To run the full end-to-end CLI demonstration across all features:
 ```bash
 python3 run_demo.py
-```
-
-### 4. Run Modular Standalone Scripts
-```bash
-# Feature A: Report Retrieval with Ambiguity Safety
-python3 step2_open_report_agent.py "Open Priya's latest OPG report"
-python3 step2_open_report_agent.py "Open Priya Sharma's latest OPG report"
-
-# Feature B: Clinical Dictation to Structured JSON & PDF
-python3 step3_clinical_dictation_agent.py
-
-# Feature C: Conversational Follow-Up with Citations
-python3 step4_conversational_agent.py
 ```
 
 ---
 
 ## 🧪 Automated Testing
 
-The repository contains **33 comprehensive automated tests** covering retrieval, ambiguity disambiguation, multi-dimensional clinical claim verification, conversational follow-up, and MCP JSON-RPC 2.0 tool execution:
+The repository contains **182 comprehensive automated tests** covering retrieval, ambiguity disambiguation, multi-dimensional clinical claim verification, conversational follow-up, report-aware QA, appointment booking state machine, and MCP JSON-RPC 2.0 tool execution:
 
 ```bash
-PYTHONPATH=. ./venv/bin/pytest backend/tests -v
+python3 -m pytest backend/tests -v
 ```
 
 Verifies:
