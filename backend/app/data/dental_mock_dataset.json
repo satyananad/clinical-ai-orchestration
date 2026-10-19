@@ -1192,5 +1192,17 @@
         "sex": "Female"
       }
     ]
+  },
+  {
+    "patient_id": "PAT-1013",
+    "patient_name": "Satya Shukla",
+    "date_of_birth": "2001-08-17",
+    "sex": "Unspecified",
+    "record_number": "MRN-DEMO-1013",
+    "contact_number": "2001 8922923995",
+    "email": "satya@gmail.com",
+    "address": "Bengaluru, Karnataka",
+    "status": "active",
+    "reports": []
   }
 ]

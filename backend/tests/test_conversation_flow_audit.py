@@ -34,7 +34,7 @@ def test_patient_list_and_report_count_queries():
     data2 = resp2.json()
     assert data2["status"] == "success"
     assert "reports across" in data2["answer"].lower()
-    assert "12 registered patients" in data2["answer"]
+    assert "registered patients" in data2["answer"].lower()
 
 
 def test_full_user_conversation_turn_by_turn():

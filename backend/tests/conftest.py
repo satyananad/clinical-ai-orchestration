@@ -15,3 +15,14 @@ for py_ver in [f"python{sys.version_info.major}.{sys.version_info.minor}", "pyth
     if os.path.isdir(venv_site) and venv_site not in sys.path:
         sys.path.insert(0, venv_site)
         break
+
+import pytest
+from backend.app.services.clock import set_frozen_clock
+
+@pytest.fixture(autouse=True)
+def deterministic_clinical_clock():
+    """Ensures appointment dates (Oct 19-20, 2026) are deterministic across timezones and calendar days."""
+    set_frozen_clock("2026-10-19 12:00:00")
+    yield
+    set_frozen_clock(None)
+

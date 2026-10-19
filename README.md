@@ -168,71 +168,117 @@ As specified in the assignment deliverables (alternative to a video demo), the f
 | **2. Documentation** | [`README.md`](README.md), [`.env.example`](.env.example) | Complete setup guide, model configuration, production considerations, and environment template. |
 | **3. Demo Walkthrough** | [`DEMO_API_SEQUENCE.md`](DEMO_API_SEQUENCE.md) | Reproducible step-by-step sequence of API calls with sample inputs and live outputs. |
 | **4. Architecture Document** | [`ARCHITECTURE.md`](ARCHITECTURE.md) | One-page architecture covering Voice/STT, Local LLM, MCP Tool/API, and Report Generation. |
-| **5. Automated Testing** | [`backend/tests/`](backend/tests/) | **192 automated tests passing** (including dedicated mandatory acceptance criteria tests). |
+| **5. Automated Testing** | [`backend/tests/`](backend/tests/) | **206 automated tests passing** in `< 1.5 seconds` (including mandatory acceptance criteria, loop prevention, and blank missing data tests). |
+
+---
+
+## ⚙️ Model & Provider Configuration
+
+The assistant is architected with a decoupled provider layer supporting both local on-premise execution and enterprise cloud endpoints:
+
+| Provider | Supported Models | Inference Endpoint | PHI Sovereignty | Recommended For |
+|---|---|---|---|---|
+| **Local Ollama (Default)** | `llama3.1:8b`, `llama3.1:70b`, `qwen2.5` | `http://localhost:11434/api/generate` | **100% On-Premise** (Zero Egress) | Clinic workstations, local testing, HIPAA data privacy |
+| **Local vLLM / llama.cpp** | Any GGUF / AWQ model | `http://localhost:8000/v1/chat/completions` | **100% On-Premise** | High-throughput hospital GPU servers |
+| **OpenAI / Azure OpenAI** | `gpt-4o`, `gpt-4o-mini` | `https://api.openai.com/v1` or Azure endpoint | Cloud / BAA Required | Cloud-hosted clinical trial pilots |
+| **Anthropic Claude** | `claude-3-5-sonnet` | `https://api.anthropic.com/v1/messages` | Cloud / BAA Required | Complex multi-study differential reasoning |
+| **Deterministic Fallback** | Dental Regex & ISO 3950 Matrix | In-Memory (Zero Dependency) | **100% On-Premise** | Automatic instant failover if local LLM is offline |
+
+### Environment Variable Configuration (`.env`)
+
+Copy `.env.example` to `.env` to configure your environment:
+
+```bash
+cp .env.example .env
+```
+
+Sample `.env` file contents:
+```env
+# ==============================================================================
+# Viscan AI Clinical Workstation Assistant — Environment Configuration
+# ==============================================================================
+
+# LLM Provider Configuration (Default: Local Ollama)
+OLLAMA_MODEL=llama3.1
+OLLAMA_ENDPOINT=http://localhost:11434/api/generate
+OLLAMA_CHAT_ENDPOINT=http://localhost:11434/api/chat
+
+# Optional Cloud LLM Fallback (Set when utilizing cloud providers under BAA)
+# OPENAI_API_KEY=sk-...
+# ANTHROPIC_API_KEY=sk-ant-...
+
+# Server Settings
+PORT=8000
+HOST=127.0.0.1
+DEBUG=true
+
+# Clinical Workstation Directories
+DATASET_PATH=backend/app/data/dental_mock_dataset.json
+PATIENT_REPORTS_DIR=patient_reports
+DICTATION_REPORTS_DIR=dictation_reports
+```
 
 ---
 
 ## 🧪 Automated Testing
 
-The repository contains **192 comprehensive automated tests** passing in `< 1 second`:
+The repository contains **206 comprehensive automated tests** passing in `< 1.5 seconds`:
 
 ```bash
-# Run the 3 mandatory acceptance tests with live request/response/assertion logs:
+# Run the 3 mandatory acceptance tests with live assertion traces:
 ./venv/bin/python backend/tests/test_mandatory_acceptance_criteria.py
 
-# Run the complete test suite across all 14 test modules:
+# Run the complete test suite across all 25 test modules:
 ./venv/bin/python -m pytest backend/tests -v
 ```
 
 Verifies:
-1. `test_mandatory_acceptance_criteria.py` - Core 3 mandatory acceptance tests (retrieval by date, ambiguity halt, unsupported claims).
-2. `test_ambiguity.py` - Partial name ambiguity safety gate and candidate selection cards.
-3. `test_claim_verification.py` - 8-dimension clinical safety checks (teeth, negation, uncertainty, laterality, measurements).
-4. `test_conversation_qa.py` - Multi-turn conversational follow-up, pronoun resolution, and speech repair.
-5. `test_dictation.py` - Speech transcript structuring, FDI/Palmer numbering, and uncertainty classification.
-6. `test_mcp_tools.py` - MCP JSON-RPC 2.0 discovery (`tools/list`) and invocation (`tools/call`).
-7. `test_real_life_booking_workflow.py` - Complete multi-turn specialist booking and patient registration.
-8. `test_retrieval.py` - Exact patient retrieval, modalities, and missing scan handling.
+1. `test_mandatory_acceptance_criteria.py` - Core mandatory acceptance tests (retrieval by date, ambiguity halt, unsupported claims).
+2. `test_ambiguity.py` - Name ambiguity safety gates and candidate selection cards.
+3. `test_dictation_blank_missing_data_and_speech.py` - Unambiguous modality disambiguation (no loops), 3D measurement preservation, and blank missing data behavior.
+4. `test_claim_verification.py` - 8-dimension clinical safety checks (teeth, negation, uncertainty, laterality, measurements).
+5. `test_conversation_qa.py` - Multi-turn conversational follow-up, pronoun resolution, and speech repair.
+6. `test_dictation.py` - Speech transcript structuring, FDI/Palmer numbering, and uncertainty classification.
+7. `test_mcp_tools.py` - MCP JSON-RPC 2.0 discovery (`tools/list`) and invocation (`tools/call`).
+8. `test_real_life_booking_workflow.py` - Multi-turn specialist booking and patient registration state machine.
+9. `test_retrieval.py` - Exact patient retrieval, scan modalities, and missing scan handling.
 
 ---
 
-## 🔒 Production Considerations & Architecture
+## ⚠️ Known Limitations & Edge Cases
 
-### 1. Privacy & Data Sovereignty (Zero PHI Egress)
-- **Local On-Premise Inference:** Clinical imaging reports and voice dictations contain Protected Health Information (PHI) governed by HIPAA, GDPR, and regional health data privacy laws. All model reasoning executes locally via an on-premise Ollama instance (`llama3.1`), guaranteeing zero patient data transmission to third-party cloud APIs.
-- **Session Isolation:** Conversation histories, active patient charts, and dictation drafts are strictly isolated in memory by session ID, preventing cross-workstation contamination. Full clinical deployment mandates enterprise data encryption at rest/transit and audit logging.
+While the assistant delivers high-speed retrieval, robust safety stops, and accurate clinical structuring, several engineering limitations exist in this prototype:
 
-### 2. Authorization & Access Control (RBAC)
-- **Role-Based Access Control (RBAC):** Privileges are partitioned across three tiers:
-  - *Attending Radiologist / Dentist:* Full access to inspect imaging reports, conduct grounded Q&A, dictate findings, and execute digital sign-offs.
-  - *Dental Assistant / Hygienist:* Can retrieve patient reports, check appointment slots, and record dictation drafts (restricted from final sign-off).
-  - *Audit Administrator:* Read-only access to system access logs, tool invocation traces, and clinical claim verification reports.
-
-### 3. Latency & Real-Time Performance
-- **Deterministic Tool Calling:** Core retrieval, patient registration, tooth numbering normalization, and business validation rules execute in **< 10 milliseconds**.
-- **Local Model Latency:** Local quantized Llama 3.1 inference on Apple Silicon / workstation GPUs generates structured clinical responses in **< 1.2 seconds**, providing real-time feedback suitable for conversational clinical assistants.
-
-### 4. Model & Tool Operational Costs
-- **Zero Marginal API Charges:** Utilizing local open-weights models (Ollama Llama 3.1) reduces token-based API costs to zero, avoiding unpredictable monthly cloud billing.
-- **Commodity Hardware Friendly:** The entire stack runs efficiently on standard hospital and clinic workstations without requiring dedicated cloud GPU clusters.
-
-### 5. Failure Handling & Input Validation
-- **Strict Pydantic v2 Schemas:** Every tool call, API request, and structured draft output is strictly validated against typed Pydantic models.
-- **Graceful Fallback:** If the local Ollama daemon is offline or restarting, the system immediately degrades to its deterministic clinical engine with zero downtime and 100% test pass fidelity.
-- **Clinical Safety Disambiguation Gate:** Ambiguous patient queries (e.g. partial names matching multiple records) immediately trigger a clinical safety halt with candidate selection cards, preventing cognitive slips and misattribution of diagnostic imaging.
+1. **Predefined Rule & Keyword Rigidity**:
+   - The current intent routing and entity extraction pipeline heavily utilizes predefined deterministic rules, token matching, and regular expressions.
+   - When a clinician uses non-standard phrasing, conversational idioms, or unexpected syntax, the rule engine can be overly rigid. This occasionally requires the clinician to rephrase or explicitly provide an ID to break out of intent ambiguity.
+2. **Ambiguity and Clarification Loops**:
+   - Because safety guardrails strictly prioritize avoiding patient misattribution, matching multiple candidate records (e.g. multiple patients with identical names) halts execution until disambiguated.
+   - While modality filtering (e.g. distinguishing a Periapical from an OPG) was added to resolve common loops, complex multi-turn sessions where queries jump between booking and radiology can encounter state cross-talk without an explicit `/context/reset`.
+3. **In-Memory Session State**:
+   - Conversation state is tracked in ephemeral in-memory dictionaries. In a production multi-worker deployment, session state would be lost upon worker restart without an external persistent session store.
+4. **Speech-to-Text Acoustic Variance**:
+   - Audio transcription via general-purpose STT models is susceptible to background clinical noise (suction, drills) and dental phonetics, occasionally mistranscribing specialized terms unless supported by acoustic adaptation.
 
 ---
 
 ## 🔮 What Works & Future Improvements
 
 ### What Works
-- Safe disambiguation of patient identities with zero guessing.
-- Multi-turn speech correction and conversation memory across clinical queries.
-- Reliable mapping between international dental numbering notations (FDI, Palmer, Universal).
-- Multi-dimensional clinical claim verification across 8 medical dimensions.
-- 14 MCP-compliant clinical tools exposed over JSON-RPC 2.0.
+- **Zero-Guessing Safety Stop:** Halts immediately on ambiguous patient names, displaying dates of birth and IDs for clinician sign-off.
+- **Smart Modality Resolution:** Queries requesting unique modalities (e.g. `open priya sharma Periapical Radiograph`) open the correct patient without redundant loops.
+- **Multi-Notation Tooth Cross-Referencing:** Translates between FDI, Palmer, Universal, and natural language.
+- **Strict Anti-Hallucination Guardrails:** Leaves missing patient data blank (`""`) instead of inventing synthetic data; tags all dictation drafts with mandatory review notices.
+- **Verbatim Evidence Citations:** Answers clinical questions with direct quotes and longitudinal cross-study synthesis.
 
-### Future Improvements with More Time
-1. **Live Microphone Audio Streaming:** Connect a local WebAudio stream directly to `faster-whisper` for instant speech-to-text dictation.
-2. **DICOM Structured Reporting (DICOM-SR):** Export structured findings directly into standard DICOM-SR objects for PACS integration.
+### What I Would Improve With More Time
+1. **Schema-Driven LLM Structured Extraction (Pydantic V2)**:
+   - Transition away from rigid regex and keyword matching to strict **JSON Schema / Pydantic V2 constrained decoding**.
+   - By feeding formal schema definitions directly into the LLM's constrained grammar sampler, the model can flexibly extract complex, conversational clinician dictation into high-fidelity structured reports with zero dependence on brittle syntax matching.
+2. **Enterprise Model Context Protocol (MCP) Server**:
+   - Convert internal agent functions into a standardized Model Context Protocol (MCP) server. This allows seamless integration with hospital Picture Archiving and Communication Systems (PACS / DICOM WADO-RS) and Electronic Health Records (FHIR R4 APIs).
+3. **Persistent Hierarchical Memory Graph (LangGraph / Redis)**:
+   - Replace in-memory dictionaries with a scoped state graph. This cleanly separates scheduling state from diagnostic review state, eliminating session cross-talk and permanently preventing intent loops.
+4. **Domain-Adapted Dental Whisper (LoRA)**:
+   - Fine-tune local Whisper on dental radiology audio datasets to achieve > 99% accuracy on dental anatomical landmarks and pathology terms in noisy clinic environments.
 
