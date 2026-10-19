@@ -112,9 +112,12 @@ def search_patients(query: str) -> List[Dict[str, Any]]:
         "report", "reports", "scan", "scans", "opg", "cbct", "bitewing", "periapical",
         "latest", "recent", "please", "for", "of", "to", "in", "and", "or",
         "radiograph", "radiographs", "examination", "panoramic", "orthopantomogram",
-        "hey", "hello", "hi", "greetings"
+        "hey", "hello", "hi", "greetings",
+        "his", "her", "hers", "hir", "their", "theirs", "its", "him", "she", "he", "they", "them", "hiss", "herr"
     }
     candidate_tokens = query_words - stop_words
+    if not candidate_tokens:
+        return []
 
     partial_matches = []
     for p in PATIENTS_DATA:
@@ -231,7 +234,8 @@ def extract_retrieval_intent(user_input: str) -> Dict[str, str]:
         "appointment", "appoint", "ment", "slot", "slots", "tomorrow", "today",
         "yesterday", "dr", "doctor", "check", "available", "availability", "time", "date",
         "confirm", "confirmed", "confirmation", "yes", "ok", "sure", "proceed", "cancel",
-        "hey", "hello", "hi", "greetings", "good", "morning", "afternoon", "evening"
+        "hey", "hello", "hi", "greetings", "good", "morning", "afternoon", "evening",
+        "his", "her", "hers", "hir", "their", "theirs", "its", "him", "she", "he", "they", "them", "hiss", "herr"
     ]
     for token in stop_tokens:
         clean = re.sub(r"\b" + re.escape(token) + r"\b", " ", clean)
@@ -239,6 +243,21 @@ def extract_retrieval_intent(user_input: str) -> Dict[str, str]:
     clean = " ".join(clean.split()).strip()
 
     return {"patient_name": clean, "report_type": modality}
+
+def get_patient_pronouns(sex: Optional[str]) -> Dict[str, str]:
+    """
+    Returns pronouns based on patient sex.
+    - Male: 'his', 'he', 'him'
+    - Female: 'her', 'she', 'her'
+    - Unspecified / unclear / other: 'his/her', 'he/she', 'him/her' (mentions both)
+    """
+    s = (sex or "").strip().lower()
+    if s in ["male", "m"]:
+        return {"possessive": "his", "subject": "he", "object": "him"}
+    elif s in ["female", "f"]:
+        return {"possessive": "her", "subject": "she", "object": "her"}
+    else:
+        return {"possessive": "his/her", "subject": "he/she", "object": "him/her"}
 
 def resolve_report_retrieval(query: str, patient_name: Optional[str] = None, modality: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -268,8 +287,10 @@ def resolve_report_retrieval(query: str, patient_name: Optional[str] = None, mod
     target_name = patient_name.strip() if patient_name else intent["patient_name"]
     requested_modality = modality if (modality and modality != "Any") else intent["report_type"]
 
-    # Check if user invoked retrieval without specifying a patient name or ID
-    if not target_name or target_name.lower() in ["retrieving", "retrieve", "patient report", "open report", "view report", "find report", "search", "loading"]:
+    # Check if user invoked retrieval without specifying a patient name or ID, or supplied only pronouns
+    pronoun_tokens = {"his", "her", "hers", "hir", "their", "theirs", "its", "them", "him", "she", "he", "they", "hiss", "herr"}
+    is_pronoun_only = bool(target_name) and all(w.lower() in pronoun_tokens for w in target_name.split())
+    if not target_name or is_pronoun_only or target_name.lower() in ["retrieving", "retrieve", "patient report", "open report", "view report", "find report", "search", "loading"]:
         return {
             "status": "missing_patient_name",
             "message": "Please specify the patient name or ID whose report you'd like to retrieve (e.g. 'Open Vikram Malhotra's CBCT' or 'Show Priya Sharma's report'). You can also ask me to list available patients.",

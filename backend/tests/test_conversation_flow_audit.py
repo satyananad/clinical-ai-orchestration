@@ -159,3 +159,82 @@ def test_multi_report_switching_and_typo_query():
     assert "tooth 48" in ans4 or "impaction" in ans4 or "periapical" in ans4
     assert len(r4.get("citations", [])) > 0
     assert any("RPT-2001" in c for c in r4["citations"])
+
+
+def test_male_patient_pronoun_followup_and_typo_hir():
+    """
+    Verifies:
+    1. 'open Amit kumar' (Male) opens latest report and prompts with 'his' (e.g. 'Open his OPG'), NEVER 'her'.
+    2. 'Open hir OPG' (with typo 'hir') resolves to active patient Amit Kumar, opening RPT-2016 (OPG).
+       NEVER returns 'No patient records found matching 'hir''.
+    3. 'open his opg' also resolves smoothly.
+    """
+    session_id = "test-amit-kumar-pronoun-flow"
+    get_or_create_session(session_id).clear()
+
+    # Step 1: Open Amit Kumar
+    r1 = client.post("/assistant/chat", json={"query": "open Amit kumar", "session_id": session_id}).json()
+    assert r1["status"] == "success"
+    assert r1["patient"]["patient_name"] == "Amit Kumar"
+    assert r1["patient"]["sex"] == "Male"
+    assert r1["report"]["report_id"] == "RPT-2018"
+    assert len(r1.get("available_reports", [])) == 3
+    # Follow-up message MUST use male pronoun 'his', NEVER 'her'
+    msg1 = r1["message"]
+    assert "Open his" in msg1
+    assert "Open her" not in msg1
+
+    # Step 2: Clinician sends 'Open hir OPG' (common typo for his/her)
+    r2 = client.post("/assistant/chat", json={"query": "Open hir OPG", "session_id": session_id}).json()
+    assert r2["status"] == "success"
+    assert r2["report"]["report_id"] == "RPT-2016"
+    assert r2["report"]["report_type"] == "OPG"
+    assert r2["patient"]["patient_name"] == "Amit Kumar"
+    assert "No patient records found" not in r2.get("message", "")
+
+    # Step 3: Clinician sends 'open his opg'
+    r3 = client.post("/assistant/chat", json={"query": "open his opg", "session_id": session_id}).json()
+    assert r3["status"] == "success"
+    assert r3["report"]["report_id"] == "RPT-2016"
+    assert r3["patient"]["patient_name"] == "Amit Kumar"
+
+
+def test_standalone_pronouns_without_active_patient():
+    """
+    Verifies that querying pronouns alone without active patient context safely returns
+    missing_patient_name rather than treating 'hir'/'his'/'her' as patient surnames.
+    """
+    session_id = "test-standalone-pronouns"
+    get_or_create_session(session_id).clear()
+
+    r1 = client.post("/assistant/chat", json={"query": "Open hir OPG", "session_id": session_id}).json()
+    assert r1["status"] == "missing_patient_name"
+    assert "Please specify the patient name or ID" in r1["message"]
+    assert "matching 'hir'" not in r1["message"]
+
+    r2 = client.post("/assistant/chat", json={"query": "Open his report", "session_id": session_id}).json()
+    assert r2["status"] == "missing_patient_name"
+
+
+def test_get_patient_pronouns_mentions_both_if_unspecified():
+    """
+    Verifies that if patient gender is not specified or clear, both 'his/her' are mentioned.
+    """
+    from backend.app.services.retrieval import get_patient_pronouns
+
+    male_res = get_patient_pronouns("Male")
+    assert male_res["possessive"] == "his"
+    assert male_res["subject"] == "he"
+
+    female_res = get_patient_pronouns("Female")
+    assert female_res["possessive"] == "her"
+    assert female_res["subject"] == "she"
+
+    # When gender is not clear/unspecified, mentions both
+    unspec_res = get_patient_pronouns(None)
+    assert unspec_res["possessive"] == "his/her"
+    assert unspec_res["subject"] == "he/she"
+
+    empty_res = get_patient_pronouns("")
+    assert empty_res["possessive"] == "his/her"
+

@@ -325,9 +325,12 @@ def handle_assistant_interaction(query: str, session_id: str = "default_session"
             elif len(reports) > 1:
                 # Ask for clarification only when necessary
                 report_list_str = " • ".join([f"[{r['report_id']}] {r['report_type']} ({r['report_date']})" for r in reports])
+                from .retrieval import get_patient_pronouns
+                p_sex = patient.get("sex")
+                pronoun_pos = get_patient_pronouns(p_sex)["possessive"]
                 return {
                     "status": "clarification_required",
-                    "message": f"Patient {patient['patient_name']} has {len(reports)} diagnostic reports on file: {report_list_str}. Please specify which report to view or summarize (e.g., 'Open her {reports[0]['report_type']}').",
+                    "message": f"Patient {patient['patient_name']} has {len(reports)} diagnostic reports on file: {report_list_str}. Please specify which report to view or summarize (e.g., 'Open {pronoun_pos} {reports[0]['report_type']}').",
                     "patient": patient,
                     "candidates": None,
                     "report": None

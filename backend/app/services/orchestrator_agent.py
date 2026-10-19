@@ -195,12 +195,13 @@ def is_valid_patient_name(name: Optional[str]) -> bool:
     invalid_keywords = {
         "slot", "slots", "confirm", "confirmed", "booking", "book", "appointment",
         "patient", "walk-in", "walk", "yes", "please", "tomorrow", "today", "yesterday",
-        "scan", "report", "opg", "cbct", "periapical", "xray", "x-ray", "ok", "okay",
+        "scan", "report", "opg", "cbct", "bitewing", "periapical", "xray", "x-ray", "ok", "okay",
         "sure", "cancel", "open", "show", "view", "find", "load", "dr", "doctor",
         "location", "hospital", "clinic", "radiology", "suite", "room", "bay",
         "specialist", "specialty", "dental", "dentist", "consultation", "consult",
         "implant", "radiologist", "surgeon", "orthodontist", "endodontist", "periodontist",
-        "oral", "maxillofacial"
+        "oral", "maxillofacial",
+        "his", "her", "hers", "hir", "their", "theirs", "its", "him", "them", "she", "he", "they", "hiss", "herr"
     }
     words = re.findall(r"[a-zA-Z]+", clean.lower())
     if not words or any(w in invalid_keywords for w in words):
@@ -1341,29 +1342,46 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         non_patient_tokens = {
             "what", "why", "how", "explain", "tell", "help", "who", "when", "does", "can",
             "please", "summary", "summarize", "problem", "findings", "finding", "report",
-            "scan", "it", "she", "he", "her", "his", "tooth", "teeth", "are", "is", "the",
+            "scan", "it", "she", "he", "her", "his", "hir", "their", "theirs", "its",
+            "him", "them", "they", "hiss", "herr", "tooth", "teeth", "are", "is", "the",
             "for", "about", "any", "caries", "canal", "root", "nerve", "impaction"
         }
         has_new_patient_target = bool(extracted_cand_name) and not all(t.lower() in non_patient_tokens for t in extracted_cand_name.split())
+        if has_new_patient_target and session.active_patient_id:
+            from .retrieval import get_patient
+            p_active = get_patient(session.active_patient_id)
+            if p_active:
+                p_name_words = set(re.findall(r"\b[a-zA-Z0-9_-]+\b", p_active.get("patient_name", "").lower()))
+                cand_words = set(re.findall(r"\b[a-zA-Z0-9_-]+\b", extracted_cand_name.lower()))
+                if cand_words and cand_words.issubset(p_name_words):
+                    has_new_patient_target = False
+
         has_retrieval_verb = bool(re.search(r"\b(open|retrieve|fetch|load|switch\s+to)\b", q_lower))
         has_new_patient_retrieval = has_retrieval_verb and has_new_patient_target
         
-        # Check if user is asking to switch or open another report of the active patient (e.g. 'open her OPG', 'show periapical', 'open her latest report')
+        # Check if user is asking to switch or open another report of the active patient (e.g. 'open her OPG', 'open hir OPG', 'show periapical', 'open his latest report')
+        is_switch_verb = bool(re.search(r"\b(open|switch|view|load|fetch|show|see)\b", q_lower))
+        is_qa_or_summary = bool(re.search(r"\b(summarize|summary|explain|what|why|how|tell|describe|meaning|clarify)\b", q_lower))
+        is_modality_or_report = any(w in q_lower for w in ["opg", "cbct", "panoramic", "bitewing", "periapical", "iopa", "cephalogram", "ceph", "examination", "exam", "rpt-", "latest", "recent", "newest", "last", "report", "reports", "scan", "scans"])
+
         is_modality_switch = (
             not has_new_patient_target
-            and any(w in q_lower for w in ["opg", "cbct", "panoramic", "bitewing", "periapical", "examination", "exam", "rpt-", "latest", "recent", "newest", "last"])
-            and any(w in q_lower for w in ["open", "show", "switch", "view", "load", "her", "his", "the", "other"])
+            and not is_qa_or_summary
+            and is_switch_verb
+            and is_modality_or_report
         )
         if is_modality_switch and session.active_patient_id:
             target_mod = "Any"
-            if any(m in q_lower for m in ["opg", "panoramic"]):
+            if any(m in q_lower for m in ["opg", "panoramic", "orthopantomogram"]):
                 target_mod = "OPG"
-            elif any(m in q_lower for m in ["cbct", "cone beam", "3d"]):
+            elif any(m in q_lower for m in ["cbct", "cone beam", "3d volume", "3d"]):
                 target_mod = "CBCT"
             elif "bitewing" in q_lower:
                 target_mod = "Bitewing"
             elif any(m in q_lower for m in ["periapical", "iopa"]):
                 target_mod = "Periapical"
+            elif any(m in q_lower for m in ["cephalogram", "ceph"]):
+                target_mod = "Cephalogram"
             elif any(m in q_lower for m in ["examination", "exam"]):
                 target_mod = "Dental Examination"
 
@@ -1379,9 +1397,11 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 matched_rep = p_reports[0]
             elif target_mod != "Any":
                 for r in p_reports:
-                    if target_mod.lower() in r.get("report_type", "").lower():
+                    if target_mod.lower() in r.get("report_type", "").lower() or (target_mod == "Periapical" and "iopa" in r.get("report_type", "").lower()):
                         matched_rep = r
                         break
+            elif len(p_reports) == 1:
+                matched_rep = p_reports[0]
 
             if matched_rep:
                 session.active_report_id = matched_rep["report_id"]
@@ -1393,6 +1413,16 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                         "modality": matched_rep.get("report_type")
                     },
                     "rationale": f"Report Switch: Switched to {matched_rep.get('report_type')} ({matched_rep['report_id']}) for active patient."
+                }
+            elif target_mod != "Any":
+                return {
+                    "selected_agent": "RetrievalAgent",
+                    "tool_name": "search_patient_reports",
+                    "arguments": {
+                        "patient_id": session.active_patient_id,
+                        "modality": target_mod
+                    },
+                    "rationale": f"Report Switch: Requested modality {target_mod} for active patient {session.active_patient_id}."
                 }
 
         # Active Report / Patient Consultation & Evidence-Grounded Follow-Up
@@ -2101,10 +2131,19 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             extra_msg = ""
             if len(all_reports) > 1:
                 other_reps = [f"• [{r['report_id']}] {r['report_type']} ({r['report_date']})" for r in all_reports]
+                from .retrieval import get_patient_pronouns
+                p_sex = retrieval_res["patient"].get("sex")
+                pronouns = get_patient_pronouns(p_sex)
+                pronoun_pos = pronouns["possessive"]
+                suggested_mod = all_reports[0]["report_type"]
+                for r in all_reports:
+                    if r["report_id"] != rep_id:
+                        suggested_mod = r["report_type"]
+                        break
                 extra_msg = (
                     f"\n\nThis patient has {len(all_reports)} diagnostic reports on file:\n"
                     + "\n".join(other_reps)
-                    + f"\n\nYou can ask to view any of these reports (e.g. 'Open her OPG' or 'Show {all_reports[0]['report_id']}'), "
+                    + f"\n\nYou can ask to view any of these reports (e.g. 'Open {pronoun_pos} {suggested_mod}' or 'Show {all_reports[0]['report_id']}'), "
                     f"or ask clinical questions about the current report."
                 )
 
@@ -2967,13 +3006,16 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                         is_single_report_ambiguous = (
                             (any(v in query.lower() for v in ["open", "view", "load"]) and "report" in query.lower() and not is_all_reports)
                             or (re.search(r"\b(?:summarize|summary)\b", query.lower()) and not is_all_reports and "reports" not in query.lower())
-                            or (re.search(r"\b(?:her|his|the)\s+report\b", query.lower()) and not is_all_reports)
+                            or (re.search(r"\b(?:her|his|hir|their|the)\s+report\b", query.lower()) and not is_all_reports)
                         )
                         if is_single_report_ambiguous:
                             rep_str = " • ".join([f"[{r['report_id']}] {r['report_type']} ({r['report_date']})" for r in reps])
+                            from .retrieval import get_patient_pronouns
+                            p_sex = p.get("sex")
+                            pronoun_pos = get_patient_pronouns(p_sex)["possessive"]
                             return {
                                 "status": "clarification_required",
-                                "message": f"Patient {p['patient_name']} has {len(reps)} diagnostic reports on file: {rep_str}. Please specify which report to view or summarize (e.g. 'Open her {reps[0]['report_type']}').",
+                                "message": f"Patient {p['patient_name']} has {len(reps)} diagnostic reports on file: {rep_str}. Please specify which report to view or summarize (e.g. 'Open {pronoun_pos} {reps[0]['report_type']}').",
                                 "patient": p,
                                 "candidates": None,
                                 "report": None,
