@@ -19,6 +19,7 @@ node_modules/
 dist/
 build/
 
-# Generated runtime PDFs
+# Generated runtime PDFs and session data
 dictation_reports/
 *.pdf
+backend/app/data/active_sessions.json

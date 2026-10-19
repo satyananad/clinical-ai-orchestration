@@ -729,6 +729,7 @@ def get_dashboard_ui():
                 const data = await resp.json();
                 if (data.status === "success" && data.patient) {
                     activeSelectedPatient = data.patient;
+                    try { localStorage.setItem("viscan_active_patient_id", data.patient.patient_id); } catch(e){}
                     const sel = document.getElementById("patientDirectorySelect");
                     if (sel) sel.value = data.patient.patient_id;
                     renderPatientDirectory(allClinicPatients);
@@ -758,6 +759,10 @@ def get_dashboard_ui():
         function clearPatientSelection() {
             activeSelectedPatient = null;
             activeSelectedReport = null;
+            try {
+                localStorage.removeItem("viscan_active_patient_id");
+                localStorage.removeItem("viscan_active_report_id");
+            } catch(e){}
             const sec = document.getElementById("selectedPatientSection");
             if (sec) sec.classList.add("hidden");
             renderPatientDirectory(allClinicPatients);
@@ -844,6 +849,10 @@ def get_dashboard_ui():
                 if (data.status === "success" && data.report) {
                     activeSelectedReport = data.report;
                     activeSelectedPatient = data.patient;
+                    try {
+                        localStorage.setItem("viscan_active_patient_id", data.patient.patient_id);
+                        localStorage.setItem("viscan_active_report_id", data.report.report_id);
+                    } catch(e){}
                     renderReport(data.report, data.patient);
                     updateContextBanner(data.patient, data.report);
                     renderSelectedPatientSection(data.patient, data.patient.reports || []);
@@ -875,14 +884,21 @@ def get_dashboard_ui():
             if (!customQuery) input.value = "";
 
             try {
+                let effectivePatientId = activeSelectedPatient ? activeSelectedPatient.patient_id : null;
+                let effectiveReportId = activeSelectedReport ? activeSelectedReport.report_id : null;
+                try {
+                    if (!effectivePatientId) effectivePatientId = localStorage.getItem("viscan_active_patient_id");
+                    if (!effectiveReportId) effectiveReportId = localStorage.getItem("viscan_active_report_id");
+                } catch(e){}
+
                 const resp = await fetch(`${API_BASE}/assistant/chat`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         query: query,
                         session_id: currentSessionId,
-                        active_patient_id: activeSelectedPatient ? activeSelectedPatient.patient_id : null,
-                        active_report_id: activeSelectedReport ? activeSelectedReport.report_id : null
+                        active_patient_id: effectivePatientId || null,
+                        active_report_id: effectiveReportId || null
                     })
                 });
                 const data = await resp.json();
@@ -1220,6 +1236,10 @@ def get_dashboard_ui():
         }
 
         async function resetSession() {
+            try {
+                localStorage.removeItem("viscan_active_patient_id");
+                localStorage.removeItem("viscan_active_report_id");
+            } catch(e){}
             await fetch(`${API_BASE}/sessions/${currentSessionId}/reset`, { method: "POST" });
             updateContextBanner(null, null);
             document.getElementById("chatMessages").innerHTML = `

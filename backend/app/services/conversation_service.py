@@ -7,6 +7,9 @@ Integrates directly with report_qa_service for evidence-grounded generation.
 """
 
 from typing import Dict, Any, Optional, List
+import os
+import sys
+import json
 import re
 from .retrieval import get_patient, get_report_by_id, resolve_report_retrieval
 from .report_qa_service import answer_report_question, generate_report_summary
@@ -128,6 +131,7 @@ class SessionState:
                         self.booking_state.patient_age = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
                     except Exception:
                         self.booking_state.patient_age = f"DOB: {dob}"
+        save_session(self)
 
     def set_active(self, patient_id: str, report_id: str):
         """Updates active patient & report ONLY upon verified successful retrieval."""
@@ -149,6 +153,7 @@ class SessionState:
                         self.booking_state.patient_age = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
                     except Exception:
                         self.booking_state.patient_age = f"DOB: {dob}"
+        save_session(self)
 
     def clear(self):
         """Clears session context and resets active selections."""
@@ -160,14 +165,75 @@ class SessionState:
         self.last_retrieval_query = None
         self.last_retrieval_modality = None
         self.booking_state.reset()
+        save_session(self)
 
 # Thread-safe session dictionary keyed by unique session_id
 SESSIONS: Dict[str, SessionState] = {}
+SESSION_STORAGE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "active_sessions.json")
+
+def is_testing_env() -> bool:
+    return "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("TESTING") == "1"
+
+def save_session(session: SessionState):
+    """Saves session state to disk to preserve active context across server reloads."""
+    if is_testing_env():
+        return
+    try:
+        data = {}
+        if os.path.exists(SESSION_STORAGE_PATH):
+            with open(SESSION_STORAGE_PATH, "r") as f:
+                data = json.load(f)
+        data[session.session_id] = {
+            "active_patient_id": session.active_patient_id,
+            "active_report_id": session.active_report_id,
+            "last_retrieval_query": session.last_retrieval_query,
+            "last_retrieval_modality": session.last_retrieval_modality,
+            "history": session.history[-10:],
+            "pending_candidates": session.pending_candidates,
+            "booking_stage": session.booking_state.stage.value if hasattr(session.booking_state.stage, "value") else str(session.booking_state.stage),
+            "booking_patient_name": session.booking_state.patient_name,
+            "booking_patient_id": session.booking_state.patient_id,
+            "booking_patient_age": session.booking_state.patient_age,
+            "booking_modality": session.booking_state.modality,
+        }
+        with open(SESSION_STORAGE_PATH, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
 
 def get_or_create_session(session_id: str) -> SessionState:
-    """Retrieves or initializes an isolated session state."""
+    """Retrieves or initializes an isolated session state, restoring from disk if available."""
     if session_id not in SESSIONS:
-        SESSIONS[session_id] = SessionState(session_id)
+        sess = SessionState(session_id)
+        if not is_testing_env() and os.path.exists(SESSION_STORAGE_PATH):
+            try:
+                with open(SESSION_STORAGE_PATH, "r") as f:
+                    stored = json.load(f)
+                if session_id in stored:
+                    s_data = stored[session_id]
+                    sess.active_patient_id = s_data.get("active_patient_id")
+                    sess.active_report_id = s_data.get("active_report_id")
+                    sess.last_retrieval_query = s_data.get("last_retrieval_query")
+                    sess.last_retrieval_modality = s_data.get("last_retrieval_modality")
+                    sess.history = s_data.get("history", [])
+                    sess.pending_candidates = s_data.get("pending_candidates")
+                    if s_data.get("booking_patient_name"):
+                        sess.booking_state.patient_name = s_data.get("booking_patient_name")
+                    if s_data.get("booking_patient_id"):
+                        sess.booking_state.patient_id = s_data.get("booking_patient_id")
+                    if s_data.get("booking_patient_age"):
+                        sess.booking_state.patient_age = s_data.get("booking_patient_age")
+                    if s_data.get("booking_modality"):
+                        sess.booking_state.modality = s_data.get("booking_modality")
+                    stage_str = s_data.get("booking_stage")
+                    if stage_str:
+                        for stg in BookingStage:
+                            if stg.value == stage_str or stg.name == stage_str:
+                                sess.booking_state.stage = stg
+                                break
+            except Exception:
+                pass
+        SESSIONS[session_id] = sess
     return SESSIONS[session_id]
 
 def is_general_or_assistant_query(query: str) -> bool:

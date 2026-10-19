@@ -203,3 +203,31 @@ def test_select_patient_then_open_her_opg_flow():
     assert d2["report"]["report_type"] == "OPG"
     assert d2["patient"]["patient_id"] == "PAT-1001"
 
+
+def test_select_pat_1012_then_open_her_bitewing_radiographs():
+    """
+    Test the exact UI flow reported by the user:
+    1. Patient selection for PAT-1012 (Priya Sharma, DOB 1985-02-14)
+    2. Followup query: 'open her bitewing radiographs' with active_patient_id passed from frontend
+    3. Resolves accurately to RPT-2035 (Bitewing Radiographs) without prompting for patient name again.
+    """
+    session_id = "test_sess_priya_1012_bitewing"
+
+    # Select PAT-1012
+    r1 = client.post(f"/sessions/{session_id}/select-patient", json={"patient_id": "PAT-1012"})
+    assert r1.status_code == 200
+
+    # User queries 'open her bitewing radiographs' with active_patient_id sent from UI state
+    r2 = client.post("/assistant/chat", json={
+        "query": "open her bitewing radiographs",
+        "session_id": session_id,
+        "active_patient_id": "PAT-1012"
+    })
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2["status"] == "success"
+    assert d2["report"]["report_id"] == "RPT-2035"
+    assert d2["report"]["report_type"] == "Bitewing Radiographs"
+    assert d2["patient"]["patient_id"] == "PAT-1012"
+
+
