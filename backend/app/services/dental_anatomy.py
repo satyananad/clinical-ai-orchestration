@@ -305,19 +305,23 @@ def classify_observation_category(observation: str, site_name: str = "") -> str:
             return "Anatomical Relationships & Proximity"
         return "Sinonasal & Extra-Dental Structures"
 
-    # 6. Anatomical Relationships & Proximity (Root contacts, trifurcation, nerve proximity, orientation)
-    if any(term in obs_lower for term in ["trifurcation", "apices touch", "buccal orientation", "contacting", "proximity", "nerve canal", "mandibular canal", "orientation", "adjacent tooth", "adjacent teeth"]):
+    # 6. Anatomical Relationships & Proximity (Root contacts, trifurcation, nerve proximity, orientation, canal relation)
+    if any(term in obs_lower for term in ["trifurcation", "apices touch", "buccal orientation", "contacting", "proximity", "nerve canal", "mandibular canal", "inferior alveolar", "ianc", "orientation", "adjacent tooth", "adjacent teeth", "relationship"]):
         return "Anatomical Relationships & Proximity"
 
     # 7. Impaction / Eruption
     if any(term in obs_lower for term in ["unerupted", "impacted", "impaction", "follicle", "supernumerary", "ectopic", "eruption"]):
         return "Impaction / Eruption"
 
-    # 8. Restorative & Caries Status
+    # 8. Clinical Symptoms & Patient History
+    if any(term in obs_lower for term in ["discomfort", "pain", "symptom", "chief complaint", "tenderness", "swelling", "patient reports"]):
+        return "Clinical Symptoms & History"
+
+    # 9. Restorative & Caries Status
     if any(term in obs_lower for term in ["restored", "restoration", "filling", "caries", "carious", "amalgam", "composite", "crown"]):
         return "Restorative & Caries Status"
 
-    # 9. Periapical & Osseous Status
+    # 10. Periapical & Osseous Status
     if any(term in obs_lower for term in ["periapical", "radiolucency", "bone height", "alveolar", "periodontal attachment", "osteitis", "periodontal ligament", "pdl", "cortical plate", "cortical thinning", "alveolar ridge", "ridge measures"]):
         return "Periapical & Osseous Status"
 

@@ -60,7 +60,8 @@ Rules:
 12. Missing information is unknown, not normal.
 14. Separate patient metadata (patient name, patient ID, MRN) and study/examination modality into 'patient_details'. NEVER include administrative metadata or study headers as clinical findings or in impressions.
 15. If a finding discusses adjacent teeth or general surrounding anatomy, do NOT force a specific tooth number onto it.
-16. Return only valid JSON matching the supplied schema.
+16. NEVER extract prompt instructions, user commands, meta-directives (such as 'Generate findings...', 'Retrieve patient demographics...', 'Flag missing examination...') or filler meta statements (e.g. 'No additional clinical findings were dictated') as clinical findings or impressions.
+17. Return only valid JSON matching the supplied schema.
 
 JSON Schema:
 {
@@ -633,6 +634,16 @@ def analyze_sentence_anatomy(sentence: str, anatomical_sites: List[Dict[str, Any
                 return st.get("anatomical_name"), None, []
         return "Alveolar Ridge", None, []
 
+    # Check for quadrant/regional mention
+    if re.search(r"\b(?:lower\s+right|mandibular\s+right|quadrant\s+4|lr)\b", s_l):
+        return "Mandibular Right Quadrant", None, []
+    if re.search(r"\b(?:lower\s+left|mandibular\s+left|quadrant\s+3|ll)\b", s_l):
+        return "Mandibular Left Quadrant", None, []
+    if re.search(r"\b(?:upper\s+right|maxillary\s+right|quadrant\s+1|ur)\b", s_l):
+        return "Maxillary Right Quadrant", None, []
+    if re.search(r"\b(?:upper\s+left|maxillary\s+left|quadrant\s+2|ul)\b", s_l):
+        return "Maxillary Left Quadrant", None, []
+
     return "Dentition", None, []
 
 
@@ -802,7 +813,11 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
     for s in sentences:
         s_lower = s.lower().strip()
 
-        # Skip administrative boilerplate or demographics if present
+        # Skip administrative boilerplate, demographics, or prompt meta-instructions
+        from .claim_verification import is_meta_or_instruction_sentence
+        if is_meta_or_instruction_sentence(s):
+            continue
+
         if (
             re.search(r"^patient\s+is\s+a\b", s_lower) or
             re.search(r"\breport\s+was\s+verified\b", s_lower) or

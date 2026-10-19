@@ -61,6 +61,27 @@ META_SOFTWARE_PATTERNS = [
     r"\b(?:implement\s+(?:the\s+)?(?:clinical\s+)?dictation|inspect\s+(?:the\s+)?existing\s+code|existing\s+(?:code|codebase|pipeline)|automated\s+tests?|schema\s+and\s+clinical\s+validation|use\s+the\s+llm|hard-coded\s+phrases|unit\s+tests?|pull\s+request|github|software|framework|programming|developer|langchain|langgraph)\b"
 ]
 
+META_INSTRUCTION_PATTERNS = [
+    r"\b(?:implement\s+(?:the\s+)?(?:clinical\s+)?dictation|inspect\s+(?:the\s+)?existing\s+code|existing\s+(?:code|codebase|pipeline)|automated\s+tests?|schema\s+and\s+clinical\s+validation|use\s+the\s+llm|hard-coded\s+phrases|unit\s+tests?|pull\s+request|github|software|framework|programming|developer|langchain|langgraph)\b",
+    r"\b(?:generate|produce|create|output|write|format)\s+(?:the\s+)?(?:findings|impression|report|draft|json)\b",
+    r"\b(?:retrieve|fetch|extract|pull|load)\s+(?:the\s+)?patient\s+demographics\b",
+    r"\bflag\s+(?:any\s+)?missing\s+(?:examination|clinical|patient)\s+information\b",
+    r"\b(?:only\s+from|based\s+only\s+on)\s+the\s+available\s+information\b",
+    r"\bno\s+additional\s+clinical\s+findings\s+were\s+dictated\b",
+    r"\bno\s+further\s+findings\s+were\s+dictated\b",
+    r"\bno\s+other\s+clinical\s+findings\s+were\s+dictated\b",
+    r"\b(?:as\s+an\s+ai|system\s+prompt|user\s+prompt|instructions?|guidelines?)\b",
+    r"\bfor\s+clinician\s+review\b.*(?:\bflag\b|\breview\b)",
+    r"\bfrom\s+the\s+selected\s+authorized\s+patient\s+record\b",
+]
+
+def is_meta_or_instruction_sentence(text: str) -> bool:
+    """Detects whether a sentence is an AI prompt instruction, system directive, or filler meta-statement."""
+    if not text:
+        return False
+    t_lower = text.lower().strip()
+    return any(re.search(pat, t_lower, re.IGNORECASE) for pat in META_INSTRUCTION_PATTERNS)
+
 def is_clinically_relevant_dictation(text: str) -> bool:
     """
     Evaluates whether an input transcript contains genuine dental, maxillofacial,
@@ -132,6 +153,15 @@ def classify_clinical_finding_status(text: str) -> Dict[str, str]:
     # 3. Certainty Dimension (Confirmed vs Suspected vs Indeterminate)
     is_hedged = any(re.search(r"\b" + re.escape(hw) + r"\b", t_lower) for hw in HEDGING_WORDS)
 
+    # Indeterminate / Cannot be assessed
+    indeterminate_phrases = [
+        "cannot be determined", "cannot be assessed", "cannot be evaluated",
+        "cannot be visualized", "cannot be seen", "not assessable",
+        "indeterminate", "equivocal", "unclear", "not definitively",
+        "cannot rule out", "cannot be confirmed", "no definite"
+    ]
+    is_indeterminate = any(ip in t_lower for ip in indeterminate_phrases)
+
     # Check for confirmed lesion presence with uncertain etiology:
     has_confirmed_lesion = bool(re.search(r"\b(lesion|radiolucency|defect|mass|cyst)\b", t_lower) and re.search(r"\b(present|observed|noted|identified|measures?|located|extending)\b", t_lower))
     has_uncertain_cause = bool(re.search(r"\b(etiology|cause|nature)\s+(?:is\s+)?(?:uncertain|unknown|indeterminate|unconfirmed)\b", t_lower) or "etiology is uncertain" in t_lower)
@@ -139,7 +169,7 @@ def classify_clinical_finding_status(text: str) -> Dict[str, str]:
     if has_confirmed_lesion and has_uncertain_cause:
         certainty = "confirmed_with_uncertain_etiology"
         status = "positive"
-    elif "no definite" in t_lower or "indeterminate" in t_lower or "equivocal" in t_lower:
+    elif is_indeterminate:
         certainty = "indeterminate"
     elif is_hedged:
         certainty = "suspected"
@@ -153,7 +183,9 @@ def classify_clinical_finding_status(text: str) -> Dict[str, str]:
         legacy_label = "definite observation"
     elif status == "negative" and certainty == "indeterminate":
         legacy_label = "negative / normal finding"
-    elif certainty == "suspected" or certainty == "indeterminate":
+    elif is_indeterminate or any(ip in t_lower for ip in ["cannot be determined", "cannot be assessed", "cannot be evaluated", "unclear", "not assessable"]):
+        legacy_label = "unclear / clinician review required"
+    elif certainty == "suspected":
         legacy_label = "suspected / differential diagnosis"
     elif status == "negative":
         legacy_label = "negative / normal finding"

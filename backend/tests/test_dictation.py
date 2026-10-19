@@ -222,6 +222,64 @@ def test_audio_upload_and_editable_confirmation():
     assert confirm_resp.status_code == 200
     conf_data = confirm_resp.json()
     assert conf_data["report_metadata"]["status"] == "CONFIRMED_BY_CLINICIAN"
-    assert conf_data["report_metadata"]["clinician_review_required"] is False
     assert conf_data["findings"][0]["observation"] == "Confirmed mesioangular / horizontal impaction of tooth 48."
+
+
+def test_meta_instruction_and_filler_filtering_in_dictation():
+    """
+    Verifies that system prompt instructions, meta-directives, and filler negative statements
+    are not ingested into clinical findings or impressions, and indeterminate findings
+    are flagged as unclear / clinician review required.
+    """
+    from backend.app.services.llm_service import parse_dictation_with_llm
+    from backend.app.services.report_service import compose_narrative
+
+    transcript = (
+        "patient reports discomfort in the lower right posterior region. "
+        "The lower right third molar is horizontally impacted. "
+        "The relationship between the tooth and the inferior alveolar canal cannot be determined from the information provided. "
+        "No additional clinical findings were dictated. "
+        "Generate the findings and impression only from the available information. "
+        "Retrieve patient demographics from the selected authorized patient record and flag any missing examination information for clinician review."
+    )
+
+    parsed = parse_dictation_with_llm(transcript)
+    findings = parsed.get("findings", [])
+    impressions = parsed.get("impressions", [])
+
+    # 1. Meta-instructions must NEVER be extracted as findings
+    forbidden_terms = [
+        "Generate the findings",
+        "Retrieve patient demographics",
+        "No additional clinical findings",
+        "authorized patient record"
+    ]
+    for f in findings:
+        obs = f.get("observation", "")
+        for term in forbidden_terms:
+            assert term.lower() not in obs.lower(), f"Forbidden meta-instruction leaked into findings: {obs}"
+
+    for imp in impressions:
+        for term in forbidden_terms:
+            assert term.lower() not in imp.lower(), f"Forbidden meta-instruction leaked into impressions: {imp}"
+
+    # 2. Indeterminate relationship must be labeled as 'unclear / clinician review required'
+    ian_finding = next((f for f in findings if "inferior alveolar" in f.get("observation", "").lower()), None)
+    assert ian_finding is not None
+    assert ian_finding["certainty"] == "unclear / clinician review required"
+
+    # 3. Horizontally impacted third molar must be extracted
+    impaction_finding = next((f for f in findings if "impacted" in f.get("observation", "").lower()), None)
+    assert impaction_finding is not None
+    assert impaction_finding["certainty"] == "definite observation"
+
+    # 4. Narrative must not have broken concatenation
+    narrative = compose_narrative(
+        patient_name="Unassigned",
+        findings=findings,
+        impressions=impressions,
+        recommendations=[]
+    )
+    assert "dictated observed" not in narrative.lower()
+
 

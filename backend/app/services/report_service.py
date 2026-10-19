@@ -72,11 +72,14 @@ def synthesize_impression_from_findings(
     """
     imp_items = []
 
+    from .claim_verification import is_meta_or_instruction_sentence
+
     # 1. Significant observations (positive, indeterminate, or differential findings)
     positive_findings = [
         f for f in findings
         if f.get("certainty") in ("definite observation", "definite observation (etiology uncertain)", "suspected / differential diagnosis")
         and not f.get("requires_clarification")
+        and not is_meta_or_instruction_sentence(str(f.get("observation", "")))
         and not re.search(r"^(?:patient\s*id|patient\s*name|study|study\s*type|scan\s*type|mrn|name:|id:|serial\s*#?|radiology\s+report\s+details|conducted\s+by)\b", str(f.get("observation", "")).lower().strip())
         and not re.search(r"\b(further\s+evaluation\s+is\s+recommended|routine\s+follow-up\s+is\s+advised)\b", str(f.get("observation", "")).lower().strip())
     ]
@@ -96,7 +99,7 @@ def synthesize_impression_from_findings(
         norm_obs = re.sub(r"[&,]", " and ", cleaned_obs.lower()).strip()
         site_in_obs = (norm_site in norm_obs) or any(w in norm_obs for w in norm_site.split() if len(w) > 4) if site else False
         has_tooth_in_obs = bool(re.search(r"\b(?:tooth|teeth|#\d+|UR|UL|LL|LR|molar|premolar|incisor|canine)\b", cleaned_obs, re.I))
-        if site and not site_in_obs and not has_tooth_in_obs and site.lower() not in ("dentition", "regional anatomy", "general", "soft tissue", "multiple teeth", "general observation"):
+        if site and not site_in_obs and not has_tooth_in_obs and site.lower() not in ("dentition", "regional anatomy", "general", "soft tissue", "multiple teeth", "general observation", "clinical symptoms & history"):
             item_text = f"{site}: {cleaned_obs}"
         else:
             item_text = cleaned_obs
@@ -110,6 +113,7 @@ def synthesize_impression_from_findings(
         f for f in findings
         if f.get("certainty") == "negative / normal finding"
         and not f.get("requires_clarification")
+        and not is_meta_or_instruction_sentence(str(f.get("observation", "")))
         and "no other abnormal finding" not in f.get("observation", "").lower()
         and not re.search(r"^(?:patient\s*id|patient\s*name|study|mrn|serial)\b", str(f.get("observation", "")).lower().strip())
     ]
@@ -118,7 +122,7 @@ def synthesize_impression_from_findings(
         neg_descs = [nf.get("observation", "").strip().rstrip(".") for nf in neg_findings]
         if all(re.match(r"^no\s+", d, re.IGNORECASE) for d in neg_descs):
             cleaned_phrases = [re.sub(r"^no\s+", "", d, flags=re.IGNORECASE) for d in neg_descs]
-            if any(re.search(r"\b(?:is|are)\s+(?:observed|identified|seen|noted)\b", cp, re.I) for cp in cleaned_phrases):
+            if any(re.search(r"\b(?:is|are|was|were)\s+(?:observed|identified|seen|noted|dictated)\b", cp, re.I) for cp in cleaned_phrases) or any(cp.strip().endswith(("observed", "identified", "seen", "noted", "dictated")) for cp in cleaned_phrases):
                 imp_items.append("; ".join(f"No {cp.strip().rstrip('.')}" for cp in cleaned_phrases) + ".")
             else:
                 cleaned_phrases = [re.sub(r"\s+(?:is|are)\s+(?:observed|identified|seen|noted)$", "", cp, flags=re.IGNORECASE) for cp in cleaned_phrases]
@@ -126,7 +130,23 @@ def synthesize_impression_from_findings(
         else:
             imp_items.append("; ".join(neg_descs) + ".")
 
-    # 3. Flagged speech transcription artifacts
+    # 3. Indeterminate observations requiring clinical correlation
+    indeterminate_findings = [
+        f for f in findings
+        if f.get("certainty") in ("unclear / clinician review required", "indeterminate")
+        and not is_meta_or_instruction_sentence(str(f.get("observation", "")))
+        and not f.get("requires_clarification")
+    ]
+    for f in indeterminate_findings:
+        obs = f.get("observation", "").strip()
+        if obs:
+            clean_obs = obs[0].upper() + obs[1:]
+            if not clean_obs.endswith("."):
+                clean_obs += " (indeterminate, clinician review advised)."
+            if not any(clean_obs.lower() in p.lower() for p in imp_items):
+                imp_items.append(clean_obs)
+
+    # 4. Flagged speech transcription artifacts
     if artifacts:
         for art in artifacts:
             imp_items.append(f"Unclear phrase '{art['matched_phrase']}' flagged for clinician clarification.")
