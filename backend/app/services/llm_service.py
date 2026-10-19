@@ -126,19 +126,22 @@ def query_ollama(prompt: str, system_prompt: Optional[str] = None, json_format: 
     if json_format:
         payload["format"] = "json"
 
+    timeout = int(os.getenv("OLLAMA_TIMEOUT", "45"))
     req = urllib.request.Request(
         OLLAMA_ENDPOINT,
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"}
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             response_text = data.get("response", "").strip()
             if response_text:
-                print(f"\n✅ [LOCAL OLLAMA ACTIVE] Received response from {OLLAMA_MODEL}!")
+                print(f"\n✅ [LOCAL OLLAMA ACTIVE] Received response from {OLLAMA_MODEL} ({len(response_text)} chars)!")
             return response_text
-    except Exception:
+    except Exception as e:
+        if os.getenv("DEBUG_LLM", "0") == "1":
+            print(f"[Ollama LLM Notice] {OLLAMA_MODEL} query did not respond: {e}")
         return None
 
 
@@ -161,13 +164,14 @@ def query_ollama_chat_tools(messages: List[Dict[str, Any]], tools: List[Dict[str
         "tools": tools,
         "stream": False
     }
+    timeout = int(os.getenv("OLLAMA_TIMEOUT", "45"))
     req = urllib.request.Request(
         OLLAMA_CHAT_ENDPOINT,
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"}
     )
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             msg = data.get("message", {})
             tool_calls = msg.get("tool_calls", [])
@@ -180,9 +184,12 @@ def query_ollama_chat_tools(messages: List[Dict[str, Any]], tools: List[Dict[str
                         args = json.loads(args)
                     except Exception:
                         pass
+                print(f"\n✅ [OLLAMA TOOL CALL ACTIVE] Model {OLLAMA_MODEL} called tool '{tool_name}'!")
                 return {"tool_name": tool_name, "arguments": args}
             return None
-    except Exception:
+    except Exception as e:
+        if os.getenv("DEBUG_LLM", "0") == "1":
+            print(f"[Ollama Tool Notice] {OLLAMA_MODEL} chat tool call did not respond: {e}")
         return None
 
 
