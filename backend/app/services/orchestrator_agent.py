@@ -328,9 +328,114 @@ def extract_doctor_from_query(query: str) -> Optional[str]:
     """Extracts referring or attending doctor name from natural language."""
     m = re.search(r"\b(?:dr\.?|doctor)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)\b", query, re.IGNORECASE)
     if m:
-        doc = m.group(1).strip().title()
-        return f"Dr. {doc}"
+        raw_doc = m.group(1).strip()
+        parts = raw_doc.split()
+        stop_words = {
+            "main", "clinic", "hospital", "center", "centre", "radiology", "suite", "bay", "room",
+            "dept", "department", "at", "in", "on", "for", "age", "aged", "pat", "patient", "scan",
+            "cbct", "opg", "slot", "tomorrow", "today", "yesterday"
+        }
+        filtered = [p for p in parts if p.lower() not in stop_words]
+        if filtered:
+            return f"Dr. {' '.join(filtered).title()}"
     return None
+
+def extract_patient_details_for_booking(query: str, session: Optional[Any] = None) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """
+    Extracts patient name, patient ID, patient age, and attending/referring doctor
+    specifically tailored for booking dialogues, handling multi-entity queries gracefully.
+    Returns: (patient_name, patient_id, patient_age, doctor_name)
+    """
+    q_lower = query.lower()
+    pat_age = extract_age_from_query(query)
+    doc_name = extract_doctor_from_query(query)
+    pat_name = None
+    pat_id = None
+
+    if any(w in q_lower for w in ["walk-in", "walk in"]):
+        pat_name = "Walk-in Patient"
+        pat_id = None
+        return pat_name, pat_id, pat_age, doc_name
+
+    # 1. Check registered patient ID (e.g. PAT-1003)
+    m_id = re.search(r"\b(PAT-\d+|PT-\d+)\b", query, re.IGNORECASE)
+    if m_id:
+        from .retrieval import get_patient
+        p = get_patient(m_id.group(1).upper())
+        if p:
+            pat_name = p.get("patient_name")
+            pat_id = p.get("patient_id")
+
+    # 2. Check registered full name in query
+    if not pat_name:
+        from .retrieval import get_all_patients
+        all_p = get_all_patients()
+        for p in all_p:
+            p_name = p.get("patient_name", "")
+            if p_name and re.search(r"\b" + re.escape(p_name.lower()) + r"\b", q_lower):
+                pat_name = p_name
+                pat_id = p.get("patient_id")
+                break
+
+    # 3. Check 'patient <Name>' or 'for <Name>'
+    if not pat_name:
+        from .retrieval import get_all_patients
+        all_p = get_all_patients()
+        pat_pattern = re.search(r"\b(?:for\s+patient|patient|for)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)\b", query, re.IGNORECASE)
+        if pat_pattern:
+            cand = pat_pattern.group(1).strip()
+            stop_words = {
+                "cbct", "opg", "scan", "slot", "tomorrow", "today", "yesterday", "dr", "doctor",
+                "main", "clinic", "radiology", "suite", "bay", "room", "age", "appointment", "check",
+                "patient", "referred", "by"
+            }
+            cand_parts = [w for w in cand.split() if w.lower() not in stop_words]
+            if cand_parts:
+                clean_cand = " ".join(cand_parts)
+                exact_matches = [p for p in all_p if p["patient_name"].lower() == clean_cand.lower()]
+                if len(exact_matches) == 1:
+                    pat_name = exact_matches[0]["patient_name"]
+                    pat_id = exact_matches[0]["patient_id"]
+                elif len(cand_parts) == 1:
+                    first_matches = [p for p in all_p if p["patient_name"].split()[0].lower() == cand_parts[0].lower()]
+                    if len(first_matches) == 1:
+                        pat_name = first_matches[0]["patient_name"]
+                        pat_id = first_matches[0]["patient_id"]
+                    elif is_valid_patient_name(clean_cand):
+                        pat_name = clean_cand.title()
+                elif is_valid_patient_name(clean_cand):
+                    pat_name = clean_cand.title()
+
+    # 4. Fallback to session state if available
+    if not pat_name and session:
+        if hasattr(session, "booking_state") and session.booking_state and session.booking_state.patient_name:
+            pat_name = session.booking_state.patient_name
+            pat_id = session.booking_state.patient_id
+        elif hasattr(session, "active_patient_id") and session.active_patient_id:
+            from .retrieval import get_patient
+            p = get_patient(session.active_patient_id)
+            if p:
+                pat_name = p.get("patient_name")
+                pat_id = p.get("patient_id")
+
+    if not pat_age and session and hasattr(session, "booking_state") and session.booking_state and session.booking_state.patient_age:
+        pat_age = session.booking_state.patient_age
+
+    if not doc_name and session and hasattr(session, "booking_state") and session.booking_state and session.booking_state.doctor_name:
+        doc_name = session.booking_state.doctor_name
+
+    # 5. Populate age from DOB if registered patient and age not provided
+    if pat_id and not pat_age:
+        from .retrieval import get_patient
+        p = get_patient(pat_id)
+        if p and p.get("date_of_birth"):
+            try:
+                pat_age = f"{2026 - int(p['date_of_birth'].split('-')[0])} years"
+            except Exception:
+                pass
+
+    return pat_name, pat_id, pat_age, doc_name
+
 
 def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
     """
@@ -504,11 +609,14 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         is_decline = any(w in q_lower for w in ["no", "cancel", "stop", "abort", "never mind", "don't"])
 
         if is_approval and not is_decline:
-            cand_age = extract_age_from_query(query)
-            if cand_age and not b_state.patient_age:
-                b_state.patient_age = cand_age
-            cand_doc = extract_doctor_from_query(query)
-            if cand_doc and not b_state.doctor_name:
+            cand_p_name, cand_p_id, cand_p_age, cand_doc = extract_patient_details_for_booking(query, session)
+            if cand_p_name:
+                b_state.patient_name = cand_p_name
+            if cand_p_id:
+                b_state.patient_id = cand_p_id
+            if cand_p_age:
+                b_state.patient_age = cand_p_age
+            if cand_doc:
                 b_state.doctor_name = cand_doc
 
             slot = b_state.selected_slot
@@ -517,7 +625,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "tool_name": "confirm_scan_booking",
                 "arguments": {
                     "slot_id": slot["slot_id"],
-                    "patient_name": b_state.patient_name or "Patient",
+                    "patient_name": b_state.patient_name or "Walk-in Patient",
                     "patient_id": b_state.patient_id,
                     "patient_age": b_state.patient_age,
                     "doctor_name": b_state.doctor_name or "Dr. R. Mehta, MDS (Attending Radiologist)",
@@ -690,39 +798,21 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     matched_slot = get_slot_by_id(matched_slot_id)
 
                 # Determine patient identity
-                pat_name = b_state.patient_name
-                pat_id = b_state.patient_id or session.active_patient_id
+                cand_p_name, cand_p_id, cand_p_age, cand_doc = extract_patient_details_for_booking(query, session)
+                pat_name = cand_p_name or b_state.patient_name
+                pat_id = cand_p_id or b_state.patient_id or session.active_patient_id
                 if not pat_name and pat_id:
                     from .retrieval import get_patient
                     p = get_patient(pat_id)
                     if p:
                         pat_name = p.get("patient_name")
 
-                # Check if user mentioned patient in this query
-                if not pat_name:
-                    q_intent = extract_retrieval_intent(query)
-                    cand_name = q_intent.get("patient_name", "")
-                    if cand_name and is_valid_patient_name(cand_name):
-                        from .retrieval import search_patients
-                        found_cands = search_patients(cand_name)
-                        exact_cands = [c for c in found_cands if c["patient_name"].lower() == cand_name.lower()]
-                        if len(exact_cands) == 1:
-                            pat_name = exact_cands[0]["patient_name"]
-                            pat_id = exact_cands[0]["patient_id"]
-                        elif len(cand_name.split()) == 1:
-                            same_f = [c for c in found_cands if c["patient_name"].split()[0].lower() == cand_name.lower()]
-                            if len(same_f) == 1:
-                                pat_name = same_f[0]["patient_name"]
-                                pat_id = same_f[0]["patient_id"]
-                            elif found_cands:
-                                pat_name = cand_name.title()
-                        elif found_cands:
-                            pat_name = cand_name.title()
-
                 if not pat_name:
                     pat_name = "Walk-in Patient" if (b_state.patient_type == "walk_in" or "walk" in q_lower) else "Walk-in Patient"
 
-                if pat_id and not b_state.patient_age:
+                if cand_p_age:
+                    b_state.patient_age = cand_p_age
+                elif pat_id and not b_state.patient_age:
                     from .retrieval import get_patient
                     p_rec = get_patient(pat_id)
                     if p_rec and p_rec.get("date_of_birth"):
@@ -731,10 +821,6 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                         except Exception:
                             b_state.patient_age = f"DOB: {p_rec['date_of_birth']}"
 
-                cand_age = extract_age_from_query(query)
-                if cand_age:
-                    b_state.patient_age = cand_age
-                cand_doc = extract_doctor_from_query(query)
                 if cand_doc:
                     b_state.doctor_name = cand_doc
 
@@ -809,8 +895,9 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             matched_slot_id = resolve_pending_slot_from_query(query, all_avail)
             if matched_slot_id:
                 matched_slot = next((s for s in all_avail if s["slot_id"].upper() == matched_slot_id.upper()), None)
-                pat_name = b_state.patient_name
-                pat_id = b_state.patient_id or session.active_patient_id
+                cand_p_name, cand_p_id, cand_p_age, cand_doc = extract_patient_details_for_booking(query, session)
+                pat_name = cand_p_name or b_state.patient_name
+                pat_id = cand_p_id or b_state.patient_id or session.active_patient_id
                 if not pat_name and pat_id:
                     from .retrieval import get_patient
                     p = get_patient(pat_id)
@@ -822,45 +909,21 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                                 b_state.patient_age = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
                             except Exception:
                                 b_state.patient_age = f"DOB: {dob}"
-                if not pat_name:
-                    q_intent = extract_retrieval_intent(query)
-                    cand_name = q_intent.get("patient_name", "")
-                    if cand_name and is_valid_patient_name(cand_name):
-                        from .retrieval import search_patients
-                        found_cands = search_patients(cand_name)
-                        exact_cands = [c for c in found_cands if c["patient_name"].lower() == cand_name.lower()]
-                        if len(exact_cands) == 1:
-                            pat_name = exact_cands[0]["patient_name"]
-                            pat_id = exact_cands[0]["patient_id"]
-                            dob = exact_cands[0].get("date_of_birth")
-                            if dob and not b_state.patient_age:
-                                try:
-                                    b_state.patient_age = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
-                                except Exception:
-                                    b_state.patient_age = f"DOB: {dob}"
-                        elif len(cand_name.split()) == 1:
-                            same_f = [c for c in found_cands if c["patient_name"].split()[0].lower() == cand_name.lower()]
-                            if len(same_f) == 1:
-                                pat_name = same_f[0]["patient_name"]
-                                pat_id = same_f[0]["patient_id"]
-                                dob = same_f[0].get("date_of_birth")
-                                if dob and not b_state.patient_age:
-                                    try:
-                                        b_state.patient_age = f"{2026 - int(dob.split('-')[0])} years (DOB: {dob})"
-                                    except Exception:
-                                        b_state.patient_age = f"DOB: {dob}"
-                            else:
-                                pat_name = cand_name.title()
-                        else:
-                            pat_name = cand_name.title()
 
                 if not pat_name:
                     pat_name = "Walk-in Patient"
 
-                cand_age = extract_age_from_query(query)
-                if cand_age:
-                    b_state.patient_age = cand_age
-                cand_doc = extract_doctor_from_query(query)
+                if cand_p_age:
+                    b_state.patient_age = cand_p_age
+                elif pat_id and not b_state.patient_age:
+                    from .retrieval import get_patient
+                    p_rec = get_patient(pat_id)
+                    if p_rec and p_rec.get("date_of_birth"):
+                        try:
+                            b_state.patient_age = f"{2026 - int(p_rec['date_of_birth'].split('-')[0])} years (DOB: {p_rec['date_of_birth']})"
+                        except Exception:
+                            b_state.patient_age = f"DOB: {p_rec['date_of_birth']}"
+
                 if cand_doc:
                     b_state.doctor_name = cand_doc
 
@@ -1260,51 +1323,61 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
         # Check if patient is specified
         pat_name_for_booking = None
         pat_id_for_booking = session.active_patient_id
-        if any(w in q_lower for w in ["walk-in", "walk in"]):
-            session.booking_state.patient_type = "walk_in"
-            pat_name_for_booking = "Walk-in Patient"
-        else:
-            q_intent = extract_retrieval_intent(query)
-            cand_name = q_intent.get("patient_name", "")
-            if cand_name and is_valid_patient_name(cand_name):
-                from .retrieval import search_patients
-                cands = search_patients(cand_name)
-                exact_cands = [c for c in cands if c["patient_name"].lower() == cand_name.lower()]
-                if len(exact_cands) == 1:
-                    pat_name_for_booking = exact_cands[0]["patient_name"]
-                    pat_id_for_booking = exact_cands[0]["patient_id"]
-                elif len(exact_cands) > 1:
-                    session.pending_candidates = exact_cands
-                    return {
-                        "selected_agent": "RetrievalAgent",
-                        "tool_name": "clarification_required",
-                        "arguments": {"candidates": exact_cands},
-                        "rationale": f"Ambiguous patient name '{cand_name}' for booking. Clarification required."
-                    }
-                else:
-                    cand_tokens = cand_name.split()
-                    if len(cand_tokens) == 1:
-                        cand_first = cand_tokens[0].lower()
-                        same_first = [c for c in cands if c["patient_name"].split()[0].lower() == cand_first]
-                        if len(same_first) == 1:
-                            pat_name_for_booking = same_first[0]["patient_name"]
-                            pat_id_for_booking = same_first[0]["patient_id"]
-                        elif len(same_first) > 1:
-                            session.pending_candidates = same_first
-                            return {
-                                "selected_agent": "RetrievalAgent",
-                                "tool_name": "clarification_required",
-                                "arguments": {"candidates": same_first},
-                                "rationale": f"Ambiguous patient name '{cand_name}' for booking. Clarification required."
-                            }
+        cand_p_name, cand_p_id, cand_p_age, cand_doc = extract_patient_details_for_booking(query, session)
+        if cand_p_name:
+            pat_name_for_booking = cand_p_name
+            pat_id_for_booking = cand_p_id
+        if cand_p_age:
+            session.booking_state.patient_age = cand_p_age
+        if cand_doc:
+            session.booking_state.doctor_name = cand_doc
+
+        if not pat_name_for_booking:
+            if any(w in q_lower for w in ["walk-in", "walk in"]):
+                session.booking_state.patient_type = "walk_in"
+                pat_name_for_booking = "Walk-in Patient"
+            else:
+                q_intent = extract_retrieval_intent(query)
+                cand_name = q_intent.get("patient_name", "")
+                if cand_name and is_valid_patient_name(cand_name):
+                    from .retrieval import search_patients
+                    cands = search_patients(cand_name)
+                    exact_cands = [c for c in cands if c["patient_name"].lower() == cand_name.lower()]
+                    if len(exact_cands) == 1:
+                        pat_name_for_booking = exact_cands[0]["patient_name"]
+                        pat_id_for_booking = exact_cands[0]["patient_id"]
+                    elif len(exact_cands) > 1:
+                        session.pending_candidates = exact_cands
+                        return {
+                            "selected_agent": "RetrievalAgent",
+                            "tool_name": "clarification_required",
+                            "arguments": {"candidates": exact_cands},
+                            "rationale": f"Ambiguous patient name '{cand_name}' for booking. Clarification required."
+                        }
+                    else:
+                        cand_tokens = cand_name.split()
+                        if len(cand_tokens) == 1:
+                            cand_first = cand_tokens[0].lower()
+                            same_first = [c for c in cands if c["patient_name"].split()[0].lower() == cand_first]
+                            if len(same_first) == 1:
+                                pat_name_for_booking = same_first[0]["patient_name"]
+                                pat_id_for_booking = same_first[0]["patient_id"]
+                            elif len(same_first) > 1:
+                                session.pending_candidates = same_first
+                                return {
+                                    "selected_agent": "RetrievalAgent",
+                                    "tool_name": "clarification_required",
+                                    "arguments": {"candidates": same_first},
+                                    "rationale": f"Ambiguous patient name '{cand_name}' for booking. Clarification required."
+                                }
+                            else:
+                                pat_name_for_booking = cand_name.title()
+                                pat_id_for_booking = None
+                                session.booking_state.patient_type = "new"
                         else:
                             pat_name_for_booking = cand_name.title()
                             pat_id_for_booking = None
                             session.booking_state.patient_type = "new"
-                    else:
-                        pat_name_for_booking = cand_name.title()
-                        pat_id_for_booking = None
-                        session.booking_state.patient_type = "new"
 
         if not pat_name_for_booking and session.active_patient_id:
             from .retrieval import get_patient
@@ -1339,7 +1412,9 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "modality": detected_mod,
                 "preferred_date": detected_date,
                 "patient_name": pat_name_for_booking,
-                "patient_id": pat_id_for_booking
+                "patient_id": pat_id_for_booking,
+                "patient_age": session.booking_state.patient_age,
+                "doctor_name": session.booking_state.doctor_name
             },
             "rationale": f"Fallback: Clinician requested scan booking/availability for {detected_mod} on {detected_date or 'any date'}."
         }
@@ -2276,6 +2351,14 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             slots = slots_res.get("available_slots", [])
             session.booking_state.displayed_slots = slots
             session.booking_state.modality = mod_title
+            if arguments.get("patient_name"):
+                session.booking_state.patient_name = arguments.get("patient_name")
+            if arguments.get("patient_id"):
+                session.booking_state.patient_id = arguments.get("patient_id")
+            if arguments.get("patient_age"):
+                session.booking_state.patient_age = arguments.get("patient_age")
+            if arguments.get("doctor_name"):
+                session.booking_state.doctor_name = arguments.get("doctor_name")
             if slots:
                 session.booking_state.stage = BookingStage.SLOTS_PRESENTED
 
@@ -2296,11 +2379,20 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             if slots:
                 slot_lines = [f"• [{s['slot_id']}] {s['datetime_str']} — {s['modality']} ({s['room']})" for s in slots]
                 mod_phrase = f" for {mod_title} scan" if mod_title != "Radiology" else ""
-                p_phrase = f" for {session.booking_state.patient_name}" if session.booking_state.patient_name and session.booking_state.patient_name != "Patient" else ""
+                p_phrase = f" for {session.booking_state.patient_name}" if session.booking_state.patient_name and session.booking_state.patient_name not in ["Patient", "Walk-in Patient"] else ""
+                
+                if not session.booking_state.patient_name or session.booking_state.patient_name in ["Patient", "Walk-in Patient"]:
+                    confirm_guide = (
+                        f"Confirmation Required: Would you like to confirm any of these slots? (e.g. 'Yes, book slot {slots[0]['slot_id']}').\n"
+                        f"Please specify the Slot ID along with patient name, age, referring doctor, and clinic location (or reply 'Confirm slot {slots[0]['slot_id']} as Walk-in Patient')."
+                    )
+                else:
+                    confirm_guide = f"Confirmation Required for {session.booking_state.patient_name}: Would you like to confirm any of these slots? (e.g. 'Yes, book slot {slots[0]['slot_id']}')."
+
                 msg = (
                     f"Found {len(slots)} available appointment slot(s){mod_phrase}{p_phrase}{date_str}:\n"
                     + "\n".join(slot_lines)
-                    + f"\n\nConfirmation Required: Would you like to confirm any of these slots? (e.g. 'Yes, book slot {slots[0]['slot_id']}')."
+                    + f"\n\n{confirm_guide}"
                 )
             else:
                 from .booking_service import check_available_slots as get_all_slots

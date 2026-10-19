@@ -387,6 +387,50 @@ def test_booking_with_active_patient_calculates_age_and_location():
     assert "Token / Queue #" in r_confirm["message"]
 
 
+def test_multiturn_booking_preserves_patient_age_doctor_and_facility():
+    """
+    Verifies that multi-entity booking queries preserve patient details across turns:
+    Turn 1: 'Book a CBCT scan for patient Rahul Verma age 48 Dr. Mehta Main Clinic'
+    Turn 2: 'Confirm slot SLOT-107'
+    Asserting that slot confirmation attributes patient to Rahul Verma (PAT-1003),
+    age 48 years, Dr. Mehta, and registered patient status instead of defaulting to Walk-in Patient.
+    """
+    from backend.app.services.booking_service import reset_slots
+    reset_slots()
+    session_id = "test_multiturn_booking_rahul"
+    session = get_or_create_session(session_id)
+    session.clear()
+
+    # Turn 1: Initial query with patient, age, doctor, and clinic location
+    r1 = run_multi_agent_pipeline(
+        "Book a CBCT scan for patient Rahul Verma age 48 Dr. Mehta Main Clinic",
+        session_id=session_id
+    )
+    assert r1["status"] in ("confirmation_required", "slots_presented")
+    assert "Rahul Verma" in r1["message"]
+    assert "CBCT" in r1["message"]
+    trace_args = r1.get("agent_trace", {}).get("arguments", {})
+    assert trace_args.get("patient_name") == "Rahul Verma"
+    assert trace_args.get("patient_id") == "PAT-1003"
+    assert trace_args.get("patient_age") == "48 years"
+    assert trace_args.get("doctor_name") == "Dr. Mehta"
+
+    # Turn 2: Follow-up slot confirmation
+    r2 = run_multi_agent_pipeline("Confirm slot SLOT-107", session_id=session_id)
+    assert r2["status"] == "success"
+    slot = r2.get("slot", {})
+    assert slot.get("patient_name") == "Rahul Verma"
+    assert slot.get("patient_id") == "PAT-1003"
+    assert slot.get("patient_age") == "48 years"
+    assert slot.get("doctor_name") == "Dr. Mehta"
+    assert slot.get("patient_status") == "REGISTERED"
+    assert "Rahul Verma (PAT-1003)" in r2["message"]
+    assert "Age: 48 years" in r2["message"]
+    assert "Dr. Mehta" in r2["message"]
+    assert "Viscan Dental Imaging Center - Main Clinic" in r2["message"]
+
+
+
 
 
 
