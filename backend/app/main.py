@@ -111,7 +111,7 @@ def get_dashboard_ui():
     <div class="bg-slate-800 border-b border-slate-700">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1 sm:space-x-4">
             <button onclick="switchTab('assistant')" id="tabBtn-assistant" class="px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 border-sky-500 text-sky-400 flex items-center transition">
-                <i class="fa-solid fa-x-ray mr-2"></i> Patient Records & Imaging
+                <i class="fa-solid fa-users mr-2"></i> Clinic Patient Directory
             </button>
             <button onclick="switchTab('dictation')" id="tabBtn-dictation" class="px-4 py-3 text-xs sm:text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center transition">
                 <i class="fa-solid fa-microphone-lines mr-2"></i> Clinical Dictation & Notes
@@ -123,33 +123,44 @@ def get_dashboard_ui():
     <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
 
         <!-- =================================================================== -->
-        <!-- TAB 1: PATIENT RECORDS & RADIOLOGY IMAGING -->
-        <!-- =================================================================== -->
-        <!-- =================================================================== -->
-        <!-- TAB 1: PATIENT RECORDS & RADIOLOGY IMAGING -->
+        <!-- TAB 1: CLINIC PATIENT DIRECTORY & RADIOLOGY IMAGING -->
         <!-- =================================================================== -->
         <div id="tabContent-assistant" class="space-y-6">
 
             <!-- 1. CLINIC PATIENT DIRECTORY (Mandatory: Always Visible) -->
-            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-lg">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-3 border-b border-slate-700/80 gap-2">
-                    <div class="flex items-center space-x-2.5">
-                        <div class="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center text-sm font-bold">
+            <div id="patientDirectoryCard" class="bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-lg transition">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-3 border-b border-slate-700/80 gap-3">
+                    <button type="button" id="btnTogglePatientDirectory" onclick="togglePatientDirectory()" class="flex items-center space-x-2.5 text-left group cursor-pointer hover:opacity-90 transition">
+                        <div class="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 group-hover:bg-sky-500/30 group-hover:text-sky-300 flex items-center justify-center text-sm font-bold transition">
                             <i class="fa-solid fa-users"></i>
                         </div>
                         <div>
                             <div class="flex items-center space-x-2">
-                                <h2 class="font-bold text-white text-xs sm:text-sm">Clinic Patient Directory</h2>
+                                <h2 class="font-bold text-white text-xs sm:text-sm group-hover:text-sky-300 transition flex items-center">
+                                    Clinic Patient Directory
+                                    <i id="patientDirectoryChevron" class="fa-solid fa-chevron-down ml-2 text-[10px] text-slate-400 transition-transform"></i>
+                                </h2>
                                 <span id="patientDirectoryCount" class="text-[10px] bg-slate-700 text-sky-300 px-2 py-0.5 rounded-full font-mono">Loading...</span>
                             </div>
-                            <p class="text-[11px] text-slate-400 mt-0.5">Click any registered patient to load their diagnostic record and view all associated imaging reports.</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Click any registered patient or use the quick selector to load diagnostic reports.</p>
                         </div>
-                    </div>
-                    <div class="relative w-full sm:w-72">
-                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-500"></i>
-                        <input id="patientSearchInput" type="text" placeholder="Search patients by name or ID..."
-                               oninput="filterPatientDirectory(this.value)"
-                               class="w-full text-xs bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 rounded-xl pl-8 pr-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                    </button>
+                    <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                        <!-- Quick Patient Dropdown Selector & Open Scan Button -->
+                        <div class="flex items-center gap-1.5 flex-1 sm:flex-none">
+                            <select id="patientDirectorySelect" onchange="if(this.value) selectPatientById(this.value)" class="bg-slate-900 border border-slate-700 text-slate-100 text-xs rounded-xl px-2.5 py-1.5 focus:ring-2 focus:ring-sky-500 focus:outline-none max-w-[180px] sm:max-w-[210px] truncate">
+                                <option value="">-- Quick Select Patient --</option>
+                            </select>
+                            <button type="button" onclick="triggerSelectedPatientRetrieval()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition flex items-center shadow-md whitespace-nowrap">
+                                <i class="fa-solid fa-folder-open mr-1.5"></i> Open Scan
+                            </button>
+                        </div>
+                        <div class="relative w-full sm:w-56">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-500"></i>
+                            <input id="patientSearchInput" type="text" placeholder="Search patients..."
+                                   oninput="filterPatientDirectory(this.value)"
+                                   class="w-full text-xs bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 rounded-xl pl-8 pr-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                        </div>
                     </div>
                 </div>
 
@@ -510,13 +521,46 @@ def get_dashboard_ui():
             switchTab('dictation');
         }
 
+        let isPatientDirectoryCollapsed = false;
+
+        function togglePatientDirectory() {
+            const grid = document.getElementById("patientDirectoryGrid");
+            const chevron = document.getElementById("patientDirectoryChevron");
+            if (!grid) return;
+            isPatientDirectoryCollapsed = !isPatientDirectoryCollapsed;
+            if (isPatientDirectoryCollapsed) {
+                grid.classList.add("hidden");
+                if (chevron) chevron.className = "fa-solid fa-chevron-right ml-2 text-[10px] text-slate-400 transition-transform";
+            } else {
+                grid.classList.remove("hidden");
+                if (chevron) chevron.className = "fa-solid fa-chevron-down ml-2 text-[10px] text-slate-400 transition-transform";
+            }
+        }
+
+        function triggerSelectedPatientRetrieval() {
+            const sel = document.getElementById("patientDirectorySelect");
+            const patientId = sel ? sel.value : null;
+            if (patientId) {
+                selectPatientById(patientId);
+            } else if (allClinicPatients && allClinicPatients.length > 0) {
+                selectPatientById(allClinicPatients[0].patient_id);
+            } else {
+                alert("Please select a patient from the directory first.");
+            }
+        }
+
         async function loadPatientDirectory() {
             const grid = document.getElementById("patientDirectoryGrid");
             const countBadge = document.getElementById("patientDirectoryCount");
+            const sel = document.getElementById("patientDirectorySelect");
             try {
                 const resp = await fetch(`${API_BASE}/patients`);
                 allClinicPatients = await resp.json();
                 if (countBadge) countBadge.innerText = `${allClinicPatients.length} Patients Registered`;
+                if (sel) {
+                    sel.innerHTML = `<option value="">-- Quick Select Patient --</option>` +
+                        allClinicPatients.map(p => `<option value="${p.patient_id}">${p.patient_name} (${p.patient_id})</option>`).join('');
+                }
                 renderPatientDirectory(allClinicPatients);
             } catch (err) {
                 console.error("Failed to load patient directory:", err);
@@ -549,8 +593,8 @@ def get_dashboard_ui():
                 const isSelected = activeSelectedPatient && activeSelectedPatient.patient_id === p.patient_id;
                 const reportCount = (p.reports || []).length;
                 return `
-                    <div onclick="selectPatientById('${p.patient_id}')" 
-                         class="p-2.5 rounded-xl border cursor-pointer transition flex items-center justify-between ${isSelected ? 'bg-sky-950/60 border-sky-500 shadow-md shadow-sky-500/10' : 'bg-slate-900/80 hover:bg-slate-700/70 border-slate-700/80'}">
+                    <button type="button" onclick="selectPatientById('${p.patient_id}')" 
+                         class="w-full text-left p-2.5 rounded-xl border cursor-pointer transition flex items-center justify-between ${isSelected ? 'bg-sky-950/60 border-sky-500 shadow-md shadow-sky-500/10 ring-1 ring-sky-500' : 'bg-slate-900/80 hover:bg-slate-700/70 border-slate-700/80 hover:border-slate-600'}">
                         <div class="flex items-center space-x-2.5 overflow-hidden">
                             <div class="w-7 h-7 rounded-lg ${isSelected ? 'bg-sky-500 text-white' : 'bg-slate-800 text-slate-300'} flex-shrink-0 flex items-center justify-center font-bold text-xs">
                                 ${p.patient_name.split(' ').map(n=>n[0]).join('').substring(0,2)}
@@ -567,7 +611,7 @@ def get_dashboard_ui():
                                 ${reportCount} ${reportCount === 1 ? 'report' : 'reports'}
                             </span>
                         </div>
-                    </div>
+                    </button>
                 `;
             }).join('');
         }
@@ -582,6 +626,8 @@ def get_dashboard_ui():
                 const data = await resp.json();
                 if (data.status === "success" && data.patient) {
                     activeSelectedPatient = data.patient;
+                    const sel = document.getElementById("patientDirectorySelect");
+                    if (sel) sel.value = data.patient.patient_id;
                     renderPatientDirectory(allClinicPatients);
                     renderSelectedPatientSection(data.patient, data.reports || []);
 
