@@ -199,6 +199,185 @@ DENTAL_ASSISTANT_TOOLS = [
         }
     },
     {
+        "name": "search_patients",
+        "description": "Finds existing patients using authorized identifiers (patient ID, full/partial name, phone number, or date of birth).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Patient identifier, phone number, or full/partial name."}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "get_patient_details",
+        "description": "Retrieves a selected patient's verified registration and demographic details.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "patient_id": {"type": "string", "description": "The unique patient identifier (e.g. 'PAT-1001')."}
+            },
+            "required": ["patient_id"]
+        }
+    },
+    {
+        "name": "register_patient",
+        "description": "Creates a new patient record after required registration fields are collected and validated. Prevents duplicate registrations.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "full_name": {"type": "string", "description": "Full name of the new patient."},
+                "date_of_birth": {"type": "string", "description": "Date of birth (e.g. '1996-02-14' or '14 February 1996'). Age will be automatically calculated."},
+                "contact_number": {"type": "string", "description": "Primary contact telephone/mobile number."},
+                "email": {"type": "string", "description": "Optional email address."},
+                "sex": {"type": "string", "description": "Biological sex / gender if provided."},
+                "address": {"type": "string", "description": "Optional residential address or city."}
+            },
+            "required": ["full_name", "date_of_birth", "contact_number"]
+        }
+    },
+    {
+        "name": "list_services",
+        "description": "Returns available clinic examinations, imaging scans (CBCT, OPG, Bitewing, Periapical), and doctor consultations.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "category": {"type": "string", "enum": ["imaging", "consultation", "all"], "description": "Filter by service category."}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "list_specializations",
+        "description": "Retrieves the clinic's actual verified medical specialties (Oral & Maxillofacial Radiology, Oral & Maxillofacial Surgery, Orthodontics, Endodontics, Periodontics, General Dentistry).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "search_doctors",
+        "description": "Finds verified doctors by specialization, service, clinic branch, or name preference.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "specialization": {"type": "string", "description": "Clinical specialty filter."},
+                "service": {"type": "string", "description": "Specific procedure or consultation service."},
+                "branch": {"type": "string", "description": "Clinic branch location filter."},
+                "doctor_name": {"type": "string", "description": "Doctor's name or title."}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_doctor_details",
+        "description": "Retrieves a doctor's verified profile, qualifications, clinic branches, and eligible services.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "doctor_id": {"type": "string", "description": "The unique doctor ID or name (e.g. 'DOC-101' or 'Dr. Rajesh Mehta')."}
+            },
+            "required": ["doctor_id"]
+        }
+    },
+    {
+        "name": "check_appointment_availability",
+        "description": "Checks the clinic's real schedule and returns available appointment slots for the selected service, doctor, branch, and date/time.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "service": {"type": "string", "description": "Service or examination name."},
+                "doctor_id": {"type": "string", "description": "Optional preferred doctor ID or name."},
+                "specialization": {"type": "string", "description": "Optional specialization filter."},
+                "branch": {"type": "string", "description": "Clinic branch identifier."},
+                "preferred_date": {"type": "string", "description": "Preferred date or relative day (e.g. 'tomorrow', '2026-10-20')."},
+                "preferred_time": {"type": "string", "description": "Preferred time or window (e.g. 'morning', 'afternoon', '10:00 AM')."}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_existing_appointments",
+        "description": "Retrieves current and upcoming confirmed bookings for the selected patient.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "patient_id": {"type": "string", "description": "Patient identifier."},
+                "patient_name": {"type": "string", "description": "Patient full or partial name."},
+                "booking_reference": {"type": "string", "description": "Booking reference code."}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "book_appointment",
+        "description": "Creates an appointment booking after validation and explicit confirmation. Revalidates slot and persists booking.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "slot_id": {"type": "string", "description": "Selected slot ID (e.g. 'SLOT-101')."},
+                "patient_name": {"type": "string", "description": "Verified patient name."},
+                "patient_id": {"type": "string", "description": "Assigned patient ID."},
+                "service": {"type": "string", "description": "Service or examination booked."},
+                "doctor_name": {"type": "string", "description": "Attending doctor name."},
+                "branch": {"type": "string", "description": "Clinic location."},
+                "confirmation": {"type": "boolean", "description": "Explicit confirmation flag."}
+            },
+            "required": ["slot_id", "patient_name"]
+        }
+    },
+    {
+        "name": "reschedule_appointment",
+        "description": "Changes an existing booking after explicit confirmation and slot availability validation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "existing_booking_id": {"type": "string", "description": "Existing booking reference or slot ID."},
+                "new_slot_id": {"type": "string", "description": "New target slot ID."},
+                "confirmation": {"type": "boolean", "description": "Explicit confirmation flag."}
+            },
+            "required": ["existing_booking_id", "new_slot_id"]
+        }
+    },
+    {
+        "name": "cancel_appointment",
+        "description": "Cancels a specific booking after confirmation and releases the slot.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "booking_id": {"type": "string", "description": "Booking reference or slot ID to cancel."},
+                "reason": {"type": "string", "description": "Optional cancellation reason."},
+                "confirmation": {"type": "boolean", "description": "Explicit confirmation flag."}
+            },
+            "required": ["booking_id"]
+        }
+    },
+    {
+        "name": "get_appointment_status",
+        "description": "Verifies the persisted booking, cancellation, or rescheduling result from the database.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "booking_id": {"type": "string", "description": "Booking reference or slot ID to check."}
+            },
+            "required": ["booking_id"]
+        }
+    },
+    {
+        "name": "send_appointment_notification",
+        "description": "Sends and records a verified appointment confirmation or reminder through an authorized channel (SMS or Email).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "booking_id": {"type": "string", "description": "Confirmed booking reference code."},
+                "channel": {"type": "string", "enum": ["sms", "email"], "description": "Notification delivery channel."},
+                "recipient": {"type": "string", "description": "Optional recipient phone number or email."}
+            },
+            "required": ["booking_id"]
+        }
+    },
+    {
         "name": "conversation",
         "description": "Handles general clinical questions, dental radiology concepts (e.g. 'what is CBCT?', 'explain caries'), workstation help, capabilities, and conversational dialogue without running database queries.",
         "inputSchema": {
@@ -485,6 +664,157 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             ident = arguments.get("booking_identifier", "")
             new_slot_id = arguments.get("new_slot_id", "")
             return reschedule_booking(ident, new_slot_id=new_slot_id)
+
+        # -------------------------------------------------------------
+        # Real-Life Appointment-Booking & Catalog Tool Handlers
+        # -------------------------------------------------------------
+        elif tool_name == "search_patients":
+            from .retrieval import search_patients
+            query_str = arguments.get("query", "")
+            cands = search_patients(query_str)
+            return {
+                "status": "success",
+                "count": len(cands),
+                "patients": cands,
+                "message": f"Found {len(cands)} matching patient record(s)." if cands else f"No existing patient records matching '{query_str}'."
+            }
+
+        elif tool_name == "get_patient_details":
+            from .patient_registration import get_patient_details
+            p_id = arguments.get("patient_id", "")
+            p_details = get_patient_details(p_id)
+            if not p_details:
+                return {"status": "not_found", "message": f"Patient '{p_id}' not found in clinic records."}
+            return {
+                "status": "success",
+                "patient": p_details
+            }
+
+        elif tool_name == "register_patient":
+            from .patient_registration import register_patient
+            return register_patient(
+                full_name=arguments.get("full_name", ""),
+                date_of_birth=arguments.get("date_of_birth", ""),
+                contact_number=arguments.get("contact_number", ""),
+                email=arguments.get("email"),
+                sex=arguments.get("sex"),
+                address=arguments.get("address")
+            )
+
+        elif tool_name == "list_services":
+            from .clinic_catalog import list_services
+            cat = arguments.get("category")
+            srvs = list_services(category=cat)
+            return {
+                "status": "success",
+                "count": len(srvs),
+                "services": srvs
+            }
+
+        elif tool_name == "list_specializations":
+            from .clinic_catalog import list_specializations
+            specs = list_specializations()
+            return {
+                "status": "success",
+                "count": len(specs),
+                "specializations": specs
+            }
+
+        elif tool_name == "search_doctors":
+            from .clinic_catalog import search_doctors
+            docs = search_doctors(
+                specialization=arguments.get("specialization"),
+                service=arguments.get("service"),
+                branch=arguments.get("branch"),
+                doctor_name=arguments.get("doctor_name")
+            )
+            return {
+                "status": "success",
+                "count": len(docs),
+                "doctors": docs
+            }
+
+        elif tool_name == "get_doctor_details":
+            from .clinic_catalog import get_doctor_details
+            doc = get_doctor_details(arguments.get("doctor_id", ""))
+            if not doc:
+                return {"status": "not_found", "message": f"Doctor '{arguments.get('doctor_id')}' not found."}
+            return {
+                "status": "success",
+                "doctor": doc
+            }
+
+        elif tool_name == "check_appointment_availability":
+            from .booking_service import check_appointment_availability
+            slots = check_appointment_availability(
+                service=arguments.get("service"),
+                doctor_id=arguments.get("doctor_id"),
+                specialization=arguments.get("specialization"),
+                branch=arguments.get("branch"),
+                preferred_date=arguments.get("preferred_date"),
+                preferred_time=arguments.get("preferred_time")
+            )
+            return {
+                "status": "success",
+                "count": len(slots),
+                "available_slots": slots,
+                "message": f"Found {len(slots)} available appointment slot(s)." if slots else "No appointment slots are currently available matching the requested criteria."
+            }
+
+        elif tool_name == "get_existing_appointments":
+            from .booking_service import get_existing_appointments
+            b_list = get_existing_appointments(
+                patient_id=arguments.get("patient_id"),
+                patient_name=arguments.get("patient_name"),
+                booking_reference=arguments.get("booking_reference")
+            )
+            return {
+                "status": "success",
+                "count": len(b_list),
+                "appointments": b_list
+            }
+
+        elif tool_name == "book_appointment":
+            from .booking_service import book_appointment
+            return book_appointment(
+                slot_id=arguments.get("slot_id", ""),
+                patient_name=arguments.get("patient_name", ""),
+                patient_id=arguments.get("patient_id"),
+                service=arguments.get("service"),
+                doctor_name=arguments.get("doctor_name"),
+                confirmation=arguments.get("confirmed", arguments.get("confirmation", True))
+            )
+
+        elif tool_name == "reschedule_appointment":
+            from .booking_service import reschedule_appointment
+            return reschedule_appointment(
+                existing_booking_id=arguments.get("existing_booking_id", ""),
+                new_slot_id=arguments.get("new_slot_id", ""),
+                confirmation=arguments.get("confirmation", True)
+            )
+
+        elif tool_name == "cancel_appointment":
+            from .booking_service import cancel_appointment
+            return cancel_appointment(
+                booking_id=arguments.get("booking_id", ""),
+                reason=arguments.get("reason"),
+                confirmation=arguments.get("confirmation", True)
+            )
+
+        elif tool_name == "get_appointment_status":
+            from .booking_service import get_appointment_status
+            status_obj = get_appointment_status(arguments.get("booking_id", ""))
+            if not status_obj:
+                return {"status": "not_found", "message": f"Booking '{arguments.get('booking_id')}' not found."}
+            return status_obj
+
+        elif tool_name == "send_appointment_notification":
+            from .booking_service import send_appointment_notification
+            return send_appointment_notification(
+                booking_id=arguments.get("booking_id", ""),
+                channel=arguments.get("channel", "sms"),
+                recipient=arguments.get("recipient")
+            )
 
         else:
             return {

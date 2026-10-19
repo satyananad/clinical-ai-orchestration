@@ -23,6 +23,11 @@ PATIENTS_DATA = load_patients_data()
 def get_all_patients() -> List[Dict[str, Any]]:
     return PATIENTS_DATA
 
+def reset_patients() -> List[Dict[str, Any]]:
+    global PATIENTS_DATA
+    PATIENTS_DATA = load_patients_data()
+    return PATIENTS_DATA
+
 def search_patients(query: str) -> List[Dict[str, Any]]:
     """
     Searches patients by ID, full name, or partial name.

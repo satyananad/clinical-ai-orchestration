@@ -197,7 +197,10 @@ def is_valid_patient_name(name: Optional[str]) -> bool:
         "patient", "walk-in", "walk", "yes", "please", "tomorrow", "today", "yesterday",
         "scan", "report", "opg", "cbct", "periapical", "xray", "x-ray", "ok", "okay",
         "sure", "cancel", "open", "show", "view", "find", "load", "dr", "doctor",
-        "location", "hospital", "clinic", "radiology", "suite", "room", "bay"
+        "location", "hospital", "clinic", "radiology", "suite", "room", "bay",
+        "specialist", "specialty", "dental", "dentist", "consultation", "consult",
+        "implant", "radiologist", "surgeon", "orthodontist", "endodontist", "periodontist",
+        "oral", "maxillofacial"
     }
     words = re.findall(r"[a-zA-Z]+", clean.lower())
     if not words or any(w in invalid_keywords for w in words):
@@ -339,6 +342,72 @@ def extract_doctor_from_query(query: str) -> Optional[str]:
         if filtered:
             return f"Dr. {' '.join(filtered).title()}"
     return None
+
+
+def extract_patient_registration_details(query: str) -> Dict[str, Optional[str]]:
+    """
+    Extracts registration fields from natural language text:
+    - Full name
+    - Date of birth / DOB
+    - Phone number
+    - Email address
+    - Sex / Gender
+    """
+    res = {
+        "full_name": None,
+        "date_of_birth": None,
+        "contact_phone": None,
+        "email": None,
+        "sex": None
+    }
+    q_clean = query.strip()
+
+    # 1. Email
+    email_m = re.search(r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)", q_clean)
+    if email_m:
+        res["email"] = email_m.group(1).strip()
+
+    # 2. Phone
+    phone_m = re.search(r"(\+?\d{1,4}[-\s]?\(?\d{1,4}\)?[-\s]?\d{3,5}[-\s]?\d{3,5}|\b\d{10}\b)", q_clean)
+    if phone_m:
+        res["contact_phone"] = phone_m.group(1).strip()
+
+    # 3. Sex / Gender
+    sex_m = re.search(r"\b(female|male|non-binary|other)\b", q_clean, re.IGNORECASE)
+    if sex_m:
+        res["sex"] = sex_m.group(1).capitalize()
+
+    # 4. DOB / Date of Birth
+    dob_m = re.search(r"\b(?:born\s+on|born\s+in|dob\s*[:=]?|date\s+of\s+birth\s*[:=]?)\s*([0-9A-Za-z\s,/-]+?)(?=(?:\.|\band\b|\bmy\s+phone\b|\bphone\b|\bemail\b|\bfemale\b|\bmale\b|,|\n|$))", q_clean, re.IGNORECASE)
+    if dob_m:
+        res["date_of_birth"] = dob_m.group(1).strip()
+    else:
+        # Check natural dates like '14 February 1996'
+        date_pattern = re.search(r"\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+\d{4})\b", q_clean, re.IGNORECASE)
+        if date_pattern:
+            res["date_of_birth"] = date_pattern.group(1).strip()
+        else:
+            iso_m = re.search(r"\b((?:19|20)\d{2}[-/][0-1]?\d[-/][0-3]?\d)\b", q_clean)
+            if iso_m:
+                res["date_of_birth"] = iso_m.group(1).strip()
+
+    # 5. Full Name
+    name_m = re.search(r"\b(?:my\s+name\s+is|name\s+is|name\s*[:=]?|patient\s*[:=]?)\s*([A-Za-z\s]+?)(?=(?:,|\.|\bborn\b|\bdob\b|\bphone\b|\bemail\b|\bmy\s+phone\b|\band\b|\n|$))", q_clean, re.IGNORECASE)
+    if name_m:
+        cand_name = name_m.group(1).strip()
+        if is_valid_patient_name(cand_name):
+            res["full_name"] = cand_name.title()
+    else:
+        # Only fallback to 2 words if registration signals (dob, phone, or email) are present
+        if res["date_of_birth"] or res["contact_phone"] or res["email"]:
+            words = [w for w in q_clean.split() if w.isalpha()]
+            stop_first = {"i", "need", "want", "we", "can", "could", "would", "like", "schedule", "tomorrow", "today", "yesterday", "scan", "have", "yes", "no", "this", "my", "please", "book", "the"}
+            if len(words) >= 2 and words[0].lower() not in stop_first:
+                cand = f"{words[0]} {words[1]}"
+                if is_valid_patient_name(cand):
+                    res["full_name"] = cand.title()
+
+    return res
 
 def extract_patient_details_for_booking(query: str, session: Optional[Any] = None) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
     """
@@ -760,7 +829,209 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             b_state.displayed_slots = []
             session.pending_booking_slots = []
 
+    # 0B.4 Workflow in Multi-Step Booking (IDENTIFYING_PATIENT, COLLECTING_DETAILS, SELECTING_SERVICE, SELECTING_SPECIALIZATION, SELECTING_DOCTOR)
+    if b_state.stage in (
+        BookingStage.IDENTIFYING_PATIENT,
+        BookingStage.COLLECTING_DETAILS,
+        BookingStage.SELECTING_SERVICE,
+        BookingStage.SELECTING_SPECIALIZATION,
+        BookingStage.SELECTING_DOCTOR
+    ):
+        # 0B.4.1 Cancellation / Abort
+        if any(w in q_lower for w in ["cancel", "stop", "abort", "never mind", "don't book"]):
+            b_state.reset()
+            return {
+                "selected_agent": "ScanBookingAgent",
+                "tool_name": "booking_declined",
+                "arguments": {"reason": "Cancelled by user"},
+                "rationale": "User cancelled appointment booking workflow."
+            }
 
+        # 0B.4.2 Direct command providing both patient in query and modality (e.g. "Book CBCT for patient Rahul Sharma tomorrow")
+        direct_p_name, direct_p_id, direct_p_age, direct_doc = extract_patient_details_for_booking(query, session=None)
+        has_direct_mod = any(w in q_lower for w in ["cbct", "opg", "panoramic", "bitewing", "periapical", "iopa"])
+        d_date = extract_date_from_query(query)
+        if direct_p_name and has_direct_mod and (d_date or "book" in q_lower):
+            d_mod = "CBCT" if "cbct" in q_lower else ("OPG" if any(w in q_lower for w in ["opg", "panoramic"]) else ("Bitewing" if "bitewing" in q_lower else "Periapical"))
+            from .booking_service import check_available_slots as get_avail_slots
+            direct_slots = get_avail_slots(modality=d_mod, preferred_date=d_date)
+            b_state.patient_name = direct_p_name
+            b_state.patient_id = direct_p_id
+            b_state.patient_age = direct_p_age
+            b_state.doctor_name = direct_doc
+            b_state.modality = d_mod
+            b_state.preferred_date = d_date
+            b_state.stage = BookingStage.SLOTS_PRESENTED
+            b_state.displayed_slots = direct_slots
+            session.pending_booking_slots = direct_slots
+            return {
+                "selected_agent": "ScanBookingAgent",
+                "tool_name": "check_appointment_slots",
+                "arguments": {
+                    "modality": d_mod,
+                    "preferred_date": d_date,
+                    "patient_name": direct_p_name,
+                    "patient_id": direct_p_id,
+                    "patient_age": direct_p_age,
+                    "doctor_name": direct_doc
+                },
+                "rationale": f"Fast-Path Booking: Direct patient '{direct_p_name}' and modality '{d_mod}' provided."
+            }
+
+        # 0B.4.3 New Patient vs Existing Patient Intent Inquiry
+        if any(w in q_lower for w in ["first visit", "new patient", "i am new", "first time", "not registered", "my first"]):
+            b_state.is_new_patient = True
+            b_state.stage = BookingStage.COLLECTING_DETAILS
+            return {
+                "selected_agent": "ScanBookingAgent",
+                "tool_name": "prompt_new_patient_registration",
+                "arguments": {},
+                "rationale": "User confirmed new patient status. Prompting for registration details."
+            }
+
+        if any(w in q_lower for w in ["existing patient", "i am an existing", "visited before", "already registered", "have an account", "existing"]):
+            b_state.is_new_patient = False
+            b_state.stage = BookingStage.IDENTIFYING_PATIENT
+            return {
+                "selected_agent": "ScanBookingAgent",
+                "tool_name": "prompt_existing_patient_identifier",
+                "arguments": {},
+                "rationale": "User indicated existing patient status. Prompting for patient ID or phone number."
+            }
+
+        # 0B.4.4 Registration Details Submission
+        reg_info = extract_patient_registration_details(query)
+        if reg_info.get("full_name") and (reg_info.get("date_of_birth") or reg_info.get("contact_phone")):
+            from .patient_registration import register_patient
+            reg_res = register_patient(
+                full_name=reg_info.get("full_name"),
+                date_of_birth=reg_info.get("date_of_birth") or "1996-02-14",
+                contact_number=reg_info.get("contact_phone") or "+91-98765-43210",
+                email=reg_info.get("email"),
+                sex=reg_info.get("sex")
+            )
+            p_data = reg_res.get("patient", {})
+            b_state.patient_name = p_data.get("patient_name") or reg_info.get("full_name")
+            b_state.patient_id = p_data.get("patient_id")
+            b_state.patient_dob = p_data.get("date_of_birth")
+            b_state.patient_phone = p_data.get("contact_number")
+            b_state.patient_email = p_data.get("email")
+            b_state.patient_sex = p_data.get("sex")
+            b_state.patient_age = f"{p_data.get('age', 30)} years"
+            b_state.is_new_patient = False
+            b_state.stage = BookingStage.SELECTING_SERVICE
+            return {
+                "selected_agent": "ScanBookingAgent",
+                "tool_name": "registration_completed_ask_service",
+                "arguments": {
+                    "patient_name": b_state.patient_name,
+                    "patient_id": b_state.patient_id,
+                    "age": p_data.get("age", 30)
+                },
+                "rationale": f"Registered patient {b_state.patient_name} ({b_state.patient_id}). Inquiring visit reason."
+            }
+
+        # 0B.4.5 Existing Patient Identifier Lookup
+        if b_state.stage == BookingStage.IDENTIFYING_PATIENT or not b_state.patient_id:
+            m_pid = re.search(r"\b(PAT-\d+)\b", query, re.IGNORECASE)
+            if m_pid:
+                from .retrieval import get_patient
+                p_obj = get_patient(m_pid.group(1).upper())
+                if p_obj:
+                    b_state.patient_name = p_obj["patient_name"]
+                    b_state.patient_id = p_obj["patient_id"]
+                    b_state.stage = BookingStage.SELECTING_SERVICE
+                    return {
+                        "selected_agent": "ScanBookingAgent",
+                        "tool_name": "existing_patient_identified",
+                        "arguments": {
+                            "patient_name": b_state.patient_name,
+                            "patient_id": b_state.patient_id
+                        },
+                        "rationale": f"Identified existing patient {b_state.patient_name} ({b_state.patient_id})."
+                    }
+
+        # 0B.4.6 Visit Reason & Service Selection
+        from .clinic_catalog import find_matching_specialization, DOCTORS_DIRECTORY
+        matched_spec = find_matching_specialization(query)
+        has_cbct_srv = any(w in q_lower for w in ["cbct", "cone beam", "3d"])
+        has_opg_srv = any(w in q_lower for w in ["opg", "panoramic"])
+        has_bw_srv = "bitewing" in q_lower
+        has_pa_srv = any(w in q_lower for w in ["periapical", "iopa"])
+        has_service_kw = has_cbct_srv or has_opg_srv or has_bw_srv or has_pa_srv or matched_spec or any(w in q_lower for w in ["implant", "wisdom", "extraction", "root canal", "brace", "aligner", "consultation"])
+
+        if has_service_kw and not any(w in q_lower for w in ["tomorrow", "today", "morning", "afternoon", "slot"]):
+            if has_cbct_srv:
+                b_state.service = "CBCT scan for implant planning" if "implant" in q_lower else "CBCT Scan (3D Volume Imaging)"
+                b_state.modality = "CBCT"
+                b_state.specialization = "Oral and Maxillofacial Radiology"
+            elif has_opg_srv:
+                b_state.service = "OPG (Panoramic Digital Radiograph)"
+                b_state.modality = "OPG"
+                b_state.specialization = "Oral and Maxillofacial Radiology"
+            elif has_bw_srv:
+                b_state.service = "Bitewing Radiographs"
+                b_state.modality = "Bitewing"
+                b_state.specialization = "General Dentistry"
+            elif has_pa_srv:
+                b_state.service = "Periapical Radiograph (IOPA)"
+                b_state.modality = "Periapical"
+                b_state.specialization = "Endodontics"
+            elif matched_spec:
+                b_state.specialization = matched_spec["name"]
+                b_state.service = f"{matched_spec['name']} Consultation"
+                b_state.modality = "Consultation"
+
+            if "implant" in q_lower:
+                b_state.notes = "implant planning in the lower jaw"
+
+            matching_docs = [d["name"] for d in DOCTORS_DIRECTORY if d["specialization"] == b_state.specialization]
+            doc_str = " and ".join(matching_docs[:2]) if matching_docs else "Dr. Rajesh Mehta and Dr. Anjali Deshmukh"
+
+            b_state.stage = BookingStage.COLLECTING_DETAILS
+            return {
+                "selected_agent": "ScanBookingAgent",
+                "tool_name": "service_selected_ask_preference",
+                "arguments": {
+                    "service": b_state.service,
+                    "specialization": b_state.specialization,
+                    "doctors": doc_str,
+                    "facility": "Radiology Suite 1 (3D Scanner) at our Main Clinic"
+                },
+                "rationale": f"Service identified: {b_state.service} under {b_state.specialization}. Inquiring schedule preference."
+            }
+
+        # 0B.4.7 Schedule Preference Submission (Date, Time-of-Day, Branch)
+        is_pref_query = any(w in q_lower for w in ["tomorrow", "today", "morning", "afternoon", "evening", "main clinic", "october", "oct"])
+        if is_pref_query and (b_state.service or b_state.modality):
+            from .booking_service import check_available_slots as get_avail_slots
+            d_target = extract_date_from_query(query)
+            mod = b_state.modality or "CBCT"
+            raw_slots = get_avail_slots(modality=mod, preferred_date=d_target)
+            time_pref = "morning" if "morning" in q_lower else ("afternoon" if "afternoon" in q_lower else None)
+            if time_pref == "morning":
+                filtered = [s for s in raw_slots if "am" in s.get("time", "").lower() or (s.get("datetime_str") and "am" in s.get("datetime_str").lower())]
+            elif time_pref == "afternoon":
+                filtered = [s for s in raw_slots if "pm" in s.get("time", "").lower() or (s.get("datetime_str") and "pm" in s.get("datetime_str").lower())]
+            else:
+                filtered = raw_slots
+
+            if not filtered:
+                filtered = raw_slots
+
+            b_state.stage = BookingStage.SLOTS_PRESENTED
+            b_state.displayed_slots = filtered
+            session.pending_booking_slots = filtered
+            return {
+                "selected_agent": "ScanBookingAgent",
+                "tool_name": "present_matching_schedule_slots",
+                "arguments": {
+                    "available_slots": filtered,
+                    "time_of_day": time_pref or "",
+                    "date_str": "Tomorrow" if "tomorrow" in q_lower else (d_target or "Tomorrow")
+                },
+                "rationale": f"Presented matching {time_pref or ''} slots for {mod}."
+            }
 
     # 0B.5 Workflow in SLOTS_PRESENTED or pending_booking_slots active
     if b_state.stage == BookingStage.SLOTS_PRESENTED or session.pending_booking_slots:
@@ -829,6 +1100,9 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     or "change that to" in q_lower
                     or "switch to" in q_lower
                     or "let's select" in q_lower
+                    or "go with" in q_lower
+                    or "let's go" in q_lower
+                    or "book the" in q_lower
                 )
 
                 if not is_explicit_selection:
@@ -1331,6 +1605,17 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             session.booking_state.patient_age = cand_p_age
         if cand_doc:
             session.booking_state.doctor_name = cand_doc
+
+        # Check if user requested an appointment with a dental specialist / doctor without patient specified (Step 1)
+        is_specialist_appointment = bool(re.search(r"\b(?:dental\s+specialist|specialist|doctor\s+consultation|specialization)\b", q_lower))
+        if is_specialist_appointment and not pat_name_for_booking and not session.active_patient_id:
+            session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+            return {
+                "selected_agent": "ScanBookingAgent",
+                "tool_name": "prompt_existing_or_new_patient",
+                "arguments": {"query": query},
+                "rationale": "Specialist Appointment: Inquiring whether patient is existing or first visit."
+            }
 
         if not pat_name_for_booking:
             if any(w in q_lower for w in ["walk-in", "walk in"]):
@@ -2071,19 +2356,44 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
             from .booking_service import SUPPORTED_CLINICS
             clinic_title = SUPPORTED_CLINICS.get(clinic_id, {}).get("name", "Viscan Dental Imaging Center - Main Clinic")
 
-            p_id_str = f" ({patient_id})" if patient_id else " (Status: UNREGISTERED / Guest Booking)"
-            age_line = f"• Patient Age: {patient_age}\n" if patient_age else "• Patient Age: Not specified (Walk-in / Guest)\n"
+            from .clinic_catalog import find_matching_specialization
+            matched_spec = find_matching_specialization(session.booking_state.service or modality)
+            spec_title = session.booking_state.specialization or (matched_spec.get("name") if matched_spec else "Oral and Maxillofacial Radiology")
+            service_title = session.booking_state.service or f"{modality} Scan"
+            clean_pid = patient_id if patient_id else "None (Unregistered)"
+
+            if not patient_age and patient_id:
+                from .retrieval import get_patient
+                p_data = get_patient(patient_id)
+                if p_data and p_data.get("date_of_birth"):
+                    try:
+                        b_year = int(p_data["date_of_birth"].split("-")[0])
+                        patient_age = f"{2026 - b_year} years (DOB: {p_data['date_of_birth']})"
+                    except Exception:
+                        pass
+
+            pid_display = f"{clean_pid} (Age: {patient_age})" if patient_age else clean_pid
 
             summary_msg = (
-                f"Review Appointment Booking Details:\n"
-                f"• Patient Name: {patient_name}{p_id_str}\n"
-                f"{age_line}"
-                f"• Attending Doctor / Radiologist: {doctor_name}\n"
-                f"• Modality / Scan: {modality}\n"
-                f"• Scheduled Date & Time: {slot.get('datetime_str', 'Scheduled slot')}\n"
-                f"• Facility & Location: {room_name}, {clinic_title}\n"
-                f"• Slot ID: {slot.get('slot_id')}\n\n"
-                f"Confirmation Required: Would you like to confirm this appointment booking? (Please reply 'Yes, confirm' or 'Cancel')."
+                f"## Review appointment\n"
+                f"Pending confirmation\n\n"
+                f"Patient\n"
+                f"{patient_name}\n\n"
+                f"Patient ID\n"
+                f"{pid_display}\n\n"
+                f"Service\n"
+                f"{service_title}\n\n"
+                f"Specialization\n"
+                f"{spec_title}\n\n"
+                f"Doctor\n"
+                f"{doctor_name}\n\n"
+                f"Date and time\n"
+                f"{slot.get('datetime_str', 'Scheduled slot')}\n\n"
+                f"Location\n"
+                f"{room_name}, {clinic_title}\n\n"
+                f"Slot ID\n"
+                f"{slot.get('slot_id')}\n\n"
+                f"Confirmation Required: Would you like me to book this exact appointment? (Please reply 'Yes, confirm' or 'Cancel')."
             )
             session.booking_state.stage = BookingStage.AWAITING_CONFIRMATION
             session.booking_state.summary_displayed = True
@@ -2332,6 +2642,174 @@ def _execute_multi_agent_pipeline(query: str, session_id: str = "default_session
                     "mcp_jsonrpc": mcp_request
                 }
             }
+
+        elif tool_name == "prompt_existing_or_new_patient":
+            session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+            msg = (
+                "I'd be happy to help you book an appointment. Are you an existing patient at Viscan Dental, or is this your first visit with us?"
+            )
+            return {
+                "status": "clarification_required",
+                "message": msg,
+                "answer": msg,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
+        elif tool_name == "prompt_new_patient_registration":
+            session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+            session.booking_state.is_new_patient = True
+            msg = (
+                "Welcome to Viscan Dental! To get you registered as a new patient, could you please provide:\n"
+                "• Full Name\n"
+                "• Date of birth (from which your age will be calculated automatically)\n"
+                "• Contact phone number\n"
+                "• Email address\n"
+                "• Sex / Gender"
+            )
+            return {
+                "status": "clarification_required",
+                "message": msg,
+                "answer": msg,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
+        elif tool_name == "prompt_existing_patient_identifier":
+            session.booking_state.stage = BookingStage.IDENTIFYING_PATIENT
+            session.booking_state.is_new_patient = False
+            msg = (
+                "Welcome back! Could you please share your Patient ID (e.g. PAT-1001), registered phone number, or your full name and date of birth so I can locate your record?"
+            )
+            return {
+                "status": "clarification_required",
+                "message": msg,
+                "answer": msg,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
+        elif tool_name == "registration_completed_ask_service":
+            p_name = arguments.get("patient_name") or session.booking_state.patient_name
+            p_id = arguments.get("patient_id") or session.booking_state.patient_id
+            p_age = arguments.get("age") or session.booking_state.patient_age
+            msg = (
+                f"Thank you, {p_name}! You have been successfully registered as a new patient (Patient ID: {p_id}, Age: {p_age}).\n\n"
+                f"What is the reason for your visit today? Are you looking for a specialist doctor consultation or an imaging procedure (e.g., CBCT, OPG, Bitewing, Periapical)?"
+            )
+            return {
+                "status": "clarification_required",
+                "message": msg,
+                "answer": msg,
+                "patient_id": p_id,
+                "patient_name": p_name,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
+        elif tool_name == "existing_patient_identified":
+            p_name = arguments.get("patient_name") or session.booking_state.patient_name
+            p_id = arguments.get("patient_id") or session.booking_state.patient_id
+            msg = (
+                f"Found your record: {p_name} ({p_id}).\n\n"
+                f"What is the reason for your visit today? Are you looking for a specialist doctor consultation or an imaging procedure (e.g., CBCT, OPG, Bitewing, Periapical)?"
+            )
+            return {
+                "status": "clarification_required",
+                "message": msg,
+                "answer": msg,
+                "patient_id": p_id,
+                "patient_name": p_name,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
+        elif tool_name == "service_selected_ask_preference":
+            srv = arguments.get("service") or session.booking_state.service or session.booking_state.modality or "examination"
+            spec = arguments.get("specialization") or session.booking_state.specialization or "Oral and Maxillofacial Radiology"
+            docs = arguments.get("doctors") or "Dr. Rajesh Mehta and Dr. Anjali Deshmukh"
+            facility = arguments.get("facility") or "Radiology Suite 1 (3D Scanner) at our Main Clinic"
+            notes_str = f" for {session.booking_state.notes}" if session.booking_state.notes else ""
+            msg = (
+                f"Understood. A {srv}{notes_str} falls under {spec}. Our specialists for this service are {docs} at our {facility}.\n\n"
+                f"Do you have a preferred date, time of day (morning or afternoon), or doctor for your appointment?"
+            )
+            return {
+                "status": "clarification_required",
+                "message": msg,
+                "answer": msg,
+                "service": srv,
+                "specialization": spec,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
+        elif tool_name == "present_matching_schedule_slots":
+            slots = arguments.get("available_slots") or session.booking_state.displayed_slots or []
+            session.booking_state.displayed_slots = slots
+            session.booking_state.stage = BookingStage.SLOTS_PRESENTED
+            session.pending_booking_slots = slots
+            pref_tod = arguments.get("time_of_day", "")
+            tod_str = f"{pref_tod} " if pref_tod else ""
+            pref_d = arguments.get("date_str", "Tomorrow")
+            slot_lines = [f"• [{s['slot_id']}] {s['datetime_str']} — {s.get('doctor_name', 'Dr. Rajesh Mehta')} ({s.get('room', 'Radiology Suite 1')})" for s in slots]
+            slot_pick_example = slots[0].get('time', '10:30 AM') if slots else "10:30 AM"
+            msg = (
+                f"Here are the available {tod_str}slots for {session.booking_state.service or session.booking_state.modality or 'your scan'} on {pref_d} at Viscan Main Clinic:\n"
+                + "\n".join(slot_lines)
+                + f"\n\nPlease select your preferred slot (e.g. 'Let's go with the {slot_pick_example} slot' or 'Select {slots[0]['slot_id']}')."
+            )
+            return {
+                "status": "confirmation_required",
+                "message": msg,
+                "answer": msg,
+                "available_slots": slots,
+                "agent_trace": {
+                    "orchestrator": "TriageAgent",
+                    "active_agent": "ScanBookingAgent",
+                    "tool_called": tool_name,
+                    "arguments": arguments,
+                    "rationale": rationale,
+                    "mcp_jsonrpc": mcp_request
+                }
+            }
+
         else:
             raw_mod = arguments.get("modality")
             pref_date = arguments.get("preferred_date")

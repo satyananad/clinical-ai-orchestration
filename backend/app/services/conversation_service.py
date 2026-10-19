@@ -15,7 +15,11 @@ from enum import Enum
 
 class BookingStage(str, Enum):
     IDLE = "IDLE"
+    IDENTIFYING_PATIENT = "IDENTIFYING_PATIENT"
     COLLECTING_DETAILS = "COLLECTING_DETAILS"
+    SELECTING_SERVICE = "SELECTING_SERVICE"
+    SELECTING_SPECIALIZATION = "SELECTING_SPECIALIZATION"
+    SELECTING_DOCTOR = "SELECTING_DOCTOR"
     SLOTS_PRESENTED = "SLOTS_PRESENTED"
     AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION"
     CONFIRMED = "CONFIRMED"
@@ -27,10 +31,18 @@ class BookingWorkflowState:
         self.stage: BookingStage = BookingStage.IDLE
         self.patient_id: Optional[str] = None
         self.patient_name: Optional[str] = None
+        self.patient_dob: Optional[str] = None
         self.patient_age: Optional[str] = None
+        self.patient_phone: Optional[str] = None
+        self.patient_email: Optional[str] = None
+        self.patient_sex: Optional[str] = None
+        self.is_new_patient: Optional[bool] = None
+        self.doctor_id: Optional[str] = None
         self.doctor_name: Optional[str] = None
+        self.specialization: Optional[str] = None
+        self.service: Optional[str] = None
         self.location: Optional[str] = None
-        self.patient_type: str = "registered"  # "registered", "walk_in"
+        self.patient_type: str = "registered"  # "registered", "walk_in", "new", "existing"
         self.modality: Optional[str] = None
         self.preferred_date: Optional[str] = None
         self.preferred_time: Optional[str] = None
@@ -44,8 +56,16 @@ class BookingWorkflowState:
         self.stage = BookingStage.IDLE
         self.patient_id = None
         self.patient_name = None
+        self.patient_dob = None
         self.patient_age = None
+        self.patient_phone = None
+        self.patient_email = None
+        self.patient_sex = None
+        self.is_new_patient = None
+        self.doctor_id = None
         self.doctor_name = None
+        self.specialization = None
+        self.service = None
         self.location = None
         self.patient_type = "registered"
         self.modality = None

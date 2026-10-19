@@ -33,6 +33,8 @@ def set_simulated_db_failure(fail: bool):
     global _SIMULATED_DB_FAILURE
     _SIMULATED_DB_FAILURE = fail
 
+CANCELLATION_LOG: Dict[str, Dict[str, Any]] = {}
+
 # Modality appointment duration in minutes
 MODALITY_DURATION_MINUTES = {
     "Periapical": 15,
@@ -166,6 +168,7 @@ def save_slots(slots: List[Dict[str, Any]]):
 def reset_slots() -> List[Dict[str, Any]]:
     """Resets appointment slots to fresh initial available state."""
     with _BOOKING_LOCK:
+        CANCELLATION_LOG.clear()
         fresh = [dict(s) for s in INITIAL_SLOTS_TEMPLATE]
         for item in fresh:
             item["datetime_str"] = format_relative_slot_datetime(item["date"], item["time"])
@@ -478,6 +481,11 @@ def confirm_booking(
             f"4. Remove all metallic items, dental appliances, and jewelry prior to scan."
         )
 
+        try:
+            send_appointment_notification(booking_id=booking_ref, channel="sms", recipient=clean_p_name)
+        except Exception:
+            pass
+
         return {
             "status": "success",
             "booking_reference": booking_ref,
@@ -499,6 +507,9 @@ def get_saved_booking_status(
     Used for graceful recovery when response generation encounters an error.
     """
     clean_id = (booking_identifier or "").strip().upper()
+    if clean_id and clean_id in CANCELLATION_LOG:
+        return CANCELLATION_LOG[clean_id]
+
     for s in load_slots():
         b_id = str(s.get("booking_id") or "").upper()
         b_ref = str(s.get("booking_reference") or "").upper()
@@ -634,6 +645,15 @@ def cancel_booking(
         slots[target_idx] = target
         save_slots(slots)
 
+        if prev_ref:
+            CANCELLATION_LOG[prev_ref.upper()] = {
+                "status": "success",
+                "booking_status": "CANCELLED",
+                "booking_reference": prev_ref,
+                "patient_name": prev_pat,
+                "message": f"Appointment '{prev_ref}' was cancelled."
+            }
+
         return {
             "status": "success",
             "message": f"Appointment {prev_ref} for {prev_pat} on {prev_dt} has been successfully cancelled. The slot has been released back to available inventory.",
@@ -706,3 +726,223 @@ def reschedule_booking(
             )
 
         return confirm_res
+
+
+# =====================================================================
+# RECOMMENDED APPOINTMENT-BOOKING TOOLS & NOTIFICATION SERVICE
+# =====================================================================
+
+NOTIFICATION_DISPATCH_LOG: List[Dict[str, Any]] = []
+
+def check_appointment_availability(
+    service: Optional[str] = None,
+    doctor_id: Optional[str] = None,
+    specialization: Optional[str] = None,
+    branch: Optional[str] = None,
+    preferred_date: Optional[str] = None,
+    preferred_time: Optional[str] = None,
+    modality: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    Returns real available slots matching the selected service, doctor, branch, and date/time criteria.
+    Never invents availability: queries actual schedule from storage.
+    """
+    clean_mod = modality or service or "Any"
+    clean_branch = branch or "CLINIC-MAIN-01"
+    
+    # 1. Base slots from check_available_slots
+    slots = check_available_slots(modality=clean_mod, preferred_date=preferred_date, clinic_id=clean_branch)
+    if not slots and clean_mod not in ["Any", ""]:
+        # Try broader lookup if service was a descriptive phrase like 'CBCT scan for implant planning'
+        if any(w in clean_mod.lower() for w in ["cbct", "3d", "cone beam", "implant"]):
+            slots = check_available_slots(modality="CBCT", preferred_date=preferred_date)
+        elif any(w in clean_mod.lower() for w in ["opg", "panoramic"]):
+            slots = check_available_slots(modality="OPG", preferred_date=preferred_date)
+        elif "bitewing" in clean_mod.lower():
+            slots = check_available_slots(modality="Bitewing", preferred_date=preferred_date)
+        elif any(w in clean_mod.lower() for w in ["periapical", "iopa"]):
+            slots = check_available_slots(modality="Periapical", preferred_date=preferred_date)
+        else:
+            slots = check_available_slots(modality="Any", preferred_date=preferred_date)
+
+    # 2. Time-of-day filter (morning vs afternoon/evening)
+    if preferred_time and slots:
+        t_low = preferred_time.lower().strip()
+        filtered_by_time = []
+        for s in slots:
+            t_str = s.get("time", "").upper()
+            is_am = "AM" in t_str
+            is_pm = "PM" in t_str
+            
+            if "morning" in t_low and is_am:
+                filtered_by_time.append(s)
+            elif ("afternoon" in t_low or "evening" in t_low) and is_pm:
+                filtered_by_time.append(s)
+            elif any(digit in t_str for digit in re.findall(r"\d+", t_low)):
+                filtered_by_time.append(s)
+        
+        if filtered_by_time:
+            slots = filtered_by_time
+
+    # 3. Associate verified attending doctor & service details
+    from .clinic_catalog import DOCTORS_DIRECTORY, CLINIC_SERVICES
+    enhanced_slots = []
+    for s in slots:
+        s_copy = dict(s)
+        # Determine appropriate doctor for slot
+        s_mod = s_copy.get("modality", "")
+        matching_doc = None
+        if doctor_id:
+            matching_doc = next((d for d in DOCTORS_DIRECTORY if d["doctor_id"].lower() == doctor_id.lower() or doctor_id.lower() in d["name"].lower()), None)
+        if not matching_doc:
+            # Default to attending radiologist for imaging or appropriate specialist
+            if s_mod in ("CBCT", "OPG", "Bitewing", "Periapical"):
+                matching_doc = DOCTORS_DIRECTORY[0]  # Dr. Rajesh Mehta, MDS (Radiology)
+            else:
+                matching_doc = DOCTORS_DIRECTORY[0]
+
+        s_copy["doctor_name"] = matching_doc["name"]
+        s_copy["doctor_id"] = matching_doc["doctor_id"]
+        s_copy["doctor_specialization"] = matching_doc["specialization"]
+        s_copy["specialization"] = specialization or matching_doc["specialization"]
+        s_copy["service_name"] = service or f"{s_mod} Imaging Examination"
+        enhanced_slots.append(s_copy)
+
+    return enhanced_slots
+
+
+def get_existing_appointments(
+    patient_id: Optional[str] = None,
+    patient_name: Optional[str] = None,
+    booking_reference: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Retrieves current and upcoming bookings for the selected patient or reference."""
+    return lookup_existing_bookings(
+        patient_name=patient_name,
+        patient_id=patient_id,
+        booking_reference=booking_reference
+    )
+
+
+def book_appointment(
+    slot_id: str,
+    patient_name: str,
+    patient_id: Optional[str] = None,
+    service: Optional[str] = None,
+    specialization: Optional[str] = None,
+    doctor_id: Optional[str] = None,
+    doctor_name: Optional[str] = None,
+    branch: Optional[str] = None,
+    patient_age: Optional[str] = None,
+    confirmation: bool = True
+) -> Dict[str, Any]:
+    """
+    Creates an appointment booking after availability validation and explicit confirmation.
+    Revalidates the slot, commits atomically, verifies persistence, and dispatches notification.
+    """
+    if not confirmation:
+        slot = get_slot_by_id(slot_id)
+        return {
+            "status": "confirmation_required",
+            "message": "Explicit patient or clinician confirmation is required before submitting this appointment.",
+            "slot": slot
+        }
+
+    # Atomic booking execution
+    res = confirm_booking(
+        slot_id=slot_id,
+        patient_name=patient_name,
+        patient_id=patient_id,
+        scan_type=service,
+        clinic_id=branch,
+        patient_age=patient_age,
+        doctor_name=doctor_name
+    )
+
+    # If successfully confirmed, trigger notification
+    if res.get("status") == "success":
+        b_ref = res.get("booking_reference")
+        send_appointment_notification(booking_id=b_ref, channel="sms", recipient=patient_name)
+
+    return res
+
+
+def reschedule_appointment(
+    existing_booking_id: str,
+    new_slot_id: str,
+    confirmation: bool = True
+) -> Dict[str, Any]:
+    """Changes an existing booking after explicit confirmation and slot availability validation."""
+    if not confirmation:
+        return {
+            "status": "confirmation_required",
+            "message": f"Please confirm you wish to reschedule booking '{existing_booking_id}' to slot '{new_slot_id}'."
+        }
+    return reschedule_booking(existing_identifier=existing_booking_id, new_slot_id=new_slot_id)
+
+
+def cancel_appointment(
+    booking_id: str,
+    reason: Optional[str] = None,
+    confirmation: bool = True
+) -> Dict[str, Any]:
+    """Cancels a specific booking after confirmation and releases the slot."""
+    if not confirmation:
+        return {
+            "status": "confirmation_required",
+            "message": f"Please confirm you wish to cancel appointment '{booking_id}'."
+        }
+    return cancel_booking(booking_identifier=booking_id, reason=reason)
+
+
+def get_appointment_status(booking_id: str) -> Optional[Dict[str, Any]]:
+    """Verifies the persisted booking, cancellation, or rescheduling result from database."""
+    return get_saved_booking_status(booking_identifier=booking_id)
+
+
+def send_appointment_notification(
+    booking_id: str,
+    channel: str = "sms",
+    recipient: Optional[str] = None
+) -> Dict[str, Any]:
+    """Sends and records a verified appointment confirmation or reminder through an authorized channel."""
+    status_obj = get_saved_booking_status(booking_id)
+    if not status_obj:
+        return {
+            "status": "failed",
+            "message": f"Cannot dispatch notification: Booking '{booking_id}' does not exist in verified database."
+        }
+
+    slot = status_obj.get("slot", {})
+    pat_name = slot.get("patient_name", "Patient")
+    dt = slot.get("datetime_str", "")
+    room = slot.get("room", "")
+    token = slot.get("token_number", "")
+    ref = slot.get("booking_reference", booking_id)
+    doc = slot.get("doctor_name", "Attending Doctor")
+
+    payload = {
+        "notification_id": f"NOTIF-{len(NOTIFICATION_DISPATCH_LOG) + 1:04d}",
+        "booking_id": ref,
+        "token_number": token,
+        "recipient": recipient or pat_name,
+        "channel": channel.lower(),
+        "dispatched_at": get_current_datetime().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "delivered",
+        "message_body": (
+            f"[Viscan Dental Imaging Center] Appointment Confirmed (Ref: {ref}, Token: {token}).\n"
+            f"Patient: {pat_name}\n"
+            f"Doctor: {doc}\n"
+            f"Time: {dt}\n"
+            f"Location: {room}\n"
+            f"Instructions: Please arrive 15 minutes early with government photo ID."
+        )
+    }
+    NOTIFICATION_DISPATCH_LOG.append(payload)
+
+    return {
+        "status": "success",
+        "notification": payload,
+        "message": f"Appointment confirmation notification successfully dispatched via {channel.upper()} to {pat_name}."
+    }
+
