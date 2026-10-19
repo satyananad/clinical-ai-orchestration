@@ -465,14 +465,17 @@ def _generate_manual_canvas_pdf(
     confirmed_at = details.get("confirmed_at") or details.get("report_metadata", {}).get("confirmed_at") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     clinician_name = details.get("clinician_name") or "Dr. R. Mehta, MDS"
 
-    resolved_name = patient_name or supplied_name or "Unassigned / Pending Patient Selection"
+    resolved_name = patient_name or supplied_name or "Unassigned"
     if ("unassigned" in resolved_name.lower() or "pending" in resolved_name.lower()) and supplied_name:
         resolved_name = supplied_name
-    p_name = resolved_name.upper()
+    if "unassigned" in resolved_name.lower() or "pending" in resolved_name.lower():
+        p_name = "UNASSIGNED (Pending)"
+    else:
+        p_name = resolved_name.upper()
 
-    p_id = patient_id or supplied_id or "Pending Patient Assignment"
+    p_id = patient_id or supplied_id or "Pending Assignment"
     if str(p_id).strip() in ("None", "null", ""):
-        p_id = f"Supplied: {supplied_id}" if supplied_id else "Pending Patient Assignment"
+        p_id = f"Supplied: {supplied_id}" if supplied_id else "Pending Assignment"
 
     demo_tags = []
     if details.get("age"):
@@ -481,7 +484,8 @@ def _generate_manual_canvas_pdf(
         demo_tags.append(str(details['gender']))
     if details.get("date_of_birth"):
         demo_tags.append(f"DOB: {details['date_of_birth']}")
-    p_name_display = f"{p_name} ({', '.join(demo_tags)})" if demo_tags else p_name
+    demo_str = ", ".join(demo_tags) if demo_tags else "Unspecified"
+    status_str = "FINAL / APPROVED" if is_confirmed else "DRAFT (Pending Review)"
 
     pages_cmds = []
 
@@ -497,17 +501,26 @@ def _generate_manual_canvas_pdf(
         "0.96 0.62 0.04 RG 0.75 w 45 745 505 16 re S",
         f"BT /F1 7.5 Tf 0.47 0.21 0.06 rg 55 749 Td ({sanitize_pdf('*** RADIOLOGICAL DRAFT REPORT - REQUIRES CLINICIAN SIGN-OFF ***')}) Tj ET",
 
-        # Patient Info Card
-        "0.85 0.85 0.85 RG 1 w 45 665 505 70 re S",
-        f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 55 718 Td ({sanitize_pdf('PATIENT: ' + p_name_display[:45])}) Tj ET",
-        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 702 Td ({sanitize_pdf('PATIENT ID: ' + p_id[:35])}) Tj ET",
-        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 686 Td ({sanitize_pdf('STATUS: Draft Pending Attending Clinician Approval')}) Tj ET",
+        # Patient Info Card Box (from y = 650 to y = 735, height 85)
+        "0.85 0.85 0.85 RG 1 w 45 650 505 85 re S",
 
-        f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 310 718 Td ({sanitize_pdf('EXAM TYPE: ' + study_type[:30])}) Tj ET",
-        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 310 702 Td ({sanitize_pdf('DATE: ' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))}) Tj ET",
-        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 310 686 Td ({sanitize_pdf('VERIFICATION: Guardrail Verification Enforced')}) Tj ET",
+        # Row 1 (y = 718)
+        f"BT /F1 9 Tf 0.1 0.1 0.1 rg 55 718 Td ({sanitize_pdf('PATIENT: ' + p_name[:26])}) Tj ET",
+        f"BT /F1 9 Tf 0.1 0.1 0.1 rg 330 718 Td ({sanitize_pdf('EXAM TYPE: ' + study_type[:24])}) Tj ET",
+
+        # Row 2 (y = 700)
+        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 700 Td ({sanitize_pdf('PATIENT ID: ' + p_id[:26])}) Tj ET",
+        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 330 700 Td ({sanitize_pdf('DATE: ' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))}) Tj ET",
+
+        # Row 3 (y = 682)
+        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 682 Td ({sanitize_pdf('DEMOGRAPHICS: ' + demo_str[:26])}) Tj ET",
+        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 330 682 Td ({sanitize_pdf('STATUS: ' + status_str[:24])}) Tj ET",
+
+        # Row 4 (y = 664)
+        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 55 664 Td ({sanitize_pdf('REPORTING: ' + clinician_name[:26])}) Tj ET",
+        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 330 664 Td ({sanitize_pdf('VERIFICATION: Guardrail Enforced')}) Tj ET",
     ]
-    y = 645
+    y = 630
 
     def check_page_overflow(needed_space=40):
         nonlocal y, curr_cmds
