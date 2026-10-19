@@ -63,7 +63,12 @@ META_SOFTWARE_PATTERNS = [
 
 META_INSTRUCTION_PATTERNS = [
     r"\b(?:implement\s+(?:the\s+)?(?:clinical\s+)?dictation|inspect\s+(?:the\s+)?existing\s+code|existing\s+(?:code|codebase|pipeline)|automated\s+tests?|schema\s+and\s+clinical\s+validation|use\s+the\s+llm|hard-coded\s+phrases|unit\s+tests?|pull\s+request|github|software|framework|programming|developer|langchain|langgraph)\b",
-    r"\b(?:generate|produce|create|output|write|format)\s+(?:the\s+)?(?:findings|impression|report|draft|json)\b",
+    r"\b(?:generate|produce|create|output|write|format|draft|render|compose|build)\s+.*?(?:findings|impression|report|draft|json|heading|title|layout|narrative)\b",
+    r"\b(?:keep|maintain|ensure|require|make\s+the)\s+.*?(?:patient\s+details|layout|paragraphs?|editable|synchronized|review|pdf\s+export|approval|source\s+of\s+truth|traceability)\b",
+    r"\b(?:separate|distinguish)\s+.*?(?:patient-reported|symptoms?|imaging\s+findings?|clinical\s+history)\b",
+    r"\bdo\s+not\s+invent\s+.*?(?:findings|diagnoses|measurements|canal|recommendations|observations)\b",
+    r"\bif\s+the\s+information\s+comes\s+only\s+from\s+speech-to-text\b",
+    r"\bthe\s+impression\s+must\s+summarize\b",
     r"\b(?:retrieve|fetch|extract|pull|load)\s+(?:the\s+)?patient\s+demographics\b",
     r"\bflag\s+(?:any\s+)?missing\s+(?:examination|clinical|patient)\s+information\b",
     r"\b(?:only\s+from|based\s+only\s+on)\s+the\s+available\s+information\b",
@@ -73,6 +78,11 @@ META_INSTRUCTION_PATTERNS = [
     r"\b(?:as\s+an\s+ai|system\s+prompt|user\s+prompt|instructions?|guidelines?)\b",
     r"\bfor\s+clinician\s+review\b.*(?:\bflag\b|\breview\b)",
     r"\bfrom\s+the\s+selected\s+authorized\s+patient\s+record\b",
+    r"\b(?:use\s+the\s+selected\s+authorized\s+patient\s+record|if\s+no\s+patient\s+is\s+selected|show\s+that\s+the\s+patient\s+details\s+are\s+pending)\b",
+    r"\brequire\s+clinician\s+review\s+and\s+explicit\s+approval\b",
+    r"\b(?:accept\s+audio\s+or\s+a\s+speech-to-text|support\s+one\s+context-dependent\s+follow-up)\b",
+    r"\b(?:identify\s+the\s+first\s+stage|fix\s+the\s+root\s+cause|inspect\s+the\s+complete\s+pipeline)\b",
+    r"\b(?:given\s+a\s+(?:typed|spoken)\s+request|extract\s+the\s+intent\s+and\s+patient\s+name)\b",
 ]
 
 def is_meta_or_instruction_sentence(text: str) -> bool:
@@ -80,7 +90,45 @@ def is_meta_or_instruction_sentence(text: str) -> bool:
     if not text:
         return False
     t_lower = text.lower().strip()
-    return any(re.search(pat, t_lower, re.IGNORECASE) for pat in META_INSTRUCTION_PATTERNS)
+    if any(re.search(pat, t_lower, re.IGNORECASE) for pat in META_INSTRUCTION_PATTERNS):
+        return True
+    # Catch imperative prompt instructions directed at formatting/generating reports
+    is_imperative_directive = bool(
+        re.match(r"^(?:generate|create|produce|keep|separate|preserve|ensure|require|make|render|write|format|do\s+not|if\s+the)\b", t_lower) and
+        re.search(r"\b(?:report|json|details|layout|paragraphs?|impression|findings|symptoms|editable|heading|title|statement|speech-to-text|traceability|source\s+of\s+truth)\b", t_lower)
+    )
+    return is_imperative_directive
+
+def is_clinical_observation_sentence(text: str) -> bool:
+    """
+    Checks if a sentence contains genuine clinical content (symptoms, patient complaints, dental anatomy,
+    radiological observations, or pathology) rather than instruction/software meta-text.
+    """
+    if not text or len(text.strip()) < 5:
+        return False
+    if is_meta_or_instruction_sentence(text):
+        return False
+    t_lower = text.lower()
+    # Check clinical signs, symptoms, history
+    has_history_or_symptom = bool(
+        re.search(r"\b(?:patient\s+(?:complains?|reports?|presents?|presented|experienc\w+)|chief\s+complaint|history\s+of|complains?\s+of)\b", t_lower) or
+        re.search(r"\b(?:pain|discomfort|swelling|loose\s+teeth|mobility|bleeding|sensitivity|numbness|trauma|trismus)\b", t_lower)
+    )
+    if has_history_or_symptom:
+        return True
+
+    # Check general negative statements or normal statements
+    has_normal_or_negative = bool(
+        re.search(r"\b(?:no\s+other\s+abnormal|no\s+abnormal|within\s+normal\s+limits|normal\s+limits|no\s+pathology|no\s+definite|no\s+evidence\s+of|no\s+displaced)\b", t_lower)
+    )
+    if has_normal_or_negative:
+        return True
+
+    # Check dental/maxillofacial anatomy & findings
+    has_anatomy_or_finding = any(re.search(pat, t_lower, re.IGNORECASE) for pat in CLINICAL_RELEVANCE_PATTERNS) or bool(
+        re.search(r"\b(?:sinus\w*|oroantral|root\s+fragment\w*|fragment\w*|perforation|canal|nerve|cortical|alveolar|edentulous|missing)\b", t_lower)
+    )
+    return has_anatomy_or_finding
 
 def is_clinically_relevant_dictation(text: str) -> bool:
     """
@@ -243,12 +291,19 @@ def extract_patient_demographics(text: str) -> Dict[str, Any]:
     elif gender:
         summary = gender
 
-    # Extract supplied patient name
+    # Extract supplied patient name (STRICT: require explicit delimiter and reject compound adjectives/meta words)
     patient_name = None
-    name_m = re.search(r"\b(?:patient\s+name|patient)\s*[:\-]\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)\b", text, re.IGNORECASE)
+    name_m = re.search(r"\b(?:patient\s*name\s*[:\-]|patient\s*:\s*|patient\s+-\s+)\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)\b", text, re.IGNORECASE)
     if name_m:
         cand_name = name_m.group(1).strip()
-        if cand_name.lower() not in ["is", "has", "was", "reported", "id", "study", "the", "a", "details", "selection"]:
+        tokens = [w.lower() for w in cand_name.split()]
+        blacklisted_name_tokens = {
+            "is", "has", "was", "reported", "symptoms", "complaint", "complains", "presents",
+            "presented", "details", "selection", "id", "study", "the", "a", "an", "record",
+            "history", "information", "review", "findings", "indeterminate", "examination",
+            "unknown", "pending", "none", "loose", "teeth", "tooth", "molar", "incisor"
+        }
+        if not any(tok in blacklisted_name_tokens for tok in tokens):
             patient_name = cand_name.title()
 
     # Extract supplied patient ID (STRICT: require explicit delimiter and reject serial numbers / common words)

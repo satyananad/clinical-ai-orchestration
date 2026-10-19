@@ -490,26 +490,73 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
 def extract_clinical_body(text: str) -> str:
     """
     Extracts the clinical observations section from dictation text,
-    stripping document headers (patient demographics, study metadata, clinic headers)
-    and document footers (author details, credentials, facility addresses, abbreviations).
+    stripping document headers (patient demographics, study metadata, clinic headers),
+    document footers (author details, credentials, facility addresses, abbreviations),
+    and separating clinical dictation from surrounding prompt instructions, directives,
+    and report formatting requests.
     """
-    m_findings = re.search(r"\b(?:DENTAL\s+FINDINGS|CLINICAL\s+FINDINGS|RADIOLOGICAL\s+FINDINGS|IMAGING\s+FINDINGS|FINDINGS)\s*[:\-]\s*", text, re.IGNORECASE)
-    if m_findings:
-        clinical_text = text[m_findings.end():]
-    else:
-        m_notes = re.search(r"\bCLINICAL\s+NOTES\s*[:\-].*?(?:\.\s+|\n+)", text, re.IGNORECASE)
-        if m_notes:
-            clinical_text = text[m_notes.end():]
-        else:
-            m_header_end = re.search(r"(?:SERIAL\s*#?:?\s*[A-Za-z0-9_-]+.*?)(?:\.\s+|\n+)", text, re.IGNORECASE)
-            if m_header_end:
-                clinical_text = text[m_header_end.end():]
-            else:
-                clinical_text = text
+    from .claim_verification import is_meta_or_instruction_sentence, is_clinical_observation_sentence
 
+    raw_text = text.strip()
+
+    # 1. Check for quoted transcript boundary: e.g. 'transcript: "..."' or '"Lower right third molar..."'
+    quoted_matches = re.findall(r'"([^"]{15,})"', raw_text)
+    if quoted_matches:
+        for qm in quoted_matches:
+            if is_clinically_relevant_dictation(qm):
+                raw_text = qm.strip()
+                break
+
+    # 2. Section Header Splitting
+    m_findings = re.search(r"\b(?:DENTAL\s+FINDINGS|CLINICAL\s+FINDINGS|RADIOLOGICAL\s+FINDINGS|IMAGING\s+FINDINGS|FINDINGS)\s*[:\-]\s*", raw_text, re.IGNORECASE)
+    if m_findings:
+        clinical_text = raw_text[m_findings.end():]
+    else:
+        m_notes = re.search(r"\bCLINICAL\s+NOTES\s*[:\-].*?(?:\.\s+|\n+)", raw_text, re.IGNORECASE)
+        if m_notes:
+            clinical_text = raw_text[m_notes.end():]
+        else:
+            m_header_end = re.search(r"(?:SERIAL\s*#?:?\s*[A-Za-z0-9_-]+.*?)(?:\.\s+|\n+)", raw_text, re.IGNORECASE)
+            if m_header_end:
+                clinical_text = raw_text[m_header_end.end():]
+            else:
+                clinical_text = raw_text
+
+    # 3. Strip Document Footer
     m_footer = re.search(r"\b(?:RADIOLOGY\s+REPORT\s+DETAILS|REPORT\s+DETAILS|CONDUCTED\s+BY\s+DR|REPORTED\s+BY\s+DR|ABBREVIATIONS|REPORT\s+WAS\s+VERIFIED)\b", clinical_text, re.IGNORECASE)
     if m_footer:
         clinical_text = clinical_text[:m_footer.start()]
+
+    # 4. Truncate at Instruction / Prompt Meta Boundary:
+    # When clinical dictation is followed by report generation directives (e.g. "Generate a clean, editable report..."),
+    # detect the boundary where non-clinical meta instructions begin and discard everything from that boundary onwards.
+    sentences = split_clinical_sentences(clinical_text)
+    has_seen_clinical = False
+    valid_sentences = []
+    for s in sentences:
+        s_clean = s.strip()
+        if not s_clean:
+            continue
+        if is_meta_or_instruction_sentence(s_clean):
+            # If we already have clinical dictation, an instruction sentence marks the end of the dictation body!
+            if has_seen_clinical:
+                break
+            else:
+                # Instruction sentence before clinical content: skip it
+                continue
+        if is_clinical_observation_sentence(s_clean):
+            has_seen_clinical = True
+            valid_sentences.append(s_clean)
+        else:
+            # Check if ambiguous or non-instruction
+            if has_seen_clinical:
+                # If following clinical content but not clearly clinical, check if it's an imperative instruction
+                if re.match(r"^(?:generate|create|produce|keep|separate|preserve|ensure|require|make|render|write|format|do\s+not|if\s+the|the\s+impression)\b", s_clean.lower()):
+                    break
+                valid_sentences.append(s_clean)
+
+    if valid_sentences:
+        clinical_text = ". ".join(s.rstrip(".") for s in valid_sentences) + "."
 
     return clinical_text.strip()
 
@@ -545,6 +592,28 @@ def analyze_sentence_anatomy(sentence: str, anatomical_sites: List[Dict[str, Any
     - Preserves multi-tooth, edentulous, adjacent teeth, and regional findings with tooth_number = None.
     """
     s_l = sentence.lower()
+    detected_teeth = []
+
+    # 0. Anterior / Central Incisors regional anatomy
+    if re.search(r"\b(?:lower|mandibular)\s+central\s+incisors?\b", s_l):
+        norm31 = normalize_dental_site({"palmer_notation": "LL1", "anatomical_name": "LL1"})
+        norm41 = normalize_dental_site({"palmer_notation": "LR1", "anatomical_name": "LR1"})
+        if norm31.get("fdi_number") and not any(dt.get("fdi_number") == 31 for dt in detected_teeth):
+            detected_teeth.append(norm31)
+        if norm41.get("fdi_number") and not any(dt.get("fdi_number") == 41 for dt in detected_teeth):
+            detected_teeth.append(norm41)
+    elif re.search(r"\b(?:upper|maxillary)\s+central\s+incisors?\b", s_l):
+        norm11 = normalize_dental_site({"palmer_notation": "UR1", "anatomical_name": "UR1"})
+        norm21 = normalize_dental_site({"palmer_notation": "UL1", "anatomical_name": "UL1"})
+        if norm11.get("fdi_number") and not any(dt.get("fdi_number") == 11 for dt in detected_teeth):
+            detected_teeth.append(norm11)
+        if norm21.get("fdi_number") and not any(dt.get("fdi_number") == 21 for dt in detected_teeth):
+            detected_teeth.append(norm21)
+
+    if re.search(r"\b(?:lower\s+front\s+region|mandibular\s+anterior\s+region|mandibular\s+anterior)\b", s_l):
+        return "Mandibular Anterior Region", None, []
+    if re.search(r"\b(?:upper\s+front\s+region|maxillary\s+anterior\s+region|maxillary\s+anterior)\b", s_l):
+        return "Maxillary Anterior Region", None, []
 
     # 1. Adjacent teeth / surrounding dentition
     if re.search(r"\b(adjacent\s+teeth|surrounding\s+teeth|adjacent\s+structures|adjacent\s+dentition|surrounding\s+dentition)\b", s_l):
@@ -571,7 +640,6 @@ def analyze_sentence_anatomy(sentence: str, anatomical_sites: List[Dict[str, Any
     palmer_matches = re.findall(r"\b(UR|UL|LL|LR)[\s_-]*([1-8]|[A-E])\b", sentence, re.IGNORECASE)
     tooth_num_matches = re.findall(r"\b(?:teeth|tooth)\s*#?(\d{1,2})\b", sentence, re.IGNORECASE)
 
-    detected_teeth = []
     for pm in palmer_matches:
         raw = f"{pm[0].upper()}{pm[1].upper()}"
         norm = normalize_dental_site({"anatomical_name": raw})
@@ -584,12 +652,15 @@ def analyze_sentence_anatomy(sentence: str, anatomical_sites: List[Dict[str, Any
             detected_teeth.append(norm)
 
     named_map = [
-        ("third molar", 8), ("wisdom tooth", 8),
-        ("second molar", 7), ("first molar", 6),
-        ("second premolar", 5), ("first premolar", 4),
-        ("canine", 3), ("lateral incisor", 2), ("central incisor", 1)
+        (r"third\s+molars?", 8), (r"wisdom\s+teeth?", 8),
+        (r"second\s+molars?", 7), (r"first\s+molars?", 6),
+        (r"second\s+premolars?", 5), (r"first\s+premolars?", 4),
+        (r"canines?", 3), (r"lateral\s+incisors?", 2), (r"central\s+incisors?", 1)
     ]
+    has_resolved_central = bool(re.search(r"\b(?:lower|mandibular|upper|maxillary)\s+central\s+incisors?\b", s_l))
     for n_pat, pos_idx in named_map:
+        if pos_idx == 1 and has_resolved_central:
+            continue
         if re.search(r"\b" + n_pat + r"\b", s_l):
             s_quad = None
             if re.search(r"\b(maxillary\s+left|upper\s+left|quadrant\s+2|ul)\b", s_l):
@@ -619,6 +690,14 @@ def analyze_sentence_anatomy(sentence: str, anatomical_sites: List[Dict[str, Any
             site_label = f"{st.get('anatomical_name')} Region (Edentulous)"
             return site_label, None, [st.get("anatomical_name")]
         return "Edentulous Region", None, [st.get("anatomical_name") for st in unique_fdi.values()]
+
+    fdi_set = set(unique_fdi.keys())
+    if fdi_set == {31, 41}:
+        rel = [st.get("anatomical_name") for st in unique_fdi.values()]
+        return "Mandibular Central Incisors (Tooth 31, 41)", None, rel
+    if fdi_set == {11, 21}:
+        rel = [st.get("anatomical_name") for st in unique_fdi.values()]
+        return "Maxillary Central Incisors (Tooth 11, 21)", None, rel
 
     if len(unique_fdi) > 1 or re.search(r"\b(?:posterior\s+teeth|two\s+teeth|three\s+teeth|multiple\s+teeth|teeth\s+\d+)\b", s_l):
         rel = [st.get("anatomical_name") for st in unique_fdi.values()]
@@ -711,20 +790,38 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
 
     # Quadrant-relative named teeth
     quad_tooth_patterns = [
-        ("third molar", 8), ("wisdom tooth", 8),
-        ("second molar", 7),
-        ("first molar", 6),
-        ("second premolar", 5), ("second bicuspid", 5),
-        ("first premolar", 4), ("first bicuspid", 4),
-        ("canine", 3),
-        ("lateral incisor", 2),
-        ("central incisor", 1)
+        (r"third\s+molars?", 8), (r"wisdom\s+teeth?", 8),
+        (r"second\s+molars?", 7),
+        (r"first\s+molars?", 6),
+        (r"second\s+premolars?", 5), (r"second\s+bicuspids?", 5),
+        (r"first\s+premolars?", 4), (r"first\s+bicuspids?", 4),
+        (r"canines?", 3),
+        (r"lateral\s+incisors?", 2),
+        (r"central\s+incisors?", 1)
     ]
     for s in sentences:
+        s_lower = s.lower()
+        has_central_pattern = False
+        if re.search(r"\b(?:lower|mandibular)\s+central\s+incisors?\b", s_lower):
+            has_central_pattern = True
+            for p_code in ["LL1", "LR1"]:
+                norm = normalize_dental_site({"palmer_notation": p_code, "anatomical_name": p_code})
+                if norm.get("fdi_number") and norm["fdi_number"] not in seen_sites:
+                    seen_sites.add(norm["fdi_number"])
+                    anatomical_sites.append(norm)
+        elif re.search(r"\b(?:upper|maxillary)\s+central\s+incisors?\b", s_lower):
+            has_central_pattern = True
+            for p_code in ["UL1", "UR1"]:
+                norm = normalize_dental_site({"palmer_notation": p_code, "anatomical_name": p_code})
+                if norm.get("fdi_number") and norm["fdi_number"] not in seen_sites:
+                    seen_sites.add(norm["fdi_number"])
+                    anatomical_sites.append(norm)
+
         s_quad = detect_quad_from_text(s) or doc_quad
         if s_quad:
-            s_lower = s.lower()
             for name_pat, pos_idx in quad_tooth_patterns:
+                if pos_idx == 1 and has_central_pattern:
+                    continue
                 if re.search(r"\b" + name_pat + r"\b", s_lower):
                     palmer_code = f"{s_quad}{pos_idx}"
                     norm = normalize_dental_site({"palmer_notation": palmer_code, "anatomical_name": palmer_code})
@@ -814,8 +911,10 @@ def _dynamic_semantic_parse(dictation_text: str) -> Dict[str, Any]:
         s_lower = s.lower().strip()
 
         # Skip administrative boilerplate, demographics, or prompt meta-instructions
-        from .claim_verification import is_meta_or_instruction_sentence
+        from .claim_verification import is_meta_or_instruction_sentence, is_clinical_observation_sentence
         if is_meta_or_instruction_sentence(s):
+            continue
+        if not is_clinical_observation_sentence(s):
             continue
 
         if (

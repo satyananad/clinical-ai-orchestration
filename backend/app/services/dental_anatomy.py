@@ -314,15 +314,19 @@ def classify_observation_category(observation: str, site_name: str = "") -> str:
         return "Impaction / Eruption"
 
     # 8. Clinical Symptoms & Patient History
-    if any(term in obs_lower for term in ["discomfort", "pain", "symptom", "chief complaint", "tenderness", "swelling", "patient reports"]):
+    if any(term in obs_lower for term in ["discomfort", "pain", "symptom", "chief complaint", "complains", "complaint", "tenderness", "swelling", "loose teeth", "mobility", "patient reports"]):
         return "Clinical Symptoms & History"
 
     # 9. Restorative & Caries Status
-    if any(term in obs_lower for term in ["restored", "restoration", "filling", "caries", "carious", "amalgam", "composite", "crown"]):
+    if any(term in obs_lower for term in ["restored", "restoration", "filling", "caries", "carious", "amalgam", "composite", "crown", "metallic"]):
         return "Restorative & Caries Status"
 
     # 10. Periapical & Osseous Status
-    if any(term in obs_lower for term in ["periapical", "radiolucency", "bone height", "alveolar", "periodontal attachment", "osteitis", "periodontal ligament", "pdl", "cortical plate", "cortical thinning", "alveolar ridge", "ridge measures"]):
+    if any(term in obs_lower for term in ["bone loss", "horizontal bone loss", "vertical bone loss", "periapical", "radiolucency", "bone height", "alveolar", "periodontal attachment", "osteitis", "periodontal ligament", "pdl", "cortical plate", "cortical thinning", "alveolar ridge", "ridge measures"]):
         return "Periapical & Osseous Status"
+
+    # 11. Tooth Absence & Edentulous Status
+    if any(term in obs_lower for term in ["missing", "edentulous", "extracted", "tooth loss", "absence"]):
+        return "Dentition Status & Tooth Presence"
 
     return "General Observation"

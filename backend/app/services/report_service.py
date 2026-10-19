@@ -4,14 +4,18 @@ from typing import List, Dict, Any, Optional
 
 def is_symptom_or_history(finding: Dict[str, Any]) -> bool:
     """Identifies if a finding represents patient-reported symptoms or clinical history rather than an objective imaging observation."""
+    from .claim_verification import is_meta_or_instruction_sentence
+    obs = str(finding.get("observation", "")).strip()
+    if not obs or is_meta_or_instruction_sentence(obs):
+        return False
     cat = str(finding.get("category", "")).lower()
     site = str(finding.get("anatomical_site", "")).lower()
-    obs = str(finding.get("observation", "")).lower()
+    obs_lower = obs.lower()
     if "symptom" in cat or "history" in cat:
         return True
     if "symptom" in site or "history" in site:
         return True
-    if re.search(r"\b(?:patient\s+reports?|patient\s+complains?|chief\s+complaint|history\s+of|presented\s+with|presents\s+with|experiencing\s+(?:pain|discomfort|swelling)|reports\s+discomfort|reports\s+pain)\b", obs):
+    if re.search(r"\b(?:patient\s+(?:reports?|complains?|presents?|presented)|complains?\s+of|chief\s+complaint|history\s+of|presented\s+with|presents\s+with|experiencing\s+(?:pain|discomfort|swelling|loose|mobility)|reports\s+(?:discomfort|pain|loose)|loose\s+teeth)\b", obs_lower):
         return True
     return False
 
