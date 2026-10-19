@@ -177,3 +177,29 @@ def test_ui_html_renders_patient_directory_and_report_cards():
     assert "toggleVoiceRecord" in html
     assert "switchTab" in html
     assert "togglePatientDirectory" in html
+
+def test_select_patient_then_open_her_opg_flow():
+    """
+    Test user flow:
+    1. Patient selection via /select-patient
+    2. Clinician asks 'open her OPG' with or without payload active_patient_id
+    3. System loads RPT-2001 cleanly
+    """
+    session_id = "test_select_then_open_her_opg"
+    # Select Priya Sharma (PAT-1001)
+    r1 = client.post(f"/sessions/{session_id}/select-patient", json={"patient_id": "PAT-1001"})
+    assert r1.status_code == 200
+
+    # Ask 'open her OPG'
+    r2 = client.post("/assistant/chat", json={
+        "query": "open her OPG",
+        "session_id": session_id,
+        "active_patient_id": "PAT-1001"
+    })
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2["status"] == "success"
+    assert d2["report"]["report_id"] == "RPT-2001"
+    assert d2["report"]["report_type"] == "OPG"
+    assert d2["patient"]["patient_id"] == "PAT-1001"
+

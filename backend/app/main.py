@@ -878,7 +878,12 @@ def get_dashboard_ui():
                 const resp = await fetch(`${API_BASE}/assistant/chat`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ query: query, session_id: currentSessionId })
+                    body: JSON.stringify({
+                        query: query,
+                        session_id: currentSessionId,
+                        active_patient_id: activeSelectedPatient ? activeSelectedPatient.patient_id : null,
+                        active_report_id: activeSelectedReport ? activeSelectedReport.report_id : null
+                    })
                 });
                 const data = await resp.json();
 

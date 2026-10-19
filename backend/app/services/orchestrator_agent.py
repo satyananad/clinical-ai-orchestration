@@ -1519,6 +1519,14 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "rationale": "Missing Required Modality: User requested 'Book a scan' without a scan type."
             }
 
+    # 0B.65 Context Restoration from Last Retrieval if Pronoun Reference Used
+    has_pronoun_reference = any(re.search(r"\b" + re.escape(p) + r"\b", q_lower) for p in ["her", "his", "their", "hir", "she", "he"])
+    if not session.active_patient_id and has_pronoun_reference and session.last_retrieval_query:
+        from .retrieval import search_patients
+        found_cands = search_patients(session.last_retrieval_query)
+        if len(found_cands) == 1:
+            session.set_active_patient(found_cands[0]["patient_id"])
+
     # 0B.7 Deterministic Active Report & Patient Consultation Gate
     if session.active_report_id or session.active_patient_id:
         # Check if this is a general knowledge question, workstation capability query, or greeting:

@@ -101,6 +101,8 @@ class ConfirmDictationRequest(BaseModel):
 class AssistantChatRequest(BaseModel):
     query: str
     session_id: Optional[str] = "default_session"
+    active_patient_id: Optional[str] = None
+    active_report_id: Optional[str] = None
 
 class AssistantChatResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
