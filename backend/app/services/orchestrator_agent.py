@@ -1354,41 +1354,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "rationale": "Missing Required Modality: User requested 'Book a scan' without a scan type."
             }
 
-    # 0B.7 Deterministic Clinic Database Inquiry Gate
-    has_active_patient = bool(session.active_patient_id or session.active_report_id)
-    is_explicit_clinic_scope = any(w in q_lower for w in [
-        "clinic database", "database statistics", "across all", "all patients",
-        "total patients", "in the clinic", "in the database", "whole clinic", "entire clinic",
-        "registered patients"
-    ])
-    has_patient_pronoun = any(re.search(r"\b" + re.escape(p) + r"\b", q_lower) for p in [
-        "they", "he", "she", "him", "her", "his", "hir", "their", "this patient", "the patient"
-    ]) or any(p in q_lower for p in ["have they", "do they", "does he", "does she", "has he", "has she"])
-
-    is_active_patient_report_count = (
-        has_active_patient
-        and (has_patient_pronoun or not is_explicit_clinic_scope)
-        and any(w in q_lower for w in ["report", "reports", "scan", "scans"])
-    )
-
-    is_database_inquiry = (
-        not is_active_patient_report_count
-        and (
-            (any(w in q_lower for w in ["many", "manu", "mani", "much", "total", "count", "number of"]) and any(w in q_lower for w in ["patient", "report", "scan"]))
-            or any(w in q_lower for w in ["clinic database", "database statistics"])
-            or bool(re.search(r"\b(?:patient\s+names?|list\s+(?:out\s+)?(?:only\s+)?(?:the\s+)?patient\s+names?|list\s+(?:of\s+)?patients?|who\s+are\s+the\s+patients?|all\s+patients?|registered\s+patients?|which\s+patients?|know\s+the\s+patient|tell\s+me\s+(?:the\s+)?patient\s+names?)\b", q_lower))
-        )
-        and not any(verb in q_lower for verb in ["open", "retrieve", "view", "load"])
-    )
-    if is_database_inquiry and not is_booking_request:
-        return {
-            "selected_agent": "GeneralAssistantAgent",
-            "tool_name": "query_clinic_database",
-            "arguments": {"question": query},
-            "rationale": "Clinic Database Inquiry: Inquiring about registered patient directory or database statistics."
-        }
-
-    # 0B.8 Deterministic Active Report & Patient Consultation Gate
+    # 0B.7 Deterministic Active Report & Patient Consultation Gate
     if session.active_report_id or session.active_patient_id:
         # Check if this is a general knowledge question, workstation capability query, or greeting:
         if is_general_or_assistant_query(query):
@@ -1399,28 +1365,30 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "rationale": f"General Assistant: Handled general knowledge or workstation inquiry '{query}'."
             }
 
+        # Check if clinician explicitly asked for clinic-wide database scope
+        is_explicit_clinic_scope = bool(re.search(
+            r"\b(?:across\s+(?:the\s+)?clinic|clinic\s+database|whole\s+clinic|entire\s+clinic|all\s+patients\s+in\s+(?:the\s+)?clinic)\b",
+            q_lower
+        ))
+
+        # Check if clinician is explicitly asking to switch to another patient
         intent = extract_retrieval_intent(query)
         extracted_cand_name = intent.get("patient_name", "").strip()
-        non_patient_tokens = {
-            "what", "why", "how", "explain", "tell", "help", "who", "when", "does", "can",
-            "please", "summary", "summarize", "problem", "findings", "finding", "report",
-            "scan", "it", "she", "he", "her", "his", "hir", "their", "theirs", "its",
-            "him", "them", "they", "hiss", "herr", "tooth", "teeth", "are", "is", "the",
-            "for", "about", "any", "caries", "canal", "root", "nerve", "impaction"
-        }
-        has_new_patient_target = bool(extracted_cand_name) and not all(t.lower() in non_patient_tokens for t in extracted_cand_name.split())
-        if has_new_patient_target and session.active_patient_id:
+        has_new_patient_target = False
+        if extracted_cand_name:
             from .retrieval import get_patient
-            p_active = get_patient(session.active_patient_id)
+            p_active = get_patient(session.active_patient_id) if session.active_patient_id else None
             if p_active:
                 p_name_words = set(re.findall(r"\b[a-zA-Z0-9_-]+\b", p_active.get("patient_name", "").lower()))
                 cand_words = set(re.findall(r"\b[a-zA-Z0-9_-]+\b", extracted_cand_name.lower()))
-                if cand_words and cand_words.issubset(p_name_words):
-                    has_new_patient_target = False
+                if not cand_words.issubset(p_name_words):
+                    has_new_patient_target = True
+            else:
+                has_new_patient_target = True
 
         has_retrieval_verb = bool(re.search(r"\b(open|retrieve|fetch|load|switch\s+to)\b", q_lower))
         has_new_patient_retrieval = has_retrieval_verb and has_new_patient_target
-        
+
         # Check if user is asking to switch or open another report of the active patient (e.g. 'open her OPG', 'open hir OPG', 'show periapical', 'open his latest report')
         is_switch_verb = bool(re.search(r"\b(open|switch|view|load|fetch|show|see)\b", q_lower))
         is_qa_or_summary = bool(re.search(r"\b(summarize|summary|explain|what|why|how|tell|describe|meaning|clarify)\b", q_lower))
@@ -1455,13 +1423,13 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             matched_rep = None
             if target_rid:
                 matched_rep = get_report_by_id(target_rid)
-            elif any(w in q_lower for w in ["latest", "recent", "newest", "last"]) and p_reports:
-                matched_rep = p_reports[0]
             elif target_mod != "Any":
                 for r in p_reports:
                     if target_mod.lower() in r.get("report_type", "").lower() or (target_mod == "Periapical" and "iopa" in r.get("report_type", "").lower()):
                         matched_rep = r
                         break
+            elif any(w in q_lower for w in ["latest", "recent", "newest", "last"]) and p_reports:
+                matched_rep = p_reports[0]
             elif len(p_reports) == 1:
                 matched_rep = p_reports[0]
 
@@ -1488,7 +1456,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 }
 
         # Active Report / Patient Consultation & Evidence-Grounded Follow-Up
-        if not is_booking_request and not is_database_inquiry and not has_new_patient_retrieval:
+        if not is_booking_request and not has_new_patient_retrieval and not is_explicit_clinic_scope:
             return {
                 "selected_agent": "ConsultationAgent",
                 "tool_name": "summarize_active_report",
@@ -1499,6 +1467,24 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 },
                 "rationale": f"Report Consultation: Clinician inquiry for patient {session.active_patient_id} (active report: {session.active_report_id})."
             }
+
+    # 0B.8 Deterministic Clinic Database Inquiry Gate (when no active patient or explicit clinic scope)
+    is_database_inquiry = (
+        not is_booking_request
+        and not any(verb in q_lower for verb in ["open", "retrieve", "view", "load"])
+        and (
+            bool(re.search(r"\b(?:how\s+man[yu]|total|count|number\s+of)\b.*\b(?:patients?|reports?|scans?)\b", q_lower))
+            or bool(re.search(r"\b(?:clinic\s+database|database\s+statistics|across\s+(?:the\s+)?clinic|all\s+patients|registered\s+patients|whole\s+clinic|entire\s+clinic)\b", q_lower))
+            or bool(re.search(r"\b(?:patient\s+names?|list\s+(?:out\s+)?(?:only\s+)?(?:the\s+)?patient\s+names?|list\s+(?:of\s+)?patients?|who\s+are\s+the\s+patients?|which\s+patients?|tell\s+me\s+(?:the\s+)?patient\s+names?)\b", q_lower))
+        )
+    )
+    if is_database_inquiry:
+        return {
+            "selected_agent": "GeneralAssistantAgent",
+            "tool_name": "query_clinic_database",
+            "arguments": {"question": query},
+            "rationale": "Clinic Database Inquiry: Inquiring about registered patient directory or database statistics."
+        }
 
     # Step 1: LLM Dynamic Multi-Agent Triage (Groq / Ollama Clinical Orchestrator Agent)
     prompt = (

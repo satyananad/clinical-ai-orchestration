@@ -995,15 +995,12 @@ def answer_patient_reports_question(
         return answer_report_question(matched_report["report_id"], query, history=history)
 
     # 2. Patient Report Inventory / Count Queries
-    # e.g. "how many report have they", "how many reports do they have", "how many reports does he have", "what reports are on file"
-    is_report_inventory = (
-        bool(re.search(r"\b(?:how\s+many|count|number\s+of)\s+(?:diagnostic\s+)?(?:reports?|scans?)\b", q_lower))
-        or bool(re.search(r"\breports?\s+(?:have\s+they|do\s+they\s+have|does\s+(?:he|she)\s+have|on\s+file|available)\b", q_lower))
-        or any(p in q_lower for p in [
-            "what reports", "list reports", "how many reports", "how many report",
-            "what scans", "list scans", "reports on file", "scans on file"
-        ])
-    )
+    # e.g. "how many report have they", "how many reports do they have", "what reports are on file", "list scans"
+    is_report_inventory = bool(re.search(
+        r"\b(?:how\s+many|count|number\s+of|list|what)\b.*\b(?:reports?|scans?)\b|"
+        r"\b(?:reports?|scans?)\b.*\b(?:on\s+file|available|exist|have|has|do\s+they|does)\b",
+        q_lower
+    ))
     if is_report_inventory and all_reports:
         p_name = patient.get("patient_name", "The patient")
         p_id = patient.get("patient_id", "")
@@ -1035,10 +1032,10 @@ def answer_patient_reports_question(
         }
 
     # 3. Broad cross-report synthesis queries
-    # e.g. "summarize all her reports", "all reports", "across her records", "what reports does she have", "all scans", "summarize her reports"
+    # e.g. "summarize all her reports", "across her records", "full history", "complete summary"
     is_multi_summary = (
-        any(w in q_lower for w in ["all her reports", "all reports", "all scans", "across her records", "across her reports", "entire history", "full history", "complete summary", "every report"])
-        or any(p in q_lower for p in ["summarize her reports", "summarize her scans", "summarize reports"])
+        bool(re.search(r"\b(?:all|across|entire|full|complete|every)\s+(?:her\s+|his\s+|their\s+|the\s+)?(?:reports?|scans?|records?|history)\b", q_lower))
+        or bool(re.search(r"\bsummarize\s+(?:all\s+)?(?:her\s+|his\s+|their\s+|the\s+)?(?:reports?|scans?)\b", q_lower))
         or (not active_report_id and any(w in q_lower for w in ["summarize", "summary", "problem", "wrong", "findings", "finding", "diagnos"]))
     )
     if is_multi_summary:
