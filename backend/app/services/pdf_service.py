@@ -53,7 +53,9 @@ def _generate_reportlab_pdf(
     class NumberedCanvas(canvas.Canvas):
         """Two-pass canvas for dynamic total page count."""
         def __init__(self, *args, **kwargs):
+            kwargs["pageCompression"] = 0
             super().__init__(*args, **kwargs)
+            self._pageCompression = 0
             self._saved_page_states = []
 
         def showPage(self):
@@ -112,7 +114,8 @@ def _generate_reportlab_pdf(
         leftMargin=36,
         rightMargin=36,
         topMargin=36,
-        bottomMargin=36
+        bottomMargin=36,
+        pageCompression=0
     )
 
     styles = getSampleStyleSheet()
@@ -376,6 +379,14 @@ def _generate_reportlab_pdf(
             "Clinical Dental Workstation • Unverified AI Draft - Not Approved for Medical Records Without Clinician Signature",
             finding_meta
         )
+
+    sig_table = Table(sig_data, colWidths=[340, 200])
+    sig_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+    ]))
+
     sig_block = [
         HRFlowable(width="100%", thickness=0.75, color=colors.HexColor("#cbd5e1"), spaceAfter=6),
         sig_table,

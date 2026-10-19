@@ -237,6 +237,9 @@ def get_dashboard_ui():
                                     <button onclick="sendChat('Check available scan slots')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-600 px-2 py-0.5 rounded transition">
                                         Check Scan Slots
                                     </button>
+                                    <button onclick="sendChat('Lower right third molar is horizontally impacted with roots approximating the inferior alveolar nerve canal.')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-600 px-2 py-0.5 rounded transition">
+                                        <i class="fa-solid fa-microphone-lines mr-1 text-[9px]"></i> Dictate: LR8 Impaction
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -318,17 +321,35 @@ def get_dashboard_ui():
 
                 <!-- Dictation Input Section -->
                 <div class="space-y-3">
-                    <div class="flex items-center justify-between">
-                        <label class="text-xs font-bold uppercase tracking-wider text-slate-300">Clinical Voice or Written Dictation:</label>
-                        <button onclick="toggleVoiceRecord('dictationInput', 'dictationMicBtn')" id="dictationMicBtn" class="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1.5 rounded-xl transition flex items-center shadow-md">
-                            <i class="fa-solid fa-microphone mr-1.5"></i> Click & Speak Dictation
-                        </button>
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <label class="text-xs font-bold uppercase tracking-wider text-slate-300">Clinical Voice, Audio File, or Written Dictation:</label>
+                        <div class="flex items-center space-x-2">
+                            <label class="cursor-pointer text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold px-3 py-1.5 rounded-xl transition flex items-center shadow-sm">
+                                <i class="fa-solid fa-cloud-arrow-up mr-1.5 text-sky-400"></i> Upload Audio (.wav/.mp3)
+                                <input type="file" id="dictationAudioFile" accept="audio/*" class="hidden" onchange="handleAudioUpload(event)">
+                            </label>
+                            <button onclick="toggleVoiceRecord('dictationInput', 'dictationMicBtn')" id="dictationMicBtn" class="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1.5 rounded-xl transition flex items-center shadow-md">
+                                <i class="fa-solid fa-microphone mr-1.5"></i> Click & Speak Dictation
+                            </button>
+                        </div>
                     </div>
                     <textarea id="dictationInput" rows="3" 
                               class="w-full text-xs bg-slate-900 border border-slate-700 text-slate-100 rounded-xl p-3.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                               placeholder="e.g. Lower right third molar is horizontally impacted with roots approximating the canal. UR5 shows apical radiolucency 8 by 7 mm."></textarea>
                     
-                    <div class="flex items-center justify-end pt-2">
+                    <div class="flex flex-wrap items-center justify-between pt-1 gap-2">
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <span class="text-[11px] text-slate-400 font-medium">Quick Samples:</span>
+                            <button type="button" onclick="setDictationText('Lower right third molar is horizontally impacted with roots approximating the inferior alveolar nerve canal.')" class="text-[10px] bg-slate-900 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded-lg transition">
+                                Impacted 3rd Molar (LR8)
+                            </button>
+                            <button type="button" onclick="setDictationText('UR5 shows deep disto-occlusal caries. Tooth 25 prepared with 1.0 mm chamfer margin for zirconia crown.')" class="text-[10px] bg-slate-900 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded-lg transition">
+                                Caries & Crown Prep
+                            </button>
+                            <button type="button" onclick="setDictationText('Tooth 36 demonstrates vertical angular bone defect with Grade II furcation involvement. Retained root 18.')" class="text-[10px] bg-slate-900 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded-lg transition">
+                                Periodontal Defect
+                            </button>
+                        </div>
                         <button onclick="processDictation()" id="synthesizeBtn" class="text-xs bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-emerald-600/30 transition flex items-center">
                             <i class="fa-solid fa-file-circle-check mr-2 text-sm"></i> Generate Verified Clinical Report & PDF
                         </button>
@@ -356,19 +377,27 @@ def get_dashboard_ui():
 
                     <!-- 2 Columns: JSON and Readable Report -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="bg-slate-900 border border-slate-700 rounded-xl p-3.5">
-                            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                                <span class="text-xs font-bold text-emerald-400">Structured Clinical Findings (FHIR Schema)</span>
-                                <span class="text-[10px] text-slate-500 font-mono">Standardized Notation</span>
+                        <div class="bg-slate-900 border border-slate-700 rounded-xl p-3.5 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                                    <span class="text-xs font-bold text-emerald-400">Structured Clinical Findings (FHIR Schema)</span>
+                                    <span class="text-[10px] text-slate-400">Editable JSON</span>
+                                </div>
+                                <textarea id="jsonOutput" rows="11" class="w-full text-[11px] bg-slate-950 border border-slate-700 text-emerald-300 font-mono rounded-lg p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 custom-scroll resize-y" placeholder="Structured JSON will appear here..."></textarea>
                             </div>
-                            <pre id="jsonOutput" class="text-[11px] text-emerald-300 font-mono max-h-64 overflow-y-auto custom-scroll"></pre>
+                            <div class="pt-2.5 mt-2 border-t border-slate-800 flex items-center justify-between">
+                                <span class="text-[10px] text-slate-400"><i class="fa-solid fa-pen-to-square mr-1 text-emerald-400"></i> Clinician can edit observations & certainty</span>
+                                <button onclick="saveDictationEdits()" id="saveDictationBtn" class="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg transition shadow flex items-center">
+                                    <i class="fa-solid fa-check mr-1.5"></i> Save & Confirm Edits
+                                </button>
+                            </div>
                         </div>
                         <div class="bg-slate-900 border border-slate-700 rounded-xl p-3.5">
                             <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
                                 <span class="text-xs font-bold text-slate-200">Radiology Narrative Draft</span>
                                 <span class="text-[10px] text-slate-500 font-mono">Formatted Draft</span>
                             </div>
-                            <div id="narrativeOutput" class="text-xs text-slate-300 whitespace-pre-wrap font-sans max-h-64 overflow-y-auto custom-scroll"></div>
+                            <div id="narrativeOutput" class="text-xs text-slate-300 whitespace-pre-wrap font-sans max-h-72 overflow-y-auto custom-scroll"></div>
                         </div>
                     </div>
                 </div>
@@ -387,6 +416,99 @@ def get_dashboard_ui():
         let allClinicPatients = [];
         let activeSelectedPatient = null;
         let activeSelectedReport = null;
+        let lastDictationResult = null;
+
+        function switchTab(tab) {
+            const assistantContent = document.getElementById("tabContent-assistant");
+            const dictationContent = document.getElementById("tabContent-dictation");
+            const assistantBtn = document.getElementById("tabBtn-assistant");
+            const dictationBtn = document.getElementById("tabBtn-dictation");
+
+            if (tab === "dictation") {
+                if (assistantContent) assistantContent.classList.add("hidden");
+                if (dictationContent) {
+                    dictationContent.classList.remove("hidden");
+                    dictationContent.classList.add("flex");
+                }
+                if (dictationBtn) dictationBtn.className = "px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 border-emerald-500 text-emerald-400 flex items-center transition";
+                if (assistantBtn) assistantBtn.className = "px-4 py-3 text-xs sm:text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center transition";
+            } else {
+                if (dictationContent) {
+                    dictationContent.classList.add("hidden");
+                    dictationContent.classList.remove("flex");
+                }
+                if (assistantContent) assistantContent.classList.remove("hidden");
+                if (assistantBtn) assistantBtn.className = "px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 border-sky-500 text-sky-400 flex items-center transition";
+                if (dictationBtn) dictationBtn.className = "px-4 py-3 text-xs sm:text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center transition";
+            }
+        }
+
+        function setDictationText(text) {
+            const el = document.getElementById("dictationInput");
+            if (el) el.value = text;
+        }
+
+        async function handleAudioUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const btn = document.getElementById("synthesizeBtn");
+            if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Ingesting Audio & Structuring...`;
+
+            try {
+                const formData = new FormData();
+                formData.append("audio", file);
+                if (activeSelectedPatient) {
+                    formData.append("patient_id", activeSelectedPatient.patient_id);
+                    formData.append("patient_name", activeSelectedPatient.patient_name);
+                }
+                const resp = await fetch(`${API_BASE}/dictation/audio`, {
+                    method: "POST",
+                    body: formData
+                });
+                if (!resp.ok) {
+                    const errPayload = await resp.json().catch(() => ({}));
+                    throw new Error(errPayload.detail || `Server status ${resp.status}`);
+                }
+                const data = await resp.json();
+                populateDictationStudio(data);
+            } catch (err) {
+                console.error("Audio dictation upload error:", err);
+                alert("Audio Dictation Notice: " + (err.message || "Unable to process audio file."));
+            } finally {
+                if (btn) btn.innerHTML = `<i class="fa-solid fa-file-circle-check mr-2 text-sm"></i> Generate Verified Clinical Report & PDF`;
+            }
+        }
+
+        async function saveDictationEdits() {
+            const jsonElem = document.getElementById("jsonOutput");
+            const jsonStr = jsonElem ? (jsonElem.value || jsonElem.innerText || "").trim() : "";
+            if (!jsonStr) {
+                alert("No structured JSON to save.");
+                return;
+            }
+            try {
+                const parsed = JSON.parse(jsonStr);
+                const resp = await fetch(`${API_BASE}/dictation/confirm`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(parsed)
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.detail || `Server status ${resp.status}`);
+                }
+                const confirmedData = await resp.json();
+                populateDictationStudio(confirmedData);
+                alert("Clinical Dictation verified and saved successfully! Updated PDF generated.");
+            } catch (err) {
+                alert("Error saving dictation JSON: " + err.message);
+            }
+        }
+
+        function populateAndSwitchToDictation(data) {
+            if (data) populateDictationStudio(data);
+            switchTab('dictation');
+        }
 
         async function loadPatientDirectory() {
             const grid = document.getElementById("patientDirectoryGrid");
@@ -718,6 +840,48 @@ def get_dashboard_ui():
                     return;
                 }
 
+                // CASE 4.5: Clinical Dictation Structured Draft Report
+                if (data.dictation_result || (data.agent_trace && (data.agent_trace.active_agent === "ClinicalScribeAgent" || data.agent_trace.tool_called === "structure_clinical_dictation"))) {
+                    const dResult = data.dictation_result || {};
+                    const pdfPath = dResult.dictation_pdf_path;
+                    const pdfFilename = pdfPath ? pdfPath.split("/").pop() : null;
+
+                    let html = `${agentBadgeHtml}`;
+                    html += `
+                        <div class="p-3.5 bg-slate-800/90 border border-emerald-500/40 rounded-xl space-y-2.5">
+                            <div class="flex items-center justify-between pb-1.5 border-b border-slate-700">
+                                <span class="text-xs font-bold text-emerald-400 flex items-center">
+                                    <i class="fa-solid fa-file-waveform mr-1.5"></i> Structured Dictation Draft Generated
+                                </span>
+                                <span class="text-[10px] bg-amber-500/20 text-amber-300 font-semibold px-2 py-0.5 rounded border border-amber-500/30">
+                                    Review Required
+                                </span>
+                            </div>
+
+                            <div class="text-xs text-slate-200 whitespace-pre-line leading-relaxed font-sans">
+                                ${data.answer || "Clinical observations structured into validated draft report."}
+                            </div>
+
+                            <div class="pt-2 border-t border-slate-700 flex flex-wrap gap-2 items-center justify-between">
+                                <button onclick="populateAndSwitchToDictation(lastDictationResult)" 
+                                        class="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1.5 rounded-lg transition shadow-sm flex items-center">
+                                    <i class="fa-solid fa-pen-to-square mr-1.5"></i> Edit JSON in Studio
+                                </button>
+                                ${pdfFilename ? `
+                                    <a href="/dictation-pdf/${pdfFilename}" target="_blank" 
+                                       class="text-xs bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold px-3 py-1.5 rounded-lg transition shadow-sm flex items-center">
+                                        <i class="fa-solid fa-file-pdf mr-1.5"></i> Download PDF Draft
+                                    </a>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                    appendCustomMessage("assistant", html, "bg-slate-700/60 border border-emerald-500/40");
+                    lastDictationResult = dResult;
+                    populateDictationStudio(dResult);
+                    return;
+                }
+
                 // CASE 5: Conversational Answer (Evidence-Grounded Q&A)
                 if (data.answer) {
                     let html = `${agentBadgeHtml}<p class="whitespace-pre-line text-xs text-slate-200">${data.answer}</p>`;
@@ -830,58 +994,22 @@ def get_dashboard_ui():
             btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Structuring Clinical Report...`;
 
             try {
+                const payload = { text: text };
+                if (activeSelectedPatient) {
+                    payload.patient_id = activeSelectedPatient.patient_id;
+                    payload.patient_name = activeSelectedPatient.patient_name;
+                }
                 const resp = await fetch(`${API_BASE}/dictation/structure`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ text: text })
+                    body: JSON.stringify(payload)
                 });
                 if (!resp.ok) {
                     const errPayload = await resp.json().catch(() => ({}));
                     throw new Error(errPayload.detail || `Server returned status ${resp.status}`);
                 }
                 const data = await resp.json();
-
-                document.getElementById("dictationOutputContainer").classList.remove("hidden");
-                document.getElementById("jsonOutput").innerText = JSON.stringify(data, null, 2);
-                document.getElementById("narrativeOutput").innerText = data.narrative_draft || (data.report_metadata && data.report_metadata.extraction_status === "NON_CLINICAL_INPUT_REJECTED" ? "ATTENTION: Non-clinical or instructional text detected. Please dictate or enter actual dental/maxillofacial radiological findings." : "No narrative generated.");
-
-                // Render Findings Badges
-                let badgesHtml = "";
-                if (data.report_metadata && data.report_metadata.extraction_status === "NON_CLINICAL_INPUT_REJECTED") {
-                    badgesHtml += `
-                        <div class="w-full p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs flex items-center">
-                            <i class="fa-solid fa-triangle-exclamation mr-2 text-sm"></i>
-                            <span><strong>Non-Clinical Text Detected:</strong> Input contains software development notes or prompt instructions. No clinical dental findings were extracted.</span>
-                        </div>
-                    `;
-                }
-                if (data.anatomical_sites && data.anatomical_sites.length > 0) {
-                    data.anatomical_sites.forEach(s => {
-                        badgesHtml += `
-                            <span class="inline-flex items-center text-xs bg-sky-500/20 border border-sky-500/40 text-sky-300 px-2.5 py-1 rounded-lg">
-                                <i class="fa-solid fa-tooth mr-1.5"></i> ${s.anatomical_name} ${s.fdi_number ? `(FDI ${s.fdi_number})` : ''}
-                            </span>
-                        `;
-                    });
-                }
-                if (data.safety_guardrails) {
-                    badgesHtml += `
-                        <span class="inline-flex items-center text-xs bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-2.5 py-1 rounded-lg">
-                            <i class="fa-solid fa-shield-check mr-1.5"></i> ${data.safety_guardrails.status}: ${data.safety_guardrails.grounded_ratio} Claims Grounded
-                        </span>
-                    `;
-                }
-                document.getElementById("dictationBadgesContainer").innerHTML = badgesHtml;
-
-                // PDF Download Button
-                if (data.dictation_pdf_path) {
-                    const filename = data.dictation_pdf_path.split("/").pop();
-                    document.getElementById("dictationPdfDownloadBtnContainer").innerHTML = `
-                        <a href="/dictation-pdf/${filename}" target="_blank" class="text-xs bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold px-3 py-1.5 rounded-lg transition shadow">
-                            <i class="fa-solid fa-file-pdf mr-1"></i> Download PDF Draft
-                        </a>
-                    `;
-                }
+                populateDictationStudio(data);
             } catch (err) {
                 console.error("Clinical structuring error:", err);
                 alert("Clinical Dictation Notice: " + (err.message || "Unable to structure dictation. Please check server logs."));
