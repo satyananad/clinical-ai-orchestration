@@ -16,10 +16,12 @@ def assistant_chat_endpoint(payload: AssistantChatRequest):
     """
     session_id = payload.session_id or "default_session"
     session = get_or_create_session(session_id)
-    if payload.active_patient_id and not session.active_patient_id:
-        session.set_active_patient(payload.active_patient_id)
-    if payload.active_report_id and not session.active_report_id:
-        session.set_active(payload.active_patient_id or session.active_patient_id, payload.active_report_id)
+    if payload.active_patient_id:
+        if session.active_patient_id != payload.active_patient_id:
+            session.set_active_patient(payload.active_patient_id)
+    if payload.active_report_id:
+        if session.active_report_id != payload.active_report_id:
+            session.set_active(payload.active_patient_id or session.active_patient_id, payload.active_report_id)
     result = run_multi_agent_pipeline(payload.query, session_id=session_id)
     return result
 

@@ -370,11 +370,17 @@ def resolve_report_retrieval(query: str, patient_name: Optional[str] = None, mod
     reports = get_patient_reports(patient["patient_id"], modality=requested_modality)
 
     if not reports:
+        all_reps = get_patient_reports(patient["patient_id"])
+        avail = [
+            {"report_id": r["report_id"], "report_type": r["report_type"], "report_date": r["report_date"]}
+            for r in all_reps
+        ]
         return {
             "status": "missing_report",
             "message": f"Patient '{patient['patient_name']}' was found, but no {requested_modality} report exists on file.",
             "candidates": None,
             "report": None,
+            "available_reports": avail,
             "patient": {
                 "patient_id": patient["patient_id"],
                 "patient_name": patient["patient_name"],

@@ -1057,6 +1057,45 @@ def get_dashboard_ui():
                     return;
                 }
 
+                // CASE 4.1: Missing Specific Report Modality on File
+                if (data.status === "missing_report") {
+                    let html = `${agentBadgeHtml}`;
+                    html += `
+                        <div class="p-3 bg-slate-800 border border-amber-500/40 rounded-xl text-slate-200 space-y-1.5">
+                            <div class="flex items-center space-x-2 text-amber-300 font-semibold text-xs">
+                                <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
+                                <span>${data.message}</span>
+                            </div>
+                            ${data.patient ? `
+                                <div class="text-[11px] text-slate-300">
+                                    Patient: <strong>${data.patient.patient_name}</strong> (${data.patient.patient_id}).
+                                </div>
+                            ` : ''}
+                            ${data.available_reports && data.available_reports.length > 0 ? `
+                                <div class="text-[11px] text-slate-400 pt-1 border-t border-slate-700">
+                                    <span class="text-slate-300 font-medium">Available reports on file:</span>
+                                    <div class="flex flex-wrap gap-1.5 mt-1">
+                                        ${data.available_reports.map(r => `
+                                            <button onclick="openReportById('${data.patient.patient_id}', '${r.report_id}')" class="text-[10px] bg-slate-900 hover:bg-sky-950 text-sky-300 border border-slate-700 hover:border-sky-500/50 px-2 py-0.5 rounded transition">
+                                                <i class="fa-solid fa-folder-open mr-1"></i> ${r.report_type} (${r.report_id})
+                                            </button>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                    appendCustomMessage("assistant", html, "bg-slate-700/60 border border-amber-500/40");
+                    return;
+                }
+
+                // CASE 4.2: Patient Clarification / Not Found Prompt
+                if (data.status === "missing_patient_name" || data.status === "not_found") {
+                    let html = `${agentBadgeHtml}<p class="text-xs text-amber-300 font-medium"><i class="fa-solid fa-circle-info mr-1 text-amber-400"></i> ${data.message}</p>`;
+                    appendCustomMessage("assistant", html, "bg-slate-700/60 border border-amber-500/40");
+                    return;
+                }
+
                 // CASE 4.5: Clinical Dictation Structured Draft Report
                 if (data.dictation_result || (data.agent_trace && (data.agent_trace.active_agent === "ClinicalScribeAgent" || data.agent_trace.tool_called === "structure_clinical_dictation"))) {
                     const dResult = data.dictation_result || {};
@@ -1167,8 +1206,12 @@ ${dResult.narrative_draft}
                     return;
                 }
 
-                // Default Message
-                appendMessage("assistant", data.message || "Request completed.");
+                // Default Message with badge if available
+                if (agentBadgeHtml) {
+                    appendCustomMessage("assistant", `${agentBadgeHtml}<p class="text-xs text-slate-200">${data.message || "Request completed."}</p>`, "bg-slate-700/60 border border-slate-600");
+                } else {
+                    appendMessage("assistant", data.message || "Request completed.");
+                }
             } catch (err) {
                 appendMessage("assistant", "Unable to connect to clinical workstation service.");
             }

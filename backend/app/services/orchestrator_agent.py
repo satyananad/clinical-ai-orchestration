@@ -181,6 +181,40 @@ def resolve_pending_candidates_from_query(
             "remaining_candidates": matches
         }
 
+    # E. Modality matching across candidate diagnostic reports (e.g. "open her bitewing radiographs")
+    from .retrieval import get_patient_reports, extract_retrieval_intent
+    intent = extract_retrieval_intent(query)
+    req_mod = intent.get("report_type", "Any")
+    if req_mod == "Any":
+        for pat, mod in [
+            (r"\b(opg|panoramic|orthopantomogram)\b", "OPG"),
+            (r"\b(cbct|cone\s*beam|3d\s*volume)\b", "CBCT"),
+            (r"\b(bitewing|bitewings)\b", "Bitewing"),
+            (r"\b(periapical|iopa)\b", "Periapical"),
+            (r"\b(cephalogram|ceph)\b", "Cephalogram"),
+            (r"\b(examination|exam)\b", "Dental Examination"),
+        ]:
+            if re.search(pat, q_lower):
+                req_mod = mod
+                break
+
+    if req_mod != "Any":
+        mod_matches = []
+        for cand in candidates:
+            c_reports = get_patient_reports(cand.get("patient_id"), modality=req_mod)
+            if c_reports:
+                mod_matches.append(cand)
+        if len(mod_matches) == 1:
+            return {
+                "status": "resolved",
+                "matched_candidate": mod_matches[0]
+            }
+        elif len(mod_matches) > 1:
+            return {
+                "status": "narrowed",
+                "remaining_candidates": mod_matches
+            }
+
     # 3. Explicit selection of unlisted candidate
     if any(v in q_lower for v in ["select", "choose", "pick"]):
         return {
@@ -768,10 +802,22 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             }
         else:
             # Query did not address the clarification; check if user is asking a database question or changing topic
+            pronoun_tokens = {"his", "her", "hers", "hir", "their", "theirs", "she", "he", "him", "them"}
+            is_pronoun_ref = any(w in pronoun_tokens for w in re.findall(r"\b[a-zA-Z]+\b", q_lower))
             is_database_q = any(q_lower.startswith(w) for w in ["how many", "how much", "which", "who", "list", "what", "show"]) or "database" in q_lower or "?" in q_lower
             has_retrieval_cmd = any(verb in q_lower for verb in ["open", "find", "load", "retrieve", "book", "schedule", "cancel", "stop"])
-            if is_database_q or has_retrieval_cmd:
+            if (is_database_q or has_retrieval_cmd) and not is_pronoun_ref:
                 session.pending_candidates = None
+            elif is_pronoun_ref and session.pending_candidates:
+                return {
+                    "selected_agent": "RetrievalAgent",
+                    "tool_name": "search_patient_reports",
+                    "arguments": {
+                        "patient_name": session.pending_candidates[0]["patient_name"],
+                        "modality": effective_mod
+                    },
+                    "rationale": "Clarification Safety Gate: Clinician referenced ambiguous candidate with pronoun without choosing."
+                }
 
     # Step 00: Explicit Patient / Report Retrieval Override
     # When a clinician explicitly asks to open, view, or retrieve a patient record/report,

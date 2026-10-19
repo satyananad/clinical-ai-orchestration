@@ -231,3 +231,56 @@ def test_select_pat_1012_then_open_her_bitewing_radiographs():
     assert d2["patient"]["patient_id"] == "PAT-1012"
 
 
+def test_select_pat_1001_then_open_her_bitewing_radiographs_returns_missing_report():
+    """
+    Test PAT-1001 missing report handling:
+    1. Select PAT-1001 (Priya Sharma, DOB 1998-04-12) who only has OPG, Periapical, and Dental Examination.
+    2. Query 'open her bitewing radiographs' with active_patient_id: PAT-1001.
+    3. Must return status 'missing_report' with informative clinical message and available reports.
+    """
+    session_id = "test_sess_priya_1001_bitewing_missing"
+
+    r1 = client.post(f"/sessions/{session_id}/select-patient", json={"patient_id": "PAT-1001"})
+    assert r1.status_code == 200
+
+    r2 = client.post("/assistant/chat", json={
+        "query": "open her bitewing radiographs",
+        "session_id": session_id,
+        "active_patient_id": "PAT-1001"
+    })
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2["status"] == "missing_report"
+    assert "no Bitewing report exists on file" in d2["message"]
+    assert d2["patient"]["patient_id"] == "PAT-1001"
+    assert "available_reports" in d2 and len(d2["available_reports"]) == 3
+
+
+def test_ambiguity_direct_modality_disambiguation_to_pat1012():
+    """
+    Test candidate disambiguation via modality:
+    1. 'Open Priya Sharma' yields ambiguous candidates PAT-1001 and PAT-1012.
+    2. Clinician queries 'open her bitewing radiographs' without clicking a candidate.
+    3. Evaluates that PAT-1012 has Bitewing Radiographs while PAT-1001 does not, resolving to PAT-1012 (RPT-2035).
+    """
+    session_id = "test_sess_ambig_modality_disambig"
+
+    r1 = client.post("/assistant/chat", json={
+        "query": "Open Priya Sharma",
+        "session_id": session_id
+    })
+    assert r1.status_code == 200
+    assert r1.json()["status"] == "clarification_required"
+
+    r2 = client.post("/assistant/chat", json={
+        "query": "open her bitewing radiographs",
+        "session_id": session_id
+    })
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2["status"] == "success"
+    assert d2["report"]["report_id"] == "RPT-2035"
+    assert d2["patient"]["patient_id"] == "PAT-1012"
+
+
+
