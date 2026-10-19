@@ -424,7 +424,7 @@ def get_dashboard_ui():
                                 <span class="text-xs font-bold text-slate-200">Radiology Narrative Draft</span>
                                 <span class="text-[10px] text-slate-500 font-mono">Formatted Draft</span>
                             </div>
-                            <div id="narrativeOutput" class="text-xs text-slate-300 whitespace-pre-wrap font-sans max-h-72 overflow-y-auto custom-scroll"></div>
+                            <div id="narrativeOutput" class="text-[11px] font-mono text-slate-200 whitespace-pre bg-slate-950 p-3 rounded-lg overflow-x-auto max-h-96 overflow-y-auto custom-scroll border border-slate-800 leading-relaxed"></div>
                         </div>
                     </div>
                 </div>
@@ -1062,22 +1062,75 @@ def get_dashboard_ui():
                     const dResult = data.dictation_result || {};
                     const pdfPath = dResult.dictation_pdf_path;
                     const pdfFilename = pdfPath ? pdfPath.split("/").pop() : null;
+                    const studyType = (dResult.patient_details && dResult.patient_details.study_type) || "Clinical Dental Radiography";
+                    const findingsList = dResult.findings || [];
+                    const impressionsList = dResult.impressions || [];
+                    const draftId = "draft_" + Math.random().toString(36).substr(2, 9);
+
+                    let findingsHtml = "";
+                    if (findingsList.length > 0) {
+                        findingsHtml += `<div class="space-y-1.5 mt-2">`;
+                        findingsList.forEach(f => {
+                            const certBadge = (f.certainty === "confirmed" || f.certainty === "definite observation") 
+                                ? `<span class="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">Definite</span>`
+                                : `<span class="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30">${f.certainty || 'Observed'}</span>`;
+                            findingsHtml += `
+                                <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-700/80 text-[11px] text-slate-200">
+                                    <div class="flex items-center justify-between font-semibold text-sky-300">
+                                        <span><i class="fa-solid fa-tooth mr-1"></i> ${f.anatomical_site || 'Anatomical Site'}</span>
+                                        ${certBadge}
+                                    </div>
+                                    <div class="text-slate-300 text-[11px] mt-0.5 leading-snug">${f.observation || ''}</div>
+                                </div>
+                            `;
+                        });
+                        findingsHtml += `</div>`;
+                    }
+
+                    let impressionsHtml = "";
+                    if (impressionsList.length > 0) {
+                        impressionsHtml += `
+                            <div class="mt-2 p-2 bg-emerald-950/40 border border-emerald-500/30 rounded-lg text-[11px]">
+                                <span class="font-bold text-emerald-400 block mb-0.5"><i class="fa-solid fa-stethoscope mr-1"></i> Impression:</span>
+                                <ul class="list-disc list-inside text-slate-200 space-y-0.5">
+                                    ${impressionsList.map(imp => `<li>${imp}</li>`).join('')}
+                                </ul>
+                            </div>
+                        `;
+                    }
 
                     let html = `${agentBadgeHtml}`;
                     html += `
                         <div class="p-3.5 bg-slate-800/90 border border-emerald-500/40 rounded-xl space-y-2.5">
-                            <div class="flex items-center justify-between pb-1.5 border-b border-slate-700">
-                                <span class="text-xs font-bold text-emerald-400 flex items-center">
-                                    <i class="fa-solid fa-file-waveform mr-1.5"></i> Structured Dictation Draft Generated
-                                </span>
+                            <div class="flex flex-wrap items-center justify-between gap-1.5 pb-2 border-b border-slate-700">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-xs font-bold text-emerald-400 flex items-center">
+                                        <i class="fa-solid fa-file-waveform mr-1.5"></i> Structured Dictation Draft
+                                    </span>
+                                    <span class="text-[10px] bg-sky-500/20 text-sky-300 font-medium px-2 py-0.5 rounded border border-sky-500/30">
+                                        ${studyType}
+                                    </span>
+                                </div>
                                 <span class="text-[10px] bg-amber-500/20 text-amber-300 font-semibold px-2 py-0.5 rounded border border-amber-500/30">
-                                    Review Required
+                                    Clinician Review Required
                                 </span>
                             </div>
 
-                            <div class="text-xs text-slate-200 whitespace-pre-line leading-relaxed font-sans">
-                                ${data.answer || "Clinical observations structured into validated draft report."}
-                            </div>
+                            ${findingsHtml}
+                            ${impressionsHtml}
+
+                            <!-- Collapsible Full Narrative Report -->
+                            ${dResult.narrative_draft ? `
+                                <div class="mt-2">
+                                    <button type="button" onclick="const el=document.getElementById('${draftId}'); el.classList.toggle('hidden'); this.querySelector('i').classList.toggle('rotate-180');" 
+                                            class="text-[11px] text-slate-400 hover:text-slate-200 flex items-center gap-1 py-1 font-medium transition">
+                                        <i class="fa-solid fa-chevron-down text-[10px] transition-transform"></i> View Full Formatted Report Text
+                                    </button>
+                                    <div id="${draftId}" class="hidden mt-1 p-3 bg-slate-950 border border-slate-800 rounded-lg text-[10px] font-mono text-slate-300 whitespace-pre overflow-x-auto max-h-60 custom-scroll leading-relaxed">
+${dResult.narrative_draft}
+                                    </div>
+                                </div>
+                            ` : ''}
 
                             <div class="pt-2 border-t border-slate-700 flex flex-wrap gap-2 items-center justify-between">
                                 <button onclick="populateAndSwitchToDictation(lastDictationResult)" 

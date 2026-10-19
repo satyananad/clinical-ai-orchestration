@@ -10,6 +10,7 @@ Exposed Tools:
 3. summarize_active_report: Grounds conversational follow-up questions with source citations.
 """
 
+import os
 import json
 import re
 from typing import Dict, Any, List, Optional
@@ -556,7 +557,9 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
 
         elif tool_name == "structure_clinical_dictation":
             from .report_service import compose_narrative
-            dictation_text = arguments.get("dictation_text", "")
+            from .pdf_service import generate_dictation_pdf
+            raw_input = arguments.get("dictation_text", "")
+            dictation_text = re.sub(r"^(?:dictate\s*[:\-]?\s*|dictation\s*[:\-]?\s*|please\s+dictate\s*[:\-]?\s*)", "", raw_input.strip(), flags=re.IGNORECASE).strip() or raw_input.strip()
             p_name = arguments.get("patient_name") or "Pending Patient Linkage (Unassigned)"
             p_id = arguments.get("patient_id") or "None"
             parsed = parse_dictation_with_llm(dictation_text)
@@ -576,6 +579,26 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 patient_details=patient_details
             )
 
+            # Generate and persist the PDF artifact
+            dictation_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "dictation_reports")
+            os.makedirs(dictation_dir, exist_ok=True)
+            p_label = (p_name or "Unassigned_Patient").replace(" ", "_").replace("/", "_")
+            pdf_fname = f"{(p_id or 'UNASSIGNED').replace(' ', '_')}_{p_label}_Draft.pdf"
+            pdf_path = os.path.join(dictation_dir, pdf_fname)
+            try:
+                generate_dictation_pdf(
+                    pdf_path,
+                    p_name,
+                    p_id,
+                    dictation_text,
+                    findings,
+                    impressions,
+                    recommendations,
+                    patient_details=patient_details
+                )
+            except Exception:
+                pdf_path = None
+
             return {
                 "status": status_label,
                 "extraction_status": parsed.get("extraction_status", "COMPLETE" if has_findings else "INCOMPLETE_REQUIRES_REVIEW"),
@@ -587,7 +610,8 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "impressions": impressions,
                 "recommendations": recommendations,
                 "narrative_draft": narrative,
-                "safety_guardrails": guardrails
+                "safety_guardrails": guardrails,
+                "dictation_pdf_path": pdf_path
             }
 
         elif tool_name == "summarize_active_report":

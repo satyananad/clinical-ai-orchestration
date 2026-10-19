@@ -258,11 +258,17 @@ def extract_retrieval_intent_with_llm(user_input: str) -> Dict[str, str]:
 
 
 def clean_conversational_dictation(text: str) -> str:
-    """Strips conversational preambles like 'hey can you generate the report for the...'"""
+    """Strips conversational preambles like 'hey can you generate the report for the...' or 'Dictate: ...'"""
+    cleaned = re.sub(
+        r"^(?:dictate\s*[:\-]?\s*|dictation\s*[:\-]?\s*|please\s+dictate\s*[:\-]?\s*)",
+        "",
+        text.strip(),
+        flags=re.IGNORECASE
+    )
     cleaned = re.sub(
         r"^(?:hey\s+|hello\s+|hi\s+)?(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:generate|create|write|draft|make|give\s+me)?\s*(?:the|a)?\s*(?:report|clinical\s+report|dictation)?\s*(?:for\s+(?:the)?)?\s*",
         "",
-        text.strip(),
+        cleaned.strip(),
         flags=re.IGNORECASE
     )
     return cleaned.strip()
@@ -335,7 +341,7 @@ def parse_dictation_with_llm(dictation_text: str) -> Dict[str, Any]:
 
     is_fallback = False
     if not result or not result.get("findings"):
-        fallback = _dynamic_semantic_parse(dictation_text)
+        fallback = _dynamic_semantic_parse(cleaned_text)
         is_fallback = True
         if not result:
             result = fallback

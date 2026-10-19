@@ -343,17 +343,33 @@ def extract_patient_demographics(text: str) -> Dict[str, Any]:
         if "cbct" in cand_study.lower():
             study_type = "CBCT"
         elif "panoramic" in cand_study.lower() or "opg" in cand_study.lower():
-            study_type = "Panoramic radiograph"
+            study_type = "Panoramic Radiograph (OPG)"
         else:
             study_type = cand_study.title()
     elif "panoramic" in text.lower() or "opg" in text.lower():
-        study_type = "Panoramic radiograph"
-    elif "cbct" in text.lower() or "cone beam" in text.lower():
+        study_type = "Panoramic Radiograph (OPG)"
+    elif "cbct" in text.lower() or "cone beam" in text.lower() or "3d volume" in text.lower():
         study_type = "CBCT"
     elif "bitewing" in text.lower():
         study_type = "Bitewing Radiographs"
     elif "periapical" in text.lower() or "iopa" in text.lower():
-        study_type = "Periapical Radiograph"
+        study_type = "Periapical Radiograph (IOPA)"
+    elif "cephalogram" in text.lower() or "ceph" in text.lower():
+        study_type = "Lateral Cephalogram"
+    else:
+        text_lower = text.lower()
+        if any(w in text_lower for w in ["third molar", "impaction", "impacted", "mandibular canal", "ianc", "inferior alveolar", "condyle", "ramus", "sinus"]):
+            study_type = "Panoramic Radiograph (OPG)"
+        elif any(w in text_lower for w in ["interproximal", "caries", "disto-occlusal", "mesio-occlusal", "crown prep", "chamfer", "margin"]):
+            study_type = "Bitewing Radiographs"
+        elif any(w in text_lower for w in ["periapical", "radiolucency", "furcation", "bone defect", "root apex", "endodontic", "retained root"]):
+            study_type = "Periapical Radiograph (IOPA)"
+        elif any(w in text_lower for w in ["implant", "osteotomy", "cross-sectional", "bone volume", "bone width"]):
+            study_type = "CBCT"
+        elif any(w in text_lower for w in ["periodontal", "calculus", "gingival", "pocket", "mobility"]):
+            study_type = "Periodontal Evaluation"
+        else:
+            study_type = "Diagnostic Dental Radiography"
 
     # Extract Provider / Author Metadata
     provider_details = {}

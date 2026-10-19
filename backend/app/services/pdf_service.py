@@ -505,9 +505,9 @@ def _generate_manual_canvas_pdf(
 
         f"BT /F1 9.5 Tf 0.1 0.1 0.1 rg 310 718 Td ({sanitize_pdf('EXAM TYPE: ' + study_type[:30])}) Tj ET",
         f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 310 702 Td ({sanitize_pdf('DATE: ' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))}) Tj ET",
-        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 310 706 Td ({sanitize_pdf('VERIFICATION: Guardrail Verification Enforced')}) Tj ET",
+        f"BT /F2 8.5 Tf 0.3 0.3 0.3 rg 310 686 Td ({sanitize_pdf('VERIFICATION: Guardrail Verification Enforced')}) Tj ET",
     ]
-    y = 638
+    y = 645
 
     def check_page_overflow(needed_space=40):
         nonlocal y, curr_cmds
@@ -527,9 +527,9 @@ def _generate_manual_canvas_pdf(
 
     sec_idx = 1
     if history_items:
-        curr_cmds.append(f"BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 660 Td ({sanitize_pdf(f'{sec_idx}. CLINICAL HISTORY & PATIENT-REPORTED SYMPTOMS')}) Tj ET")
-        curr_cmds.append("0.85 0.85 0.85 RG 1 w 50 653 495 0 m 545 653 l S")
-        y = 638
+        curr_cmds.append(f"BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 {y} Td ({sanitize_pdf(f'{sec_idx}. CLINICAL HISTORY & PATIENT-REPORTED SYMPTOMS')}) Tj ET")
+        curr_cmds.append(f"0.85 0.85 0.85 RG 1 w 50 {y - 4} 495 0 m 545 {y - 4} l S")
+        y -= 16
         for h in history_items:
             clean_h = h.strip()
             if clean_h and not clean_h.endswith("."):
@@ -546,9 +546,9 @@ def _generate_manual_canvas_pdf(
         curr_cmds.append(f"0.85 0.85 0.85 RG 1 w 50 {y - 4} 495 0 m 545 {y - 4} l S")
         y -= 16
     else:
-        curr_cmds.append(f"BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 660 Td ({sanitize_pdf(f'{sec_idx}. DETAILED RADIOLOGICAL FINDINGS')}) Tj ET")
-        curr_cmds.append("0.85 0.85 0.85 RG 1 w 50 653 495 0 m 545 653 l S")
-        y = 638
+        curr_cmds.append(f"BT /F1 10.5 Tf 0.12 0.23 0.45 rg 50 {y} Td ({sanitize_pdf(f'{sec_idx}. DETAILED RADIOLOGICAL FINDINGS')}) Tj ET")
+        curr_cmds.append(f"0.85 0.85 0.85 RG 1 w 50 {y - 4} 495 0 m 545 {y - 4} l S")
+        y -= 16
 
     sec_idx += 1
 
@@ -642,13 +642,15 @@ def _generate_manual_canvas_pdf(
     if is_confirmed:
         curr_cmds.extend([
             "0.85 0.85 0.85 RG 1 w 45 75 505 0 m 550 75 l S",
-            f"BT /F1 8.5 Tf 0 0.5 0 rg 50 58 Td ({sanitize_pdf(f'Reporting Radiologist: {clinician_name} [VERIFIED & SEALED]')}) Tj 220 0 Td ({sanitize_pdf(f'Sign-Off Date: {confirmed_at}')}) Tj ET",
+            f"BT /F1 8.5 Tf 0 0.5 0 rg 50 58 Td ({sanitize_pdf(f'Reporting Radiologist: {clinician_name} [VERIFIED & SEALED]')}) Tj ET",
+            f"BT /F1 8.5 Tf 0 0.5 0 rg 340 58 Td ({sanitize_pdf(f'Sign-Off Date: {confirmed_at}')}) Tj ET",
             f"BT /F3 7.5 Tf 0.2 0.5 0.2 rg 50 45 Td ({sanitize_pdf('Clinical Dental Workstation • Authenticated Electronic Medical Record • Digital Signature: VERIFIED & SEALED')}) Tj ET"
         ])
     else:
         curr_cmds.extend([
             "0.85 0.85 0.85 RG 1 w 45 75 505 0 m 550 75 l S",
-            f"BT /F1 8.5 Tf 0 0 0 rg 50 58 Td ({sanitize_pdf('Attending Clinician Approval: ___________________________')}) Tj 200 0 Td ({sanitize_pdf('Sign-Off Date: _________________')}) Tj ET",
+            f"BT /F1 8.5 Tf 0 0 0 rg 50 58 Td ({sanitize_pdf('Attending Clinician Approval: ___________________________')}) Tj ET",
+            f"BT /F1 8.5 Tf 0 0 0 rg 350 58 Td ({sanitize_pdf('Sign-Off Date: _________________')}) Tj ET",
             f"BT /F3 7.5 Tf 0.4 0.4 0.4 rg 50 45 Td ({sanitize_pdf('Clinical Dental Workstation • Unverified AI Draft - Not Approved for Medical Records Without Clinician Signature')}) Tj ET"
         ])
     pages_cmds.append("\n".join(curr_cmds))
