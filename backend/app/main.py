@@ -523,84 +523,88 @@ def get_dashboard_ui():
 
         function populateDictationStudio(data) {
             if (!data) return;
-            const container = document.getElementById("dictationOutputContainer");
-            if (container) container.classList.remove("hidden");
+            try {
+                const container = document.getElementById("dictationOutputContainer");
+                if (container) container.classList.remove("hidden");
 
-            const inputEl = document.getElementById("dictationInput");
-            if (inputEl && (data.raw_transcript || data.raw_dictation) && !inputEl.value.trim()) {
-                inputEl.value = data.raw_transcript || data.raw_dictation || "";
-            }
-
-            const jsonOutput = document.getElementById("jsonOutput");
-            if (jsonOutput) {
-                jsonOutput.value = JSON.stringify(data, null, 2);
-            }
-
-            const narrativeOutput = document.getElementById("narrativeOutput");
-            if (narrativeOutput) {
-                narrativeOutput.innerText = data.narrative_draft || 
-                    (data.report_metadata && data.report_metadata.extraction_status === "NON_CLINICAL_INPUT_REJECTED" ? 
-                    "ATTENTION: Non-clinical or instructional text detected. Please dictate or enter actual dental/maxillofacial radiological findings." : 
-                    "No narrative generated.");
-            }
-
-            // Render Findings Badges
-            let badgesHtml = "";
-            if (data.report_metadata && data.report_metadata.extraction_status === "NON_CLINICAL_INPUT_REJECTED") {
-                badgesHtml += `
-                    <div class="w-full p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs flex items-center">
-                        <i class="fa-solid fa-triangle-exclamation mr-2 text-sm"></i>
-                        <span><strong>Non-Clinical Text Detected:</strong> Input contains software development notes or prompt instructions. No clinical dental findings were extracted.</span>
-                    </div>
-                `;
-            }
-            if (data.anatomical_sites && data.anatomical_sites.length > 0) {
-                data.anatomical_sites.forEach(s => {
-                    const siteName = s.anatomical_name || s.site || "Anatomical Site";
-                    const fdi = s.fdi_number ? ` (FDI ${s.fdi_number})` : "";
-                    badgesHtml += `
-                        <span class="inline-flex items-center text-xs bg-sky-500/20 border border-sky-500/40 text-sky-300 px-2.5 py-1 rounded-lg">
-                            <i class="fa-solid fa-tooth mr-1.5"></i> ${siteName}${fdi}
-                        </span>
-                    `;
-                });
-            }
-            if (data.findings && data.findings.length > 0) {
-                data.findings.forEach(f => {
-                    const certColor = (f.certainty === "confirmed" || f.certainty === "definite observation") ? 
-                        "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" : 
-                        "bg-amber-500/20 text-amber-300 border-amber-500/30";
-                    badgesHtml += `
-                        <span class="inline-flex items-center text-xs ${certColor} border px-2.5 py-1 rounded-lg">
-                            <i class="fa-solid fa-circle-info mr-1.5"></i> ${f.anatomical_site || f.region || "Finding"}: ${f.observation || f.finding || ""} (${f.certainty || "observed"})
-                        </span>
-                    `;
-                });
-            }
-            if (data.safety_guardrails) {
-                badgesHtml += `
-                    <span class="inline-flex items-center text-xs bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-2.5 py-1 rounded-lg">
-                        <i class="fa-solid fa-shield-check mr-1.5"></i> ${data.safety_guardrails.status}: ${data.safety_guardrails.grounded_ratio} Claims Grounded
-                    </span>
-                `;
-            }
-            const badgesContainer = document.getElementById("dictationBadgesContainer");
-            if (badgesContainer) badgesContainer.innerHTML = badgesHtml;
-
-            // PDF Download Button
-            const pdfPath = data.dictation_pdf_path;
-            const pdfContainer = document.getElementById("dictationPdfDownloadBtnContainer");
-            if (pdfContainer) {
-                if (pdfPath) {
-                    const filename = pdfPath.split("/").pop();
-                    pdfContainer.innerHTML = `
-                        <a href="/dictation-pdf/${filename}" target="_blank" class="text-xs bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold px-3 py-1.5 rounded-lg transition shadow flex items-center">
-                            <i class="fa-solid fa-file-pdf mr-1.5"></i> Download PDF Draft
-                        </a>
-                    `;
-                } else {
-                    pdfContainer.innerHTML = "";
+                const inputEl = document.getElementById("dictationInput");
+                if (inputEl && (data.raw_transcript || data.raw_dictation) && !inputEl.value.trim()) {
+                    inputEl.value = data.raw_transcript || data.raw_dictation || "";
                 }
+
+                const jsonOutput = document.getElementById("jsonOutput");
+                if (jsonOutput) {
+                    jsonOutput.value = JSON.stringify(data, null, 2);
+                }
+
+                const narrativeOutput = document.getElementById("narrativeOutput");
+                if (narrativeOutput) {
+                    narrativeOutput.innerText = data.narrative_draft || 
+                        (data.report_metadata && data.report_metadata.extraction_status === "NON_CLINICAL_INPUT_REJECTED" ? 
+                        "ATTENTION: Non-clinical or instructional text detected. Please dictate or enter actual dental/maxillofacial radiological findings." : 
+                        "No narrative generated.");
+                }
+
+                // Render Findings Badges
+                let badgesHtml = "";
+                if (data.report_metadata && data.report_metadata.extraction_status === "NON_CLINICAL_INPUT_REJECTED") {
+                    badgesHtml += `
+                        <div class="w-full p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs flex items-center">
+                            <i class="fa-solid fa-triangle-exclamation mr-2 text-sm"></i>
+                            <span><strong>Non-Clinical Text Detected:</strong> Input contains software development notes or prompt instructions. No clinical dental findings were extracted.</span>
+                        </div>
+                    `;
+                }
+                if (data.anatomical_sites && data.anatomical_sites.length > 0) {
+                    data.anatomical_sites.forEach(s => {
+                        const siteName = s.anatomical_name || s.site || "Anatomical Site";
+                        const fdi = s.fdi_number ? ` (FDI ${s.fdi_number})` : "";
+                        badgesHtml += `
+                            <span class="inline-flex items-center text-xs bg-sky-500/20 border border-sky-500/40 text-sky-300 px-2.5 py-1 rounded-lg">
+                                <i class="fa-solid fa-tooth mr-1.5"></i> ${siteName}${fdi}
+                            </span>
+                        `;
+                    });
+                }
+                if (data.findings && data.findings.length > 0) {
+                    data.findings.forEach(f => {
+                        const certColor = (f.certainty === "confirmed" || f.certainty === "definite observation") ? 
+                            "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" : 
+                            "bg-amber-500/20 text-amber-300 border-amber-500/30";
+                        badgesHtml += `
+                            <span class="inline-flex items-center text-xs ${certColor} border px-2.5 py-1 rounded-lg">
+                                <i class="fa-solid fa-circle-info mr-1.5"></i> ${f.anatomical_site || f.region || "Finding"}: ${f.observation || f.finding || ""} (${f.certainty || "observed"})
+                            </span>
+                        `;
+                    });
+                }
+                if (data.safety_guardrails) {
+                    badgesHtml += `
+                        <span class="inline-flex items-center text-xs bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-2.5 py-1 rounded-lg">
+                            <i class="fa-solid fa-shield-check mr-1.5"></i> ${data.safety_guardrails.status}: ${data.safety_guardrails.grounded_ratio} Claims Grounded
+                        </span>
+                    `;
+                }
+                const badgesContainer = document.getElementById("dictationBadgesContainer");
+                if (badgesContainer) badgesContainer.innerHTML = badgesHtml;
+
+                // PDF Download Button
+                const pdfPath = data.dictation_pdf_path;
+                const pdfContainer = document.getElementById("dictationPdfDownloadBtnContainer");
+                if (pdfContainer) {
+                    if (pdfPath) {
+                        const filename = pdfPath.split("/").pop();
+                        pdfContainer.innerHTML = `
+                            <a href="/dictation-pdf/${filename}" target="_blank" class="text-xs bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold px-3 py-1.5 rounded-lg transition shadow flex items-center">
+                                <i class="fa-solid fa-file-pdf mr-1.5"></i> Download PDF Draft
+                            </a>
+                        `;
+                    } else {
+                        pdfContainer.innerHTML = "";
+                    }
+                }
+            } catch (err) {
+                console.error("Error populating dictation studio:", err);
             }
         }
 

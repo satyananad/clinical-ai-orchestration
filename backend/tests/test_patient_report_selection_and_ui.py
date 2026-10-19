@@ -173,3 +173,7 @@ def test_ui_html_renders_patient_directory_and_report_cards():
     assert "loadPatientDirectory" in html
     assert "selectPatientById" in html
     assert "openReportById" in html
+    assert "populateDictationStudio" in html
+    assert "toggleVoiceRecord" in html
+    assert "switchTab" in html
+    assert "togglePatientDirectory" in html
