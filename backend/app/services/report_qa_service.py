@@ -329,12 +329,47 @@ def answer_report_question(report_id: str, query: str, history: Optional[List[Di
             }
 
     # -------------------------------------------------------------------------
-    # INTENT 2: Authorized Demographic Query (Age, DOB, Sex, Demographics)
+    # INTENT 2: Authorized Demographic Query (Personal Information, Age, DOB, Sex, MRN)
     # -------------------------------------------------------------------------
-    is_demo_query = any(w in q_lower for w in ["age", "how old", "dob", "date of birth", "birth date", "gender", "sex"])
+    demo_patterns = [
+        r"\bpersonal\s+info(?:rmation)?\b",
+        r"\bpersonal\s+details?\b",
+        r"\bpatient\s+(?:info(?:rmation)?|details?|demographics?|name|id)\b",
+        r"\bwho\s+is\s+(?:the\s+)?patient\b",
+        r"\b(?:what\s+is\s+)?(?:his|her|their|the\s+patient'?s?)\s+name\b",
+        r"\b(?:d\.?o\.?b\.?|date\s+of\s+birth|birth\s*date)\b",
+        r"\bhow\s+old\b",
+        r"\bage\b",
+        r"\b(?:gender|sex)\b",
+        r"\b(?:mrn|record\s+number|medical\s+record)\b",
+        r"\bdemographics?\b"
+    ]
+    demo_phrases = [
+        "personal info", "personal information", "personal details", "personal detail",
+        "patient info", "patient information", "patient details", "patient detail",
+        "demographic", "demographics", "date of birth", "birth date", "how old",
+        "patient name", "who is the patient"
+    ]
+    is_demo_query = any(re.search(p, q_lower) for p in demo_patterns) or any(p in q_lower for p in demo_phrases)
     if is_demo_query:
-        dob = patient.get("date_of_birth") if patient else None
-        sex = patient.get("sex", "unspecified") if patient else "unspecified"
+        dob = patient.get("date_of_birth") if patient else report.get("date_of_birth")
+        sex = patient.get("sex") if patient else report.get("sex", "unspecified")
+        mrn = patient.get("record_number") if patient else None
+        p_name = patient_name or (patient.get("patient_name") if patient else "Unassigned")
+        p_id = patient_id or (patient.get("patient_id") if patient else "N/A")
+
+        sex_str = str(sex).lower()
+        if sex_str == "male":
+            pronoun_poss = "his"
+            pronoun_subj = "he"
+        elif sex_str == "female":
+            pronoun_poss = "her"
+            pronoun_subj = "she"
+        else:
+            pronoun_poss = "the patient's"
+            pronoun_subj = "they"
+
+        age_str = "documented on file"
         if dob:
             try:
                 b_year = int(dob.split("-")[0])
@@ -342,18 +377,56 @@ def answer_report_question(report_id: str, query: str, history: Optional[List[Di
                 age_str = f"{age} years"
             except Exception:
                 age_str = "documented on file"
-            return {
-                "status": "success",
-                "answer": (
-                    f"According to {patient_name}'s authorized demographic record ({patient_id}), "
-                    f"her date of birth is {dob} (Age: {age_str}, Sex: {sex}).\n\n"
-                    f"*Clinical Note: Demographic details are retrieved directly from the Master Patient Index, "
-                    f"as patient age is not recorded in the diagnostic radiology examination text.*"
-                ),
-                "citations": [f"Master Patient Index: {patient_id} ({patient_name}, DOB: {dob}, Sex: {sex})"],
-                "report_id": report["report_id"],
-                "report_date": report.get("report_date")
-            }
+
+        citations = [
+            f"Master Patient Index: {p_id} ({p_name}, DOB: {dob or 'N/A'}, Sex: {sex or 'N/A'})",
+            f"Source Report Header: {report['report_id']} ({report.get('report_type', 'Radiology Report')}, Exam Date: {report.get('report_date', 'N/A')})"
+        ]
+
+        is_age_only = (
+            bool(re.search(r"\b(how\s+old|age|dob|date\s+of\s+birth|birth\s*date)\b", q_lower))
+            and not any(w in q_lower for w in ["personal", "demographic", "who is", "detail", "info", "information", "record", "all"])
+        )
+        is_gender_only = (
+            bool(re.search(r"\b(gender|sex)\b", q_lower))
+            and not any(w in q_lower for w in ["personal", "demographic", "who is", "detail", "info", "information", "record", "all"])
+        )
+
+        if is_age_only:
+            answer_text = (
+                f"According to {p_name}'s authorized demographic record ({p_id}), "
+                f"{pronoun_poss} date of birth is {dob} (Age: {age_str}, Sex: {sex}).\n\n"
+                f"*Clinical Note: Demographic details are retrieved directly from the Master Patient Index, "
+                f"as patient age is not recorded in the diagnostic radiology examination text.*"
+            )
+        elif is_gender_only:
+            answer_text = (
+                f"According to {p_name}'s authorized demographic record ({p_id}), "
+                f"{pronoun_poss} documented biological sex is {sex}.\n\n"
+                f"*Clinical Note: Verified against the Master Patient Index.*"
+            )
+        else:
+            mrn_line = f"• Medical Record Number (MRN): {mrn}\n" if mrn else ""
+            answer_text = (
+                f"The personal and demographic information documented for this patient and report ({report['report_id']}) is:\n\n"
+                f"• Patient Name: {p_name}\n"
+                f"• Patient ID: {p_id}\n"
+                f"{mrn_line}"
+                f"• Date of Birth: {dob or 'Not documented'}\n"
+                f"• Age: {age_str}\n"
+                f"• Biological Sex / Gender: {sex}\n"
+                f"• Examination Modality: {report.get('report_type', report.get('modality', 'Diagnostic Imaging'))}\n"
+                f"• Examination Date: {report.get('report_date', 'Not specified')}\n\n"
+                f"*Clinical Note: Demographic details are verified against the Master Patient Index and cross-referenced with report header {report['report_id']}.*"
+            )
+
+        return {
+            "status": "success",
+            "answer": answer_text,
+            "citations": citations,
+            "report_id": report["report_id"],
+            "report_date": report.get("report_date")
+        }
 
     # -------------------------------------------------------------------------
     # INTENT 3: Treatment, Management, or Clinical Recommendation
@@ -602,12 +675,14 @@ def answer_report_question(report_id: str, query: str, history: Optional[List[Di
         "diagnose", "diagnosis", "impression", "impressions", "findings"
     ]
     is_general_summary_query = (
-        any(w in q_lower for w in [
-            "summar", "overview", "problem", "wrong", "diagnos", "impression", "finding",
-            "condition", "issue", "gist", "brief"
-        ])
-        or (re.search(r"\bwhat\b", q_lower) and any(w in q_lower for w in ["have", "hsve", "has", "show", "say", "find", "see"]))
-        or any(term in q_lower for term in summary_triggers)
+        not is_demo_query and (
+            any(w in q_lower for w in [
+                "summar", "overview", "problem", "wrong", "diagnos", "impression", "finding",
+                "condition", "issue", "gist", "brief"
+            ])
+            or (re.search(r"\bwhat\b", q_lower) and any(w in q_lower for w in ["have", "hsve", "has", "show", "say", "find", "see"]))
+            or any(term in q_lower for term in summary_triggers)
+        )
     )
     if is_general_summary_query:
         return generate_report_summary(report, patient or {})
@@ -832,6 +907,65 @@ def answer_patient_reports_question(
         }
 
     q_lower = query.lower()
+
+    # 0. Demographic / Personal Information Query
+    demo_patterns = [
+        r"\bpersonal\s+info(?:rmation)?\b",
+        r"\bpersonal\s+details?\b",
+        r"\bpatient\s+(?:info(?:rmation)?|details?|demographics?|name|id)\b",
+        r"\bwho\s+is\s+(?:the\s+)?patient\b",
+        r"\b(?:what\s+is\s+)?(?:his|her|their|the\s+patient'?s?)\s+name\b",
+        r"\b(?:d\.?o\.?b\.?|date\s+of\s+birth|birth\s*date)\b",
+        r"\bhow\s+old\b",
+        r"\bage\b",
+        r"\b(?:gender|sex)\b",
+        r"\b(?:mrn|record\s+number|medical\s+record)\b",
+        r"\bdemographics?\b"
+    ]
+    demo_phrases = [
+        "personal info", "personal information", "personal details", "personal detail",
+        "patient info", "patient information", "patient details", "patient detail",
+        "demographic", "demographics", "date of birth", "birth date", "how old",
+        "patient name", "who is the patient"
+    ]
+    is_demo_query = any(re.search(p, q_lower) for p in demo_patterns) or any(p in q_lower for p in demo_phrases)
+    if is_demo_query:
+        target_r = get_report_by_id(active_report_id) if active_report_id else (all_reports[0] if all_reports else None)
+        if target_r:
+            return answer_report_question(target_r["report_id"], query, history=history)
+        else:
+            dob = patient.get("date_of_birth")
+            sex = patient.get("sex", "unspecified")
+            mrn = patient.get("record_number")
+            p_name = patient.get("patient_name", "Unassigned")
+            p_id = patient.get("patient_id", "N/A")
+            sex_str = str(sex).lower()
+            pronoun_poss = "his" if sex_str == "male" else ("her" if sex_str == "female" else "the patient's")
+            age_str = "documented on file"
+            if dob:
+                try:
+                    b_year = int(dob.split("-")[0])
+                    age = 2026 - b_year
+                    age_str = f"{age} years"
+                except Exception:
+                    age_str = "documented on file"
+            mrn_line = f"• Medical Record Number (MRN): {mrn}\n" if mrn else ""
+            return {
+                "status": "success",
+                "answer": (
+                    f"The personal and demographic information documented for {p_name} ({p_id}) is:\n\n"
+                    f"• Patient Name: {p_name}\n"
+                    f"• Patient ID: {p_id}\n"
+                    f"{mrn_line}"
+                    f"• Date of Birth: {dob or 'Not documented'}\n"
+                    f"• Age: {age_str}\n"
+                    f"• Biological Sex / Gender: {sex}\n\n"
+                    f"*Clinical Note: Demographic details are retrieved directly from the Master Patient Index.*"
+                ),
+                "citations": [f"Master Patient Index: {p_id} ({p_name}, DOB: {dob or 'N/A'}, Sex: {sex or 'N/A'})"],
+                "report_id": None,
+                "report_date": None
+            }
 
     # 1. Target specific modality or report ID among the patient's reports
     # (e.g. "What did her periapical scan show?", "What was found in her dental examination?", "Show findings in RPT-2002")

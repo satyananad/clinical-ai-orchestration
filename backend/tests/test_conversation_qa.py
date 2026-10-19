@@ -246,30 +246,118 @@ def test_booking_slot_name_extraction_and_post_booking_transition():
     and after confirmation, natural clinician replies ('ok', 'yes') do not trap the session
     in repeat 'already confirmed' messages.
     """
+    from datetime import datetime
+    from backend.app.services.clock import set_frozen_clock
+    from backend.app.services.booking_service import reset_slots
+    from backend.app.services.conversation_service import SESSIONS
     from backend.app.services.retrieval import extract_retrieval_intent
     from backend.app.services.orchestrator_agent import run_multi_agent_pipeline, triage_clinician_request, is_valid_patient_name
 
-    # 1. Verification of name extraction & validation
-    intent = extract_retrieval_intent("Confirm slot SLOT-106")
-    extracted_name = intent.get("patient_name", "")
-    assert not is_valid_patient_name(extracted_name)
-    assert extracted_name.lower() not in ["confirm -106", "confirm 106"]
+    reset_slots()
+    SESSIONS.clear()
+    set_frozen_clock(datetime(2026, 10, 18, 9, 0, 0))
 
-    # 2. Session execution
-    session_id = "test_booking_name_session_202"
-    r1 = run_multi_agent_pipeline("Schedule a periapical scan for tomorrow", session_id=session_id)
-    assert r1["status"] in ["success", "awaiting_confirmation", "slots_presented", "confirmation_required"]
+    try:
+        # 1. Verification of name extraction & validation
+        intent = extract_retrieval_intent("Confirm slot SLOT-106")
+        extracted_name = intent.get("patient_name", "")
+        assert not is_valid_patient_name(extracted_name)
+        assert extracted_name.lower() not in ["confirm -106", "confirm 106"]
 
-    r2 = run_multi_agent_pipeline("Confirm slot SLOT-106", session_id=session_id)
+        # 2. Session execution
+        session_id = "test_booking_name_session_202"
+        r1 = run_multi_agent_pipeline("Schedule a periapical scan for tomorrow", session_id=session_id)
+        assert r1["status"] in ["success", "awaiting_confirmation", "slots_presented", "confirmation_required"]
+
+        r2 = run_multi_agent_pipeline("Confirm slot SLOT-106", session_id=session_id)
+        assert r2["status"] == "success"
+        # Patient must NOT be 'Confirm -106'
+        assert r2.get("slot", {}).get("patient_name") != "Confirm -106"
+
+        # 3. Clinician says 'ok' - must transition out of confirmed stage
+        r3 = run_multi_agent_pipeline("ok", session_id=session_id)
+        # Should not re-trigger duplicate booking
+        assert r3.get("tool_called") != "booking_already_confirmed"
+        msg3 = r3.get("answer") or r3.get("message") or ""
+        assert "already confirmed" not in msg3.lower()
+    finally:
+        set_frozen_clock(None)
+        reset_slots()
+        SESSIONS.clear()
+
+
+def test_personal_information_query_after_opening_report():
+    """
+    Verifies that asking 'what personal information have in there report'
+    returns the patient's personal and demographic details with proper gender pronouns,
+    rather than dumping a clinical diagnostic findings summary.
+    """
+    from backend.app.services.orchestrator_agent import run_multi_agent_pipeline
+    session_id = "test_arjun_personal_info_session"
+
+    # Step 1: Open report using fuzzy speech/spelling 'open report arjun mejta'
+    r1 = run_multi_agent_pipeline("open report arjun mejta", session_id=session_id)
+    assert r1["status"] == "success"
+    assert r1["patient"]["patient_name"] == "Arjun Mehta"
+    assert r1["patient"]["patient_id"] == "PAT-1005"
+
+    # Step 2: Inquire about personal information in the report
+    r2 = run_multi_agent_pipeline("what personal information have in there report", session_id=session_id)
     assert r2["status"] == "success"
-    # Patient must NOT be 'Confirm -106'
-    assert r2.get("slot", {}).get("patient_name") != "Confirm -106"
+    ans2 = r2.get("answer") or r2.get("message") or ""
 
-    # 3. Clinician says 'ok' - must transition out of confirmed stage
-    r3 = run_multi_agent_pipeline("ok", session_id=session_id)
-    # Should not re-trigger duplicate booking
-    assert r3.get("tool_called") != "booking_already_confirmed"
-    msg3 = r3.get("answer") or r3.get("message") or ""
-    assert "already confirmed" not in msg3.lower()
+    # Must contain personal and demographic details
+    assert "Arjun Mehta" in ans2
+    assert "PAT-1005" in ans2
+    assert "1992-06-30" in ans2
+    assert "34 years" in ans2
+    assert "Male" in ans2
+    assert "Bitewing Radiographs" in ans2
+
+    # Must NOT dump diagnostic findings summary as personal info
+    assert "Verification of crown margin seating" not in ans2
+
+    # Must provide proper source evidence citations
+    assert any("Master Patient Index" in c for c in r2.get("citations", []))
+    assert any("Source Report Header" in c for c in r2.get("citations", []))
+
+    # Step 3: Specific age inquiry with pronoun check
+    r3 = run_multi_agent_pipeline("how old is he", session_id=session_id)
+    assert r3["status"] == "success"
+    ans3 = r3.get("answer") or r3.get("message") or ""
+    assert "his date of birth is 1992-06-30" in ans3
+    assert "34 years" in ans3
+
+    # Step 4: Contextual follow-up summary works seamlessly after personal info query
+    r4 = run_multi_agent_pipeline("Summarize his report", session_id=session_id)
+    assert r4["status"] == "success"
+    ans4 = r4.get("answer") or r4.get("message") or ""
+    assert "Arjun Mehta" in ans4
+    assert any(w in ans4.lower() for w in ["bitewing", "crown margin", "tooth 25", "zirconia"])
+
+
+def test_female_demographics_query():
+    """
+    Verifies female patient demographic pronoun and personal info resolution.
+    """
+    from backend.app.services.orchestrator_agent import run_multi_agent_pipeline
+    session_id = "test_priya_personal_info_session"
+
+    r1 = run_multi_agent_pipeline("Open Priya Sharma PAT-1001 OPG", session_id=session_id)
+    assert r1["status"] == "success"
+    assert r1["patient"]["patient_name"] == "Priya Sharma"
+
+    r2 = run_multi_agent_pipeline("how old is she", session_id=session_id)
+    assert r2["status"] == "success"
+    ans2 = r2.get("answer") or r2.get("message") or ""
+    assert "her date of birth is 1998-04-12" in ans2
+    assert "28 years" in ans2
+
+    r3 = run_multi_agent_pipeline("what is her personal info", session_id=session_id)
+    assert r3["status"] == "success"
+    ans3 = r3.get("answer") or r3.get("message") or ""
+    assert "Priya Sharma" in ans3
+    assert "PAT-1001" in ans3
+    assert "Female" in ans3
 
 
