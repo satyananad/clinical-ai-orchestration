@@ -265,9 +265,9 @@ def is_contextual_query(query: str, has_active_report: bool = False) -> bool:
     from .retrieval import extract_retrieval_intent
     r_intent = extract_retrieval_intent(query)
     cand_name = r_intent.get("patient_name", "").strip()
-    non_name_tokens = {"what", "why", "how", "explain", "tell", "help", "who", "when", "does", "can", "please", "summary", "summarize", "problem", "findings", "finding", "report", "scan", "it", "she", "he", "her", "his", "they", "them", "patient", "tooth", "teeth"}
-    has_distinct_patient = bool(cand_name) and not all(t.lower() in non_name_tokens for t in cand_name.split())
-    if has_retrieval_cmd and has_distinct_patient:
+    pronoun_refs = {"he", "she", "his", "her", "hir", "their", "theirs", "its", "him", "them", "this", "that"}
+    has_distinct_patient = bool(cand_name) and not any(w in pronoun_refs for w in cand_name.lower().split())
+    if has_retrieval_cmd and (has_distinct_patient or not has_active_report):
         return False
 
     # 3. If an active report is open, questions refer to the active report

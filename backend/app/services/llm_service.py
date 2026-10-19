@@ -198,38 +198,56 @@ def extract_retrieval_intent_with_llm(user_input: str) -> Dict[str, str]:
         except (json.JSONDecodeError, ValidationError):
             pass
 
-    # Dynamic semantic fallback (without hardcoded table)
-    lower = user_input.lower()
+    # Dynamic semantic extraction (without hardcoded stop tokens)
+    lower_input = user_input.lower().strip()
+
     modality = "Any"
-    for m in ["opg", "cbct", "bitewing", "periapical", "cephalogram", "iopa"]:
-        if m in lower:
-            modality = m.upper() if m in ["opg", "cbct", "iopa"] else m.capitalize()
+    for m, m_name in [
+        ("opg", "OPG"), ("panoramic", "OPG"), ("orthopantomogram", "OPG"),
+        ("cbct", "CBCT"), ("cone beam", "CBCT"), ("3d volume", "CBCT"),
+        ("bitewing", "Bitewing"), ("periapical", "Periapical"), ("iopa", "Periapical"),
+        ("cephalogram", "Cephalogram"), ("ceph", "Cephalogram"),
+        ("examination", "Dental Examination"), ("exam", "Dental Examination")
+    ]:
+        if m in lower_input:
+            modality = m_name
             break
 
-    clean = lower
-    # Remove slot references like SLOT-106, BKG-101-1234, TK-106
-    clean = re.sub(r"\b(?:slot|bkg|tk)[- ]?[0-9a-z_-]+\b", " ", clean, flags=re.IGNORECASE)
-    # Remove standalone numbers/digits (e.g. 106, 101)
-    clean = re.sub(r"\b\d+\b", " ", clean)
+    # Explicit Patient ID (e.g. PAT-1001, PT-1001)
+    id_match = re.search(r"\b(?:pat|pt)[- ]?0*(\d+)\b", user_input, re.IGNORECASE)
+    if id_match:
+        return {"patient_name": f"PAT-{id_match.group(1)}", "report_type": modality}
 
-    stop_tokens = [
-        "can", "you", "could", "would", "please", "i", "want", "to", "need", "see",
-        "open", "show", "get", "fetch", "view", "load", "find", "latest", "recent",
-        "report", "reports", "scan", "scans", "opg", "cbct", "bitewing", "periapical",
-        "cephalogram", "iopa", "radiograph", "radiographs", "examination", "the",
-        "a", "an", "for", "of", "with", "patient", "mrn", "id",
-        "panoramic", "orthopantomogram", "not", "saying",
-        "book", "booking", "schedule", "reschedule", "reserve", "reservation",
-        "appointment", "appoint", "ment", "slot", "slots", "tomorrow", "today",
-        "yesterday", "dr", "doctor", "check", "available", "availability", "time", "date",
-        "confirm", "confirmed", "confirmation", "yes", "ok", "sure", "proceed", "cancel"
-    ]
-    for token in stop_tokens:
-        clean = re.sub(r"\b" + re.escape(token) + r"\b", " ", clean)
-    clean = clean.replace("'s", " ").replace("’s", " ")
-    clean = " ".join(clean.split()).strip()
+    pronoun_refs = {
+        "he", "she", "his", "her", "hers", "hir", "their", "theirs", "its", "him", "them",
+        "this", "that", "these", "those", "it", "hiss", "herr"
+    }
 
-    return {"patient_name": clean, "report_type": modality}
+    # Possessive: "Open Priya's latest OPG report"
+    pos_match = re.search(r"\b([a-zA-Z]+(?:\s+[a-zA-Z]+)?)(?:'s|’s)\b", user_input)
+    if pos_match:
+        cand = pos_match.group(1).strip()
+        if not any(w in pronoun_refs for w in cand.lower().split()):
+            return {"patient_name": cand, "report_type": modality}
+
+    # Prepositional: "for Priya Sharma", "patient Vikram"
+    prep_match = re.search(r"\b(?:for\s+patient|patient|pt|for)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)\b", user_input, re.IGNORECASE)
+    if prep_match:
+        cand = prep_match.group(1).strip()
+        if not any(w in pronoun_refs for w in cand.lower().split()):
+            return {"patient_name": cand, "report_type": modality}
+
+    # Direct imperative: "open Amit Kumar"
+    imp_match = re.search(r"^(?:open|show|view|find|load|retrieve|fetch)\s+(?:report\s+)?([a-zA-Z]+(?:\s+[a-zA-Z]+)?)$", user_input, re.IGNORECASE)
+    if imp_match:
+        cand = imp_match.group(1).strip()
+        if not any(w in pronoun_refs for w in cand.lower().split()):
+            # Also check if cand is just modality or report word
+            cand_words = set(cand.lower().split())
+            if not cand_words.issubset({"opg", "cbct", "panoramic", "bitewing", "periapical", "iopa", "report", "scan", "exam", "examination", "latest", "recent"}):
+                return {"patient_name": cand, "report_type": modality}
+
+    return {"patient_name": "", "report_type": modality}
 
 
 def clean_conversational_dictation(text: str) -> str:

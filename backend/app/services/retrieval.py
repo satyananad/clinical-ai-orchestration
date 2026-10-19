@@ -107,15 +107,8 @@ def search_patients(query: str) -> List[Dict[str, Any]]:
         return full_matches
 
     # 3. Partial / Ambiguous First Name Match (e.g. 'Priya' matching Sharma, Sharmila, Nair)
-    stop_words = {
-        "can", "you", "open", "show", "get", "fetch", "view", "the", "a", "an",
-        "report", "reports", "scan", "scans", "opg", "cbct", "bitewing", "periapical",
-        "latest", "recent", "please", "for", "of", "to", "in", "and", "or",
-        "radiograph", "radiographs", "examination", "panoramic", "orthopantomogram",
-        "hey", "hello", "hi", "greetings",
-        "his", "her", "hers", "hir", "their", "theirs", "its", "him", "she", "he", "they", "them", "hiss", "herr"
-    }
-    candidate_tokens = query_words - stop_words
+    known_name_tokens = {w.lower() for p in PATIENTS_DATA for w in p["patient_name"].split()}
+    candidate_tokens = {token for token in query_words if token in known_name_tokens}
     if not candidate_tokens:
         return []
 
@@ -199,50 +192,88 @@ def extract_retrieval_intent(user_input: str) -> Dict[str, str]:
     except Exception:
         pass
 
-    lower_input = user_input.lower()
-    
-    # Identify requested modality with clinical synonyms
+    lower_input = user_input.lower().strip()
+
+    # 1. Identify requested modality with clinical synonyms
     modality = "Any"
-    if any(m in lower_input for m in ["opg", "panoramic", "orthopantomogram"]):
-        modality = "OPG"
-    elif any(m in lower_input for m in ["cbct", "cone beam", "3d volume"]):
-        modality = "CBCT"
-    elif "bitewing" in lower_input:
-        modality = "Bitewing"
-    elif any(m in lower_input for m in ["periapical", "iopa"]):
-        modality = "Periapical"
-    elif any(m in lower_input for m in ["cephalogram", "ceph"]):
-        modality = "Cephalogram"
-    elif "examination" in lower_input:
-        modality = "Dental Examination"
-
-    clean = lower_input
-    # Remove slot references like SLOT-106, BKG-101-1234, TK-106
-    clean = re.sub(r"\b(?:slot|bkg|tk)[- ]?[0-9a-z_-]+\b", " ", clean, flags=re.IGNORECASE)
-    # Remove standalone numbers/digits (e.g. 106, 101)
-    clean = re.sub(r"\b\d+\b", " ", clean)
-
-    stop_tokens = [
-        "can", "you", "could", "would", "please", "i", "want", "to", "need", "see",
-        "open", "show", "get", "fetch", "view", "load", "find", "latest", "recent",
-        "retrieve", "retrieving", "search", "searching",
-        "report", "reports", "scan", "scans", "opg", "cbct", "bitewing", "periapical",
-        "cephalogram", "iopa", "radiograph", "radiographs", "examination", "the",
-        "a", "an", "for", "of", "with", "patient", "mrn", "id",
-        "panoramic", "orthopantomogram", "not", "saying",
-        "book", "booking", "schedule", "reschedule", "reserve", "reservation",
-        "appointment", "appoint", "ment", "slot", "slots", "tomorrow", "today",
-        "yesterday", "dr", "doctor", "check", "available", "availability", "time", "date",
-        "confirm", "confirmed", "confirmation", "yes", "ok", "sure", "proceed", "cancel",
-        "hey", "hello", "hi", "greetings", "good", "morning", "afternoon", "evening",
-        "his", "her", "hers", "hir", "their", "theirs", "its", "him", "she", "he", "they", "them", "hiss", "herr"
+    modality_patterns = [
+        (r"\b(opg|panoramic|orthopantomogram)\b", "OPG"),
+        (r"\b(cbct|cone\s*beam|3d\s*volume)\b", "CBCT"),
+        (r"\b(bitewing|bitewings)\b", "Bitewing"),
+        (r"\b(periapical|iopa)\b", "Periapical"),
+        (r"\b(cephalogram|ceph)\b", "Cephalogram"),
+        (r"\b(examination|exam)\b", "Dental Examination"),
     ]
-    for token in stop_tokens:
-        clean = re.sub(r"\b" + re.escape(token) + r"\b", " ", clean)
-    clean = clean.replace("'s", " ").replace("’s", " ")
-    clean = " ".join(clean.split()).strip()
+    for pattern, mod_name in modality_patterns:
+        if re.search(pattern, lower_input):
+            modality = mod_name
+            break
 
-    return {"patient_name": clean, "report_type": modality}
+    # 2. Explicit Patient ID (e.g. PAT-1001, PT-1001)
+    id_match = re.search(r"\b(?:pat|pt)[- ]?0*(\d+)\b", user_input, re.IGNORECASE)
+    if id_match:
+        return {"patient_name": f"PAT-{id_match.group(1)}", "report_type": modality}
+
+    # 3. Exact full-name matches against registered patient directory
+    for p in PATIENTS_DATA:
+        p_name = p["patient_name"]
+        if re.search(r"\b" + re.escape(p_name.lower()) + r"\b", lower_input):
+            return {"patient_name": p_name, "report_type": modality}
+
+    pronoun_refs = {
+        "he", "she", "his", "her", "hers", "hir", "their", "theirs", "its", "him", "them",
+        "this", "that", "these", "those", "it", "hiss", "herr"
+    }
+
+    # 4. Known patient first names / surnames from registered directory
+    known_name_tokens = {w.lower() for p in PATIENTS_DATA for w in p["patient_name"].split()}
+    query_tokens = re.findall(r"\b[a-zA-Z0-9_-]+\b", lower_input)
+    matched_db_tokens = [t for t in query_tokens if t in known_name_tokens and t not in pronoun_refs]
+    if matched_db_tokens:
+        return {"patient_name": " ".join(matched_db_tokens).title(), "report_type": modality}
+
+    # 5. Grammatical Request Framing for Seen & Unseen Patient Names:
+    # A) Possessive: "Marcus Aurelius's CBCT", "Vikram's scan"
+    pos_match = re.search(r"\b([a-zA-Z]+(?:\s+[a-zA-Z]+)?)(?:'s|’s)\b", user_input)
+    if pos_match:
+        cand = pos_match.group(1).strip()
+        if cand.lower() not in pronoun_refs:
+            return {"patient_name": cand, "report_type": modality}
+
+    # B) Structural request framing: Strip polite/imperative request prefix and trailing modality/document nouns
+    core_text = user_input.strip()
+    core_text = re.sub(
+        r"^(?:(?:can|could|would)\s+you\s+(?:please\s+)?|(?:please\s+)?(?:i\s+want\s+to\s+|i\s+need\s+to\s+)?)*(?:open|show|view|find|load|retrieve|fetch|get|display|search\s+for|look\s+for)\s+(?:(?:the|a|an)\s+)?(?:(?:patient|report|scan|radiograph|image)\s+(?:for\s+|of\s+)?)?",
+        "",
+        core_text,
+        flags=re.IGNORECASE
+    ).strip()
+
+    core_text = re.sub(r"^(?:for\s+patient|patient|pt|for|of)\s+", "", core_text, flags=re.IGNORECASE).strip()
+
+    core_text = re.sub(
+        r"\s+(?:(?:cbct|opg|panoramic|orthopantomogram|bitewings?|periapical|iopa|cephalogram|ceph|examination|exam|latest|recent|newest|last|prior|previous)\s+)*(?:reports?|scans?|radiographs?|images?|x-?rays?)\s*$",
+        "",
+        core_text,
+        flags=re.IGNORECASE
+    ).strip()
+    core_text = re.sub(
+        r"\s+(?:cbct|opg|panoramic|orthopantomogram|bitewings?|periapical|iopa|cephalogram|ceph|examination|exam|latest|recent|newest|last|prior|previous)\s*$",
+        "",
+        core_text,
+        flags=re.IGNORECASE
+    ).strip()
+
+    core_text = re.sub(r"['’]s\b", "", core_text).strip()
+
+    if core_text and not any(w in pronoun_refs for w in core_text.lower().split()):
+        words = set(core_text.lower().split())
+        if not words.issubset({"opg", "cbct", "panoramic", "bitewing", "periapical", "iopa", "report", "scan", "exam", "examination", "latest", "recent", "newest", "last"}):
+            if not re.search(r"\b(?:slot|bkg|tk)[- ]?\d+", core_text, re.IGNORECASE) and not re.search(r"\d", core_text):
+                if re.search(r"[a-zA-Z]", core_text):
+                    return {"patient_name": core_text, "report_type": modality}
+
+    return {"patient_name": "", "report_type": modality}
 
 def get_patient_pronouns(sex: Optional[str]) -> Dict[str, str]:
     """

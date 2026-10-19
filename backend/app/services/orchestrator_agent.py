@@ -330,18 +330,27 @@ def extract_age_from_query(query: str) -> Optional[str]:
 
 def extract_doctor_from_query(query: str) -> Optional[str]:
     """Extracts referring or attending doctor name from natural language."""
+    from .clinic_catalog import DOCTORS_DIRECTORY
+    for d in DOCTORS_DIRECTORY:
+        d_name = d.get("short_name", "") or d.get("name", "")
+        parts = d_name.split()
+        surname = parts[-1]
+        if re.search(r"\b(?:dr\.?|doctor)\s+" + re.escape(surname) + r"\b", query, re.IGNORECASE):
+            m_full = re.search(r"\b" + re.escape(d_name) + r"\b", query, re.IGNORECASE)
+            if m_full:
+                return d_name
+            return f"Dr. {surname.capitalize()}"
+        if re.search(r"\b" + re.escape(d_name.lower()) + r"\b", query.lower()):
+            return d_name
+
     m = re.search(r"\b(?:dr\.?|doctor)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)\b", query, re.IGNORECASE)
     if m:
-        raw_doc = m.group(1).strip()
-        parts = raw_doc.split()
-        stop_words = {
-            "main", "clinic", "hospital", "center", "centre", "radiology", "suite", "bay", "room",
-            "dept", "department", "at", "in", "on", "for", "age", "aged", "pat", "patient", "scan",
-            "cbct", "opg", "slot", "tomorrow", "today", "yesterday"
-        }
-        filtered = [p for p in parts if p.lower() not in stop_words]
-        if filtered:
-            return f"Dr. {' '.join(filtered).title()}"
+        cand = m.group(1).strip()
+        words = cand.split()
+        if len(words) == 2 and is_valid_patient_name(cand):
+            return f"Dr. {cand.title()}"
+        elif words and is_valid_patient_name(words[0]):
+            return f"Dr. {words[0].title()}"
     return None
 
 
@@ -454,27 +463,18 @@ def extract_patient_details_for_booking(query: str, session: Optional[Any] = Non
         pat_pattern = re.search(r"\b(?:for\s+patient|patient|for)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)\b", query, re.IGNORECASE)
         if pat_pattern:
             cand = pat_pattern.group(1).strip()
-            stop_words = {
-                "cbct", "opg", "scan", "slot", "tomorrow", "today", "yesterday", "dr", "doctor",
-                "main", "clinic", "radiology", "suite", "bay", "room", "age", "appointment", "check",
-                "patient", "referred", "by"
-            }
-            cand_parts = [w for w in cand.split() if w.lower() not in stop_words]
-            if cand_parts:
-                clean_cand = " ".join(cand_parts)
-                exact_matches = [p for p in all_p if p["patient_name"].lower() == clean_cand.lower()]
+            if is_valid_patient_name(cand):
+                exact_matches = [p for p in all_p if p["patient_name"].lower() == cand.lower()]
                 if len(exact_matches) == 1:
                     pat_name = exact_matches[0]["patient_name"]
                     pat_id = exact_matches[0]["patient_id"]
-                elif len(cand_parts) == 1:
-                    first_matches = [p for p in all_p if p["patient_name"].split()[0].lower() == cand_parts[0].lower()]
+                else:
+                    first_matches = [p for p in all_p if p["patient_name"].split()[0].lower() == cand.lower()]
                     if len(first_matches) == 1:
                         pat_name = first_matches[0]["patient_name"]
                         pat_id = first_matches[0]["patient_id"]
-                    elif is_valid_patient_name(clean_cand):
-                        pat_name = clean_cand.title()
-                elif is_valid_patient_name(clean_cand):
-                    pat_name = clean_cand.title()
+                    else:
+                        pat_name = cand.title()
 
     # 4. Fallback to session state if available
     if not pat_name and session:
@@ -1831,9 +1831,13 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
     from .retrieval import search_patients
     matched_candidates = search_patients(extracted_name) if extracted_name else []
 
-    # If the user explicitly provided a patient ID or a matched patient candidate with a retrieval command,
-    # route to RetrievalAgent
-    is_explicit_retrieval = has_patient_id or (has_retrieval_command and (matched_candidates or bool(extracted_name)))
+    # If the user explicitly provided a patient ID, a matched patient candidate, or a retrieval command
+    # with modality/pronoun/report tokens, route to RetrievalAgent
+    has_report_or_pronoun_token = any(w in q_lower for w in [
+        "report", "reports", "scan", "scans", "opg", "cbct", "bitewing", "periapical", "iopa",
+        "radiograph", "radiographs", "his", "her", "hir", "their", "latest", "recent"
+    ])
+    is_explicit_retrieval = has_patient_id or (has_retrieval_command and (matched_candidates or bool(extracted_name) or has_report_or_pronoun_token))
 
     if not is_explicit_retrieval:
         if has_non_patient_word or not extracted_name or (not has_retrieval_command and not matched_candidates):
@@ -1844,7 +1848,7 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 "rationale": "Safety Guard: Query was an inquiry or question, not a patient name."
             }
 
-    name_guess = extracted_name.title() if extracted_name else query.title()
+    name_guess = extracted_name.title() if extracted_name else ""
 
     return {
         "selected_agent": "RetrievalAgent",
