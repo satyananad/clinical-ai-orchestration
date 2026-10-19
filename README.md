@@ -141,22 +141,58 @@ python3 run_demo.py
 
 ---
 
+## 🎬 Demo & Verified API Sequence Walkthrough
+
+As specified in the assignment deliverables (alternative to a video demo), the full end-to-end clinical workflow is documented with exact curl commands, payloads, and JSON outputs in **[`DEMO_API_SEQUENCE.md`](DEMO_API_SEQUENCE.md)**:
+
+1. **Step 1: Ambiguity Safety Halt** (`POST /assistant/chat`)  
+   Clinician requests `"Open Priya Sharma"`. System halts with `status: "clarification_required"` and surfaces 2 candidate records with DOBs (`PAT-1001` born 1998 vs `PAT-1012` born 1985). Zero guessing.
+2. **Step 2: Disambiguation & Report Retrieval** (`POST /assistant/chat`)  
+   Clinician selects `"PAT-1001"`. Context binds to Priya Sharma and retrieves her latest OPG report (`RPT-2001`).
+3. **Step 3: Contextual Follow-up** (`POST /assistant/chat`)  
+   Clinician asks `"Summarize her report"`. Resolves the pronoun `"her"` to Priya Sharma without asking for the patient again, quoting verbatim source citations.
+4. **Step 4: Unsupported Claims Guardrail** (`POST /assistant/chat`)  
+   Clinician asks about unmentioned conditions (*"Is there any jaw fracture or radicular cyst?"*). The assistant rejects hallucinating, affirms neither condition is documented, and attaches a clinical disclaimer.
+5. **Step 5: Clinical Dictation Structuring** (`POST /dictation/structure`)  
+   Converts complex dictations with Palmer notation (`UR5`, `UR4`), measurements, and differential diagnoses into validated structured JSON findings with certainty ratings.
+6. **Step 6: Voice/Typed Scan-Booking Agent** (`POST /assistant/chat`)  
+   Checks synthetic availability slots, prompts for patient registration or binds active patient, and requires explicit clinician confirmation before booking.
+
+---
+
+## 📋 Assignment Deliverables Checklist
+
+| Deliverable | Location in Repository | Description |
+|---|---|---|
+| **1. Source Code & Mock Data** | [`backend/`](backend/), [`backend/app/data/dental_mock_dataset.json`](backend/app/data/dental_mock_dataset.json) | Full FastAPI backend with 12 synthetic patients, 35 diagnostic reports, 0 real PHI. |
+| **2. Documentation** | [`README.md`](README.md), [`.env.example`](.env.example) | Complete setup guide, model configuration, production considerations, and environment template. |
+| **3. Demo Walkthrough** | [`DEMO_API_SEQUENCE.md`](DEMO_API_SEQUENCE.md) | Reproducible step-by-step sequence of API calls with sample inputs and live outputs. |
+| **4. Architecture Document** | [`ARCHITECTURE.md`](ARCHITECTURE.md) | One-page architecture covering Voice/STT, Local LLM, MCP Tool/API, and Report Generation. |
+| **5. Automated Testing** | [`backend/tests/`](backend/tests/) | **192 automated tests passing** (including dedicated mandatory acceptance criteria tests). |
+
+---
+
 ## 🧪 Automated Testing
 
-The repository contains **182 comprehensive automated tests** covering retrieval, ambiguity disambiguation, multi-dimensional clinical claim verification, conversational follow-up, report-aware QA, appointment booking state machine, and MCP JSON-RPC 2.0 tool execution:
+The repository contains **192 comprehensive automated tests** passing in `< 1 second`:
 
 ```bash
-python3 -m pytest backend/tests -v
+# Run the 3 mandatory acceptance tests with live request/response/assertion logs:
+./venv/bin/python backend/tests/test_mandatory_acceptance_criteria.py
+
+# Run the complete test suite across all 14 test modules:
+./venv/bin/python -m pytest backend/tests -v
 ```
 
 Verifies:
-1. `test_ambiguity.py` - Partial name ambiguity safety gate and disambiguation.
-2. `test_claim_verification.py` - 8-dimension clinical safety checks (tooth numbers, negation, uncertainty, laterality, measurements).
-3. `test_conversation_qa.py` - Multi-turn conversational follow-up, pronoun resolution, and speech repair.
-4. `test_dictation.py` - Speech transcript structuring, dental numbering, and uncertainty classification.
-5. `test_mcp_tools.py` - MCP JSON-RPC 2.0 discovery (`tools/list`) and invocation (`tools/call`).
-6. `test_orchestrator.py` - Multi-agent triage routing and execution tracing.
-7. `test_retrieval.py` - Exact patient retrieval, modalities, and missing scan handling.
+1. `test_mandatory_acceptance_criteria.py` - Core 3 mandatory acceptance tests (retrieval by date, ambiguity halt, unsupported claims).
+2. `test_ambiguity.py` - Partial name ambiguity safety gate and candidate selection cards.
+3. `test_claim_verification.py` - 8-dimension clinical safety checks (teeth, negation, uncertainty, laterality, measurements).
+4. `test_conversation_qa.py` - Multi-turn conversational follow-up, pronoun resolution, and speech repair.
+5. `test_dictation.py` - Speech transcript structuring, FDI/Palmer numbering, and uncertainty classification.
+6. `test_mcp_tools.py` - MCP JSON-RPC 2.0 discovery (`tools/list`) and invocation (`tools/call`).
+7. `test_real_life_booking_workflow.py` - Complete multi-turn specialist booking and patient registration.
+8. `test_retrieval.py` - Exact patient retrieval, modalities, and missing scan handling.
 
 ---
 
