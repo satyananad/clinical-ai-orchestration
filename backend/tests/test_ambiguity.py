@@ -239,5 +239,47 @@ def test_topic_switch_during_pending_clarification():
     assert data2["status"] == "success"
     assert "radiological reports across" in data2["answer"]
 
+def test_retrieval_overrides_pending_booking_state_and_triggers_ambiguity_halt():
+    """
+    State-Machine Precedence Test:
+    When a booking flow was initiated in a previous turn (e.g. 'i want to book appointment'),
+    an explicit patient retrieval command ('Open Priya Sharma') must NOT be hijacked
+    by Appointment Scheduling. It must cleanly reset the booking state and trigger
+    the ambiguity safety halt, returning candidates PAT-1001 and PAT-1012.
+    """
+    session_id = "session_booking_override_priya"
+
+    # Turn 1: Enter booking flow
+    r1 = client.post("/assistant/chat", json={
+        "query": "i want to book appointment",
+        "session_id": session_id
+    })
+    assert r1.status_code == 200
+    assert r1.json()["agent_trace"]["tool_called"] == "prompt_existing_or_new_patient"
+
+    # Turn 2: Explicit patient retrieval command in same session
+    r2 = client.post("/assistant/chat", json={
+        "query": "Open Priya Sharma",
+        "session_id": session_id
+    })
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2["agent_trace"]["tool_called"] == "search_patient_reports"
+    assert d2["status"] == "clarification_required"
+    assert len(d2["candidates"]) == 2
+    cand_ids = {c["patient_id"] for c in d2["candidates"]}
+    assert cand_ids == {"PAT-1001", "PAT-1012"}
+
+    # Turn 3: Disambiguate by selecting candidate 1
+    r3 = client.post("/assistant/chat", json={
+        "query": "PAT-1001",
+        "session_id": session_id
+    })
+    assert r3.status_code == 200
+    d3 = r3.json()
+    assert d3["status"] == "success"
+    assert d3["patient"]["patient_id"] == "PAT-1001"
+    assert d3["patient"]["patient_name"] == "Priya Sharma"
+
 
 

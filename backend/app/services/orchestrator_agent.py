@@ -23,7 +23,7 @@ TRIAGE_SYSTEM_PROMPT = """You are the Lead Clinical Triage AI Agent for a dental
 Your job is to analyze the clinician's speech or text input and decide which specialized sub-agent and tool to invoke.
 
 AVAILABLE TOOLS & SPECIALIZED AGENTS:
-1. "search_patient_reports": Use when the clinician wants to locate, open, view, or search for a patient's scans or reports (e.g. "Open Priya's report", "Show Vikram Malhotra's CBCT", "hey i want to open the report of arjun mehta"). Even if the clinician starts with a greeting like 'hey', 'hello', or 'hi', you MUST select 'search_patient_reports' if they mention opening, viewing, or searching for a patient's report!
+1. "search_patient_reports": Use when the clinician wants to locate, open, view, or search for a patient's scans or reports, or asks to open a patient by name (e.g. "Open Priya Sharma", "Open Priya's report", "Show Vikram Malhotra's CBCT", "hey i want to open the report of arjun mehta", "open arjun mehta"). Even if the clinician starts with a greeting like 'hey', 'hello', or 'hi', you MUST select 'search_patient_reports' if they mention opening, viewing, or searching for a patient's report or opening a patient record! NEVER select "prompt_existing_or_new_patient" or appointment booking when the request is to open or view a patient or report!
    Agent: "RetrievalAgent"
    Arguments: {"patient_name": "string", "modality": "OPG"|"CBCT"|"Bitewing"|"Periapical"|"Cephalogram"|"Any"}
 
@@ -35,7 +35,7 @@ AVAILABLE TOOLS & SPECIALIZED AGENTS:
    Agent: "ConsultationAgent"
    Arguments: {"report_id": "active", "query": "string"}
 
-4. "prompt_existing_or_new_patient": Use when someone asks to book or schedule an appointment (e.g. "i want to book appointment", "how can i book the appointment", "book an appointment", "I need to schedule an appointment", "can I book an appointment", "appointment booking") when NO patient is active in the session and NO patient name was specified. This starts Step 1 (Patient Identification) of the real-life booking workflow.
+4. "prompt_existing_or_new_patient": Use ONLY when someone explicitly asks to book or schedule an appointment (e.g. "i want to book appointment", "how can i book the appointment", "book an appointment", "I need to schedule an appointment", "can I book an appointment", "appointment booking") when NO patient is active in the session and NO patient name was specified. NEVER use when the user asks to open, view, or search for a patient or report!
    Agent: "ScanBookingAgent"
    Arguments: {"query": "string"}
 
@@ -421,7 +421,9 @@ def extract_patient_registration_details(query: str) -> Dict[str, Optional[str]]
         stop_first = {
             "i", "need", "want", "we", "can", "could", "would", "like", "schedule",
             "tomorrow", "today", "yesterday", "scan", "have", "yes", "no", "this",
-            "my", "please", "book", "the", "first", "new", "hello", "hey", "hi", "how"
+            "my", "please", "book", "the", "first", "new", "hello", "hey", "hi", "how",
+            "open", "view", "retrieve", "fetch", "load", "find", "search", "show", "check",
+            "what", "where", "who", "which", "why", "tell", "explain", "is", "are"
         }
         if 2 <= len(words) <= 4 and words[0].lower() not in stop_first:
             cand = " ".join(words[:2])
@@ -553,10 +555,21 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
                     if "query" not in args:
                         args["query"] = query
                 elif t_name == "prompt_existing_or_new_patient":
-                    sel_agent = "ScanBookingAgent"
-                    session.booking_state.stage = BookingStage.COLLECTING_DETAILS
-                    if "query" not in args:
-                        args["query"] = query
+                    has_retrieval_intent = any(v in q_lower for v in ["open", "retrieve", "view", "fetch", "load", "find report", "show report"]) or bool(re.search(r"\b(pat-\d+|rpt-\d+)\b", q_lower))
+                    intent = extract_retrieval_intent(query)
+                    cand_name = intent.get("patient_name", "").strip()
+                    if has_retrieval_intent or (cand_name and any(v in q_lower for v in ["open", "retrieve", "view", "fetch", "load"])):
+                        sel_agent = "RetrievalAgent"
+                        t_name = "search_patient_reports"
+                        args = {
+                            "patient_name": cand_name or "Patient",
+                            "modality": intent.get("report_type", "Any")
+                        }
+                    else:
+                        sel_agent = "ScanBookingAgent"
+                        session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+                        if "query" not in args:
+                            args["query"] = query
                 elif t_name == "prompt_patient_dob_and_contact":
                     sel_agent = "ScanBookingAgent"
                     session.booking_state.stage = BookingStage.COLLECTING_DETAILS
@@ -664,9 +677,19 @@ def select_tool_with_llm(query: str, session: Any) -> Optional[Dict[str, Any]]:
                     args = {"query": query}
                     session.booking_state.stage = BookingStage.COLLECTING_DETAILS
             elif tool_name == "prompt_existing_or_new_patient":
-                session.booking_state.stage = BookingStage.COLLECTING_DETAILS
-                if "query" not in args:
-                    args["query"] = query
+                has_retrieval_intent = any(v in q_lower for v in ["open", "retrieve", "view", "fetch", "load", "find report", "show report"]) or bool(re.search(r"\b(pat-\d+|rpt-\d+)\b", q_lower))
+                intent = extract_retrieval_intent(query)
+                cand_name = intent.get("patient_name", "").strip()
+                if has_retrieval_intent or (cand_name and any(v in q_lower for v in ["open", "retrieve", "view", "fetch", "load"])):
+                    tool_name = "search_patient_reports"
+                    args = {
+                        "patient_name": cand_name or "Patient",
+                        "modality": intent.get("report_type", "Any")
+                    }
+                else:
+                    session.booking_state.stage = BookingStage.COLLECTING_DETAILS
+                    if "query" not in args:
+                        args["query"] = query
             elif tool_name == "prompt_patient_dob_and_contact":
                 session.booking_state.stage = BookingStage.COLLECTING_DETAILS
                 p_name = args.get("patient_name") or session.booking_state.patient_name or query.strip().title()
@@ -740,6 +763,35 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             has_retrieval_cmd = any(verb in q_lower for verb in ["open", "find", "load", "retrieve", "book", "schedule", "cancel", "stop"])
             if is_database_q or has_retrieval_cmd:
                 session.pending_candidates = None
+
+    # Step 00: Explicit Patient / Report Retrieval Override
+    # When a clinician explicitly asks to open, view, or retrieve a patient record/report,
+    # it must take precedence over any lingering or unfinished booking flow.
+    retrieval_intent = extract_retrieval_intent(query)
+    cand_retrieval_name = (retrieval_intent.get("patient_name") or "").strip()
+    has_retrieval_verb = any(v in q_lower for v in ["open", "retrieve", "view", "fetch", "load", "find report", "show report", "get report", "bring up"])
+    has_booking_kw = any(w in q_lower for w in ["book", "booking", "schedule", "reschedule", "appointment", "appoint ment", "slot", "slots", "reserve"])
+    is_explicit_patient_retrieval = (
+        has_retrieval_verb
+        and not has_booking_kw
+        and (bool(cand_retrieval_name) or bool(re.search(r"\b(pat-\d+|rpt-\d+)\b", q_lower)))
+    )
+    if is_explicit_patient_retrieval:
+        # Reset any lingering booking state to avoid state machine hijacking
+        session.booking_state.reset()
+        session.pending_booking_slots = []
+        session.pending_candidates = None
+        session.last_retrieval_query = cand_retrieval_name or query
+        session.last_retrieval_modality = retrieval_intent.get("report_type", "Any")
+        return {
+            "selected_agent": "RetrievalAgent",
+            "tool_name": "search_patient_reports",
+            "arguments": {
+                "patient_name": cand_retrieval_name or query,
+                "modality": retrieval_intent.get("report_type", "Any")
+            },
+            "rationale": f"Explicit Patient Retrieval: Locating records for '{cand_retrieval_name or query}'."
+        }
 
     # Step 0B: State-Machine Booking Workflow Management
     b_state = session.booking_state
