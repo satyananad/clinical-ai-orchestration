@@ -137,7 +137,7 @@ def query_ollama(prompt: str, system_prompt: Optional[str] = None, json_format: 
             data = json.loads(resp.read().decode("utf-8"))
             response_text = data.get("response", "").strip()
             if response_text:
-                print(f"\n✅ [LOCAL OLLAMA ACTIVE] Received response from {OLLAMA_MODEL} ({len(response_text)} chars)!")
+                print(f"\n [LOCAL OLLAMA ACTIVE] Received response from {OLLAMA_MODEL} ({len(response_text)} chars)!")
             return response_text
     except Exception as e:
         if os.getenv("DEBUG_LLM", "0") == "1":

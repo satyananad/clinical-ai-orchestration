@@ -2150,6 +2150,14 @@ def generate_dynamic_conversational_reply(query: str, session: Any) -> str:
             if qa.get("answer"):
                 return qa["answer"]
 
+    # Immediate Fast-Path for Greetings (Respond in < 5ms without LLM latency)
+    if any(re.search(r"\b" + re.escape(g) + r"\b", q_lower) for g in ["hey", "hello", "hi", "good morning", "good afternoon", "good evening", "greetings"]):
+        return (
+            "Hello Doctor! I am your Viscan AI Clinical Workstation Assistant. "
+            "You can ask me to open a patient's scan (e.g. 'Open Vikram Malhotra's CBCT'), dictate examination observations, "
+            "explain active findings, or check available scan appointment slots. How can I assist you?"
+        )
+
     conversation_prompt = (
         "You are the Viscan AI Clinical Workstation Assistant for a Dental & Maxillofacial Radiology Clinic. "
         "This workstation supports four specialized functions:\n"
