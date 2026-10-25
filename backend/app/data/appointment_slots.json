@@ -19,7 +19,7 @@
     "queue_token": null,
     "created_at": "2026-10-18T00:00:00+05:30",
     "updated_at": "2026-10-18T00:00:00+05:30",
-    "datetime_str": "Yesterday, Oct 19 at 10:00 AM"
+    "datetime_str": "Oct 19 at 10:00 AM"
   },
   {
     "slot_id": "SLOT-102",
@@ -41,7 +41,7 @@
     "queue_token": null,
     "created_at": "2026-10-18T00:00:00+05:30",
     "updated_at": "2026-10-18T00:00:00+05:30",
-    "datetime_str": "Yesterday, Oct 19 at 02:30 PM"
+    "datetime_str": "Oct 19 at 02:30 PM"
   },
   {
     "slot_id": "SLOT-103",
@@ -63,7 +63,7 @@
     "queue_token": null,
     "created_at": "2026-10-18T00:00:00+05:30",
     "updated_at": "2026-10-18T00:00:00+05:30",
-    "datetime_str": "Yesterday, Oct 19 at 11:15 AM"
+    "datetime_str": "Oct 19 at 11:15 AM"
   },
   {
     "slot_id": "SLOT-104",
@@ -85,7 +85,7 @@
     "queue_token": null,
     "created_at": "2026-10-18T00:00:00+05:30",
     "updated_at": "2026-10-18T00:00:00+05:30",
-    "datetime_str": "Yesterday, Oct 19 at 04:00 PM"
+    "datetime_str": "Oct 19 at 04:00 PM"
   },
   {
     "slot_id": "SLOT-105",
@@ -107,7 +107,7 @@
     "queue_token": null,
     "created_at": "2026-10-18T00:00:00+05:30",
     "updated_at": "2026-10-18T00:00:00+05:30",
-    "datetime_str": "Today, Oct 20 at 09:00 AM"
+    "datetime_str": "Oct 20 at 09:00 AM"
   },
   {
     "slot_id": "SLOT-106",
@@ -129,7 +129,7 @@
     "queue_token": null,
     "created_at": "2026-10-18T00:00:00+05:30",
     "updated_at": "2026-10-18T00:00:00+05:30",
-    "datetime_str": "Today, Oct 20 at 10:30 AM"
+    "datetime_str": "Oct 20 at 10:30 AM"
   },
   {
     "slot_id": "SLOT-107",
@@ -151,6 +151,6 @@
     "queue_token": null,
     "created_at": "2026-10-18T00:00:00+05:30",
     "updated_at": "2026-10-18T00:00:00+05:30",
-    "datetime_str": "Today, Oct 20 at 03:15 PM"
+    "datetime_str": "Oct 20 at 03:15 PM"
   }
 ]

@@ -873,6 +873,23 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             "rationale": f"Explicit Patient Retrieval: Locating records for '{cand_retrieval_name or query}'."
         }
 
+    # Step 1: Dynamic Multi-Agent Tool Calling via LLM (OpenAI / Ollama / Groq)
+    # When an active LLM is available, it determines the agent and tool dynamically using standard Tool Calling schemas.
+    llm_decision = select_tool_with_llm(query, session)
+    if llm_decision and llm_decision.get("selected_agent") and llm_decision.get("tool_name"):
+        return llm_decision
+
+    # Step 2: Deterministic Safety Fallback (When local LLM is offline, initializing, or in test harness)
+    return _offline_deterministic_fallback(query, session)
+
+def _offline_deterministic_fallback(query: str, session: Any) -> Dict[str, Any]:
+    """
+    Deterministic Clinical Safety & Offline Test Harness Engine:
+    Executes rule-based handling when running in offline CI/CD test suites (pytest)
+    or when local Ollama/OpenAI LLM is offline or unreachable.
+    """
+    q_lower = query.lower().strip()
+
     # Step 0B: State-Machine Booking Workflow Management
     b_state = session.booking_state
     ref_match = re.search(r"\b(BKG-[A-Za-z0-9_-]+|SLOT-\d+)\b", query, re.IGNORECASE)
@@ -969,14 +986,6 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                 },
                 "rationale": f"Reschedule appointment '{ident}' to '{target_slot}'."
             }
-
-    # Step 1: Dynamic Multi-Agent Tool Calling via LLM (OpenAI / Ollama / Groq)
-    # When an active LLM is available, it determines the agent and tool dynamically using standard Tool Calling schemas.
-    llm_decision = select_tool_with_llm(query, session)
-    if llm_decision and llm_decision.get("selected_agent") and llm_decision.get("tool_name"):
-        return llm_decision
-
-    # Step 2: Deterministic Safety Fallback (When local LLM is offline, initializing, or in test harness)
     # 0B.2 Existing booking lookup inquiry ("I already booked", "Show my appointment", "Check my booking")
     is_lookup_query = (
         bool(b_ref and b_ref.startswith("BKG-"))
