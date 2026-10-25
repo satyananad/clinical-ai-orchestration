@@ -844,6 +844,23 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
                     "rationale": "Clarification Safety Gate: Clinician referenced ambiguous candidate with pronoun without choosing."
                 }
 
+    # Step 1: Dynamic Multi-Agent Tool Calling via LLM (OpenAI / Ollama / Groq)
+    # The query is passed DIRECTLY to the LLM. The LLM decides which agent and tool to invoke.
+    llm_decision = select_tool_with_llm(query, session)
+    if llm_decision and llm_decision.get("selected_agent") and llm_decision.get("tool_name"):
+        return llm_decision
+
+    # Step 2: Deterministic Safety Fallback (Only executed when LLM is offline or in test harness)
+    return _offline_deterministic_fallback(query, session)
+
+def _offline_deterministic_fallback(query: str, session: Any) -> Dict[str, Any]:
+    """
+    Deterministic Clinical Safety & Offline Test Harness Engine:
+    Executes rule-based handling when running in offline CI/CD test suites (pytest)
+    or when local Ollama/OpenAI LLM is offline or unreachable.
+    """
+    q_lower = query.lower().strip()
+
     # Step 00: Explicit Patient / Report Retrieval Override
     # When a clinician explicitly asks to open, view, or retrieve a patient record/report,
     # it must take precedence over any lingering or unfinished booking flow.
@@ -872,23 +889,6 @@ def triage_clinician_request(query: str, session_id: str = "default_session") ->
             },
             "rationale": f"Explicit Patient Retrieval: Locating records for '{cand_retrieval_name or query}'."
         }
-
-    # Step 1: Dynamic Multi-Agent Tool Calling via LLM (OpenAI / Ollama / Groq)
-    # When an active LLM is available, it determines the agent and tool dynamically using standard Tool Calling schemas.
-    llm_decision = select_tool_with_llm(query, session)
-    if llm_decision and llm_decision.get("selected_agent") and llm_decision.get("tool_name"):
-        return llm_decision
-
-    # Step 2: Deterministic Safety Fallback (When local LLM is offline, initializing, or in test harness)
-    return _offline_deterministic_fallback(query, session)
-
-def _offline_deterministic_fallback(query: str, session: Any) -> Dict[str, Any]:
-    """
-    Deterministic Clinical Safety & Offline Test Harness Engine:
-    Executes rule-based handling when running in offline CI/CD test suites (pytest)
-    or when local Ollama/OpenAI LLM is offline or unreachable.
-    """
-    q_lower = query.lower().strip()
 
     # Step 0B: State-Machine Booking Workflow Management
     b_state = session.booking_state
